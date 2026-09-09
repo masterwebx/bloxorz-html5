@@ -16,6 +16,18 @@
 	z-index: 2;
 }
 
+#build-version {
+	position: absolute;
+	left: 10px;
+	bottom: 8px;
+	z-index: 4;
+	font: 11px/1.2 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	letter-spacing: 0.04em;
+	color: rgba(255, 248, 232, 0.88);
+	text-shadow: 0 1px 2px #000;
+	pointer-events: none;
+}
+
 #_preload_div_ {
 	position: fixed;
 	top: 0;

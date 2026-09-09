@@ -7,6 +7,7 @@
 	<meta name="authoring-tool" content="Adobe_Animate_CC">
 	<title>bloxorz</title>
 	<link href="default.css" rel="stylesheet" type="text/css">
+	<script src="version.js"></script>
 	<script src="feedback.js"></script>
 	<script src="levels.js"></script>
 	<script src="timer.js"></script>
@@ -67,6 +68,10 @@
 			canvas = document.getElementById("canvas");
 			anim_container = document.getElementById("animation_container");
 			dom_overlay_container = document.getElementById("dom_overlay_container");
+			var versionEl = document.getElementById("build-version");
+			if (versionEl) {
+				versionEl.textContent = "v" + (window.GAME_VERSION || "2.0.0");
+			}
 			var comp = AdobeAn.getComposition("FE31B685947E79408F0C8768D6EC8517");
 			var lib = comp.getLibrary();
 			var loader = new createjs.LoadQueue(false);
@@ -230,7 +235,9 @@
 		</div>
 		<div id="animation_container">
 			<canvas id="canvas"></canvas>
-			<div id="dom_overlay_container"></div>
+			<div id="dom_overlay_container">
+				<div id="build-version"></div>
+			</div>
 		</div>
 	</div>
 	<div id="_preload_div_">

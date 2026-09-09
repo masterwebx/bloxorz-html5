@@ -1,16 +1,33 @@
-# Desktop Bloxorz
-This is a modified version of the classic browser game [Bloxorz](https://www.coolmathgames.com/0-bloxorz/play). This desktop version provides some key features.
-- [Tauri](https://tauri.app/)
-  - Tauri converts the original browser code into a desktop application and optimizes performance by using the OS's native web renderer.
-- In Game Timer
-  - The addition of an in game timer makes timing and submitting speed runs far more reliable. The timer partitions are setup per the [speed run rules](https://www.speedrun.com/bloxorz/news/1707).
-  - [Speed run times](https://www.speedrun.com/bloxorz).
-- Themes
-  - Additional themes to add variety while maintaining functionality.
+# Bloxorz (Cybernate fork)
 
-## Setup
-After checking out the code use `npm install` to install the required packages. The following script commands are available.
-- `npm run tauri dev`
-  - This will build and start the development version off the app.
-- `npm run tauri build`
-  - This builds the release version of the app and generates installer bundles.
+This is a **fork** of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate), so that project keeps GitHub credit for the desktop wrap.
+
+Spencer’s repo is the Coolmath **Adobe Animate HTML5** Bloxorz client, plus:
+
+- [Tauri](https://tauri.app/) desktop shell
+- In-game timer (speedrun partitions)
+- Original / gray / holiday themes
+
+We are adding web extras (player name, Stage Creator, puzzles, history, DEV tools) **on top of that runtime**. The CreateJS game in `src/bloxorz.js` stays the playfield — we do not rewrite the rolling block. See [GAMEPLAN.md](GAMEPLAN.md).
+
+Bloxorz was created by Damien Clarke / DX Interactive (21 June 2007). This is an unofficial fan project.
+
+## Run in the browser
+
+```bash
+npm install
+npm run dev
+```
+
+Opens on port **4398**. `npm run build` / `npm run preview` for a static build (Vercel can host `dist`).
+
+## Desktop (upstream)
+
+```bash
+npm install
+npm run tauri dev
+```
+
+## Version
+
+The menu stage shows **v2.0.0** (from `src/version.js`). Keep that string in sync with `package.json`.

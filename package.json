@@ -1,12 +1,16 @@
 {
   "name": "bloxorz-cybernate",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
+    "dev": "vite --host --port 4398",
+    "build": "node -e \"import { cpSync, rmSync } from 'node:fs'; rmSync('dist',{recursive:true,force:true}); cpSync('src','dist',{recursive:true});\"",
+    "preview": "vite preview --host --port 4398",
     "tauri": "tauri"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.3.1"
+    "@tauri-apps/cli": "^1.3.1",
+    "vite": "^6.0.7"
   }
 }
