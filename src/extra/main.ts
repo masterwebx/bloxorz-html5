@@ -434,7 +434,10 @@ function placeHudInput(on: boolean, left: string, top: string, width: string, pl
   const el = hudInput();
   if (!el) return;
   el.hidden = !on;
-  if (!on) return;
+  if (!on) {
+    if (document.activeElement === el) el.blur();
+    return;
+  }
   el.style.left = left;
   el.style.top = top;
   el.style.width = width;
@@ -1204,14 +1207,15 @@ function tickSolve(): void {
   }
 
   if (solveCode) {
-    if (!blocksIdle()) {
+    if (playBlocks().length && !blocksIdle()) {
       stage.triggerKeyUp?.({ code: solveCode });
       solveCode = "";
       solveHold = 0;
       return;
     }
     solveHold++;
-    if (solveHold > 10) {
+    const last = !solveQueue.length;
+    if (!last && solveHold > 10) {
       stage.triggerKeyUp?.({ code: solveCode });
       stage.triggerKeyDown({ code: solveCode });
       solveHold = 0;
@@ -1220,7 +1224,7 @@ function tickSolve(): void {
   }
 
   if (!solveQueue.length) return;
-  if (!blocksIdle()) return;
+  if (playBlocks().length && !blocksIdle()) return;
 
   const cmd = solveQueue.shift();
   if (!cmd) return;
@@ -1308,13 +1312,14 @@ function applyBlockHue(): void {
     uncache?: () => void;
   })[];
   if (!blocks.length || !cjs.ColorMatrix || !cjs.ColorMatrixFilter) return;
-  const key = hue * 1000 + (blocks[0].currentFrame ?? 0);
+  const rolling = blocks.some((b) => !b.roll?.idle);
+  const key = hue * 1000 + (rolling ? -1 : 1);
   if (key === lastBlockHue) return;
   lastBlockHue = key;
   for (const block of blocks) {
-    if (!hue) {
-      block.filters = null;
+    if (!hue || rolling) {
       block.uncache?.();
+      if (!hue) block.filters = null;
       continue;
     }
     const deg = hue <= 180 ? hue : hue - 360;
@@ -1489,6 +1494,18 @@ function bind(): void {
     if (isDevName(next) && !cachedDev) setName(next);
   });
 
+  window.addEventListener("keyup", (ev) => {
+    if (isLegacy() || currentLabel() !== "game") return;
+    const act = actionFromCode(ev.code);
+    let code = ev.code;
+    if (act === "up") code = "ArrowUp";
+    else if (act === "down") code = "ArrowDown";
+    else if (act === "left") code = "ArrowLeft";
+    else if (act === "right") code = "ArrowRight";
+    else if (act === "swap") code = "Space";
+    if (KEY_CMD[code] || act === "swap") window.stage?.triggerKeyUp?.({ code });
+  });
+
   window.addEventListener("keydown", (ev) => {
     if (isLegacy()) return;
     if (extraView === "splash") {
@@ -1520,7 +1537,7 @@ function bind(): void {
       else if (act === "pause" || act === "back") code = "Escape";
       const cmd = KEY_CMD[code];
       if (cmd) tape.push(cmd);
-      if (act && code !== ev.code) {
+      if (cmd || act === "pause" || act === "back") {
         ev.preventDefault();
         window.stage?.triggerKeyDown?.({ code });
       }
@@ -1792,6 +1809,7 @@ export function startBloxorzShell(): void {
       return new Spin() as never;
     };
     hud.makeClip = (name: ClipName | "Tile") => {
+      if (name === "Block") return null;
       try {
         const lib = adobeLib() as unknown as Record<string, new () => unknown>;
         const Ctor = lib?.[name];
