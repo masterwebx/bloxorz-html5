@@ -144,6 +144,16 @@ export function billboardSupports(ch: string): boolean {
   return Object.prototype.hasOwnProperty.call(BILLBOARD, ch);
 }
 
+export function foldBillboard(label: string): string {
+  return label.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase();
+}
+
+export function canBillboard(label: string): boolean {
+  const folded = foldBillboard(label);
+  const chars = [...folded].filter((ch) => ch !== " ");
+  return chars.length > 0 && chars.every((ch) => billboardSupports(ch));
+}
+
 function glow(node: HudText, hot: boolean, theme: ThemePaint): void {
   node.shadow = new createjs.Shadow(hot ? "rgba(255,255,255,0.85)" : theme.shadow, 0, 0, hot ? 12 : 8);
 }
@@ -525,6 +535,8 @@ export class ExtraHud {
   }
 
   drawFinish(opts: {
+    title: string;
+    cleared: string;
     moves: number;
     falls: number;
     fails: number;
@@ -534,16 +546,25 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(text(t("finish.title"), 275, 28, 20, theme.ink, "center"));
-    this.add(text(t("finish.cleared"), 275, 56, 12, theme.muted, "center"));
-    this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 82, 12, theme.ink, "center"));
-    this.add(this.act("toggle-stats", opts.showStats ? t("finish.hide") : t("finish.show"), 40, 104, 12, false, 160));
-    this.add(this.act("back", t("common.menu"), 230, 104, 12, false, 90));
+    const heading = opts.title.toUpperCase();
+    if (canBillboard(heading)) {
+      const label = foldBillboard(heading).slice(0, 18);
+      const pitch = Math.min(4.6, 500 / (Math.max(1, label.length) * 6));
+      const width = label.length * 6 * pitch;
+      drawBillboard(this.layer, label, 275 - width / 2, 18, 500);
+    } else {
+      this.add(text(opts.title, 275, 28, 20, theme.ink, "center"));
+    }
+    this.add(text(opts.cleared, 275, 62, 12, theme.muted, "center"));
+    this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 86, 12, theme.ink, "center"));
+    this.add(this.act("toggle-stats", opts.showStats ? t("finish.hide") : t("finish.show"), 40, 110, 12, false, 150));
+    this.add(this.act("screenshot", t("finish.screenshot"), 200, 110, 12, false, 130));
+    this.add(this.act("back", t("common.menu"), 340, 110, 12, false, 90));
     if (opts.showStats) {
-      if (!opts.rows.length) this.add(text(t("finish.none"), 40, 140, 11, theme.muted));
-      opts.rows.slice(0, 6).forEach((row, i) => {
-        this.add(text(row.title, 40, 136 + i * 22, 11));
-        this.add(text(row.meta, 320, 136 + i * 22, 11, theme.muted));
+      if (!opts.rows.length) this.add(text(t("finish.none"), 40, 146, 11, theme.muted));
+      opts.rows.slice(0, 5).forEach((row, i) => {
+        this.add(text(row.title, 40, 146 + i * 22, 11));
+        this.add(text(row.meta, 320, 146 + i * 22, 11, theme.muted));
       });
     }
   }
@@ -606,7 +627,7 @@ export class ExtraHud {
     bg.graphics.beginFill("#000").drawRect(0, 0, 550, 300);
     bg.mouseEnabled = false;
     this.add(bg);
-    const label = title.toUpperCase().slice(0, 18);
+    const label = foldBillboard(title).slice(0, 18);
     const pitch = Math.min(5.2, 500 / (Math.max(1, label.length) * 6));
     const width = label.length * 6 * pitch;
     drawBillboard(this.layer, label, 275 - width / 2, 108, 500);

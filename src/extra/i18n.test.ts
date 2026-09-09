@@ -37,6 +37,9 @@ describe("i18n", () => {
     setLocale("es");
     expect(t("play.stageCard", { n: "01" })).toBe("FASE 01");
     expect(t("howto.0")).toContain("33");
+    expect(t("howto.next")).toBe("Siguiente >");
+    expect(t("pause.resume")).toBe("Volver al juego");
+    expect(t("timer.stage")).toBe("Fase");
   });
 
   it("keeps English Classic on bitmap marks and English on HD type", () => {

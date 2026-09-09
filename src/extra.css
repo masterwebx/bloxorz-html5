@@ -225,9 +225,9 @@ body.has-theme-media #canvas {
 #howto-next { left: 97%; top: 90.1%; }
 #howto-start { left: 97%; top: 90.1%; }
 
-#pause-return { left: 3.6%; top: 42.5%; width: auto; height: auto; text-align: left; }
-#pause-sound { left: 3.6%; top: 49.5%; width: auto; height: auto; text-align: left; }
-#pause-quit { left: 3.6%; top: 56.5%; width: auto; height: auto; text-align: left; }
+#pause-return { left: 10%; top: 47.6%; width: auto; height: auto; text-align: left; }
+#pause-sound { left: 10%; top: 54.6%; width: auto; height: auto; text-align: left; }
+#pause-quit { left: 10%; top: 61.6%; width: auto; height: auto; text-align: left; }
 
 #play-select {
 	position: absolute;

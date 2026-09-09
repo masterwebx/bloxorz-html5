@@ -79,7 +79,7 @@ import { clearTheme3d, syncTheme3d } from "./theme3d";
 import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./hue";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
-import { ExtraHud, type MenuItem } from "./hud";
+import { ExtraHud, canBillboard, type MenuItem } from "./hud";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
 import type { ClipName } from "./coolmathBoard";
 import { looksLikeMobile, registerServiceWorker, TouchChrome } from "./touchPad";
@@ -337,6 +337,10 @@ let replayExclude: TapeCmd[] = [];
 let prevCreatorPad = new Set<number>();
 const atlasImages: Partial<Record<ThemeId, HTMLImageElement>> = {};
 let lastFinished: RunRecord | null = null;
+let finishReturnTo: Screen = "home";
+let finishKind: PlayCard = "classic";
+let finishTitle = "";
+let finishSubtitle = "";
 let showStats = false;
 let beatBanner = "";
 let autoSolve = false;
@@ -765,7 +769,7 @@ function bindSettingsChrome(): void {
     if (!id) return;
     ev.stopPropagation();
     closeSettingsDropdowns();
-    applyTheme(normalizeTheme(id));
+    applyTheme(normalizeTheme(id), true);
   });
   localeSel?.querySelector(".hud-dd-menu")?.addEventListener("click", (ev) => {
     const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".hud-dd-opt")?.dataset.id;
@@ -791,7 +795,7 @@ function bindSettingsChrome(): void {
     void file.arrayBuffer().then(async (buf) => {
       try {
         const pack = await installThemeZip(buf);
-        applyTheme(pack.id);
+        applyTheme(pack.id, true);
       } catch {
         loadError = t("theme.uploadBad");
         markHudDirty();
@@ -835,6 +839,10 @@ function applyDomCopy(): void {
   if (themeBtn) themeBtn.setAttribute("aria-label", t("settings.theme"));
   const localeBtn = $("hud-locale-btn");
   if (localeBtn) localeBtn.setAttribute("aria-label", t("settings.language"));
+  const stageHead = $("timer-stage-head");
+  if (stageHead) stageHead.textContent = t("timer.stage");
+  const timeHead = $("timer-time-head");
+  if (timeHead) timeHead.textContent = t("timer.time");
 }
 
 type BitmapMark = { alpha?: number; visible?: boolean; children?: { alpha?: number; visible?: boolean }[] };
@@ -940,17 +948,22 @@ function stageScale(): { sx: number; sy: number } {
   return { sx: st?.scaleX || 1, sy: st?.scaleY || 1 };
 }
 
-function placeOverlay(el: HTMLElement | null, node: OverlayNode | undefined, live: boolean): void {
+function placeOverlay(el: HTMLElement | null, node: OverlayNode | undefined, live: boolean, align: "center" | "left" | "right" = "center"): void {
   if (!el) return;
   el.hidden = !live;
   if (!live || !node?.localToGlobal) return;
-  const p = node.localToGlobal(0, 0);
+  const b = node.getBounds?.() ?? node.nominalBounds;
   const { sx, sy } = stageScale();
-  const x = p.x / sx;
-  const y = p.y / sy;
-  el.style.left = (x / 550) * 100 + "%";
-  el.style.top = (y / 300) * 100 + "%";
-  el.style.transform = x > 470 ? "translate(-100%, -50%)" : "translate(-50%, -50%)";
+  let localX = 0;
+  let localY = 0;
+  if (b) {
+    localX = align === "left" ? b.x : align === "right" ? b.x + b.width : b.x + b.width / 2;
+    localY = b.y + b.height / 2;
+  }
+  const p = node.localToGlobal(localX, localY);
+  el.style.left = (p.x / sx / 550) * 100 + "%";
+  el.style.top = (p.y / sy / 300) * 100 + "%";
+  el.style.transform = align === "left" ? "translate(0, -50%)" : align === "right" ? "translate(-100%, -50%)" : "translate(-50%, -50%)";
 }
 
 function liveHowtoNext(inst: { nextButton?: OverlayNode; nextButton2?: OverlayNode } | undefined): OverlayNode | undefined {
@@ -1132,6 +1145,9 @@ function syncPauseStats(on: boolean): void {
     quit.textContent = t("pause.quit");
     quit.classList.toggle("is-focus", pauseFocus === 2);
   }
+  placeOverlay(ret, buttons?.returnToGame, true, "left");
+  placeOverlay(sound, buttons?.toggleSound, true, "left");
+  placeOverlay(quit, buttons?.quitToMenu, true, "left");
 }
 
 function syncSelectPrompt(on: boolean): void {
@@ -1474,7 +1490,7 @@ function navItems(): NavItem[] {
       { id: "toggle-mobile-pad" },
       { id: "toggle-timer" },
       ...(s.mobilePad ? [{ id: "toggle-rotate" }] : []),
-      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(listThemes().map((p) => p.id), currentTheme(), d)) },
+      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(listThemes().map((p) => p.id), currentTheme(), d), true) },
       { id: "locale-cycle", adjust: (d) => applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), d)) },
       { id: "toggle-theme-bg" },
       { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
@@ -1510,7 +1526,7 @@ function navItems(): NavItem[] {
       ...rows.filter((rec) => rec.cmds.length).map((_, i) => ({ id: "replay:" + (listScroll + i) })),
     ];
   }
-  if (extraView === "finish") return [{ id: "toggle-stats" }, { id: "back" }];
+  if (extraView === "finish") return [{ id: "toggle-stats" }, { id: "screenshot" }, { id: "back" }];
   if (extraView === "creator") {
     return [{ id: "creator-make" }, { id: "creator-play" }, { id: "back" }];
   }
@@ -1715,6 +1731,9 @@ function hudKey(): string {
     String(s.sfx),
     currentTheme(),
     localeId(),
+    finishKind,
+    finishTitle,
+    finishSubtitle,
     String(rebindAction),
     loadError,
     puzzleDiff,
@@ -1802,7 +1821,10 @@ function paintHud(): void {
     );
   } else if (extraView === "finish") {
     const st = window.stage;
+    const copy = finishCopy();
     hud.drawFinish({
+      title: copy.title,
+      cleared: copy.cleared,
       moves: lastFinished?.totalMoves ?? st?.totalMoves ?? 0,
       falls: st?.totalFalls ?? 0,
       fails: lastFinished?.fails ?? 0,
@@ -1918,7 +1940,7 @@ function openPanel(name: Screen): void {
   paintHud();
 }
 
-function applyTheme(theme: ThemeId): void {
+function applyTheme(theme: ThemeId, reload = false): void {
   const id = normalizeTheme(theme);
   setCurrentThemeId(id);
   try {
@@ -1926,13 +1948,20 @@ function applyTheme(theme: ThemeId): void {
   } catch {
     /* ignore */
   }
+  let href = "";
   try {
     const url = new URL(window.location.href);
     if (id === "original" || id === "gray" || id === "holiday") url.searchParams.set("img", id);
     else url.searchParams.delete("img");
-    history.replaceState(null, "", url.toString());
+    href = url.toString();
+    if (!reload) history.replaceState(null, "", href);
   } catch {
-    /* ignore */
+    href = "";
+  }
+  if (reload) {
+    if (href && href !== window.location.href) window.location.replace(href);
+    else window.location.reload();
+    return;
   }
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel && (id === "original" || id === "gray" || id === "holiday")) sel.value = id;
@@ -2042,6 +2071,10 @@ function dismissSplash(): void {
 function goBack(): void {
   if (extraView === "mobile-ask") {
     chooseMobilePad(false);
+    return;
+  }
+  if (extraView === "finish") {
+    openPanel(finishReturnTo);
     return;
   }
   if (extraView === "settings") {
@@ -2235,6 +2268,8 @@ function handleHudAction(act: string): void {
     showStats = !showStats;
     markHudDirty();
     paintHud();
+  } else if (act === "screenshot") {
+    void shareWinShot();
   } else if (act === "toggle-ghosts") {
     saveSeeGhosts(!loadSeeGhosts());
     lastHudPaint = "";
@@ -2277,9 +2312,9 @@ function handleHudAction(act: string): void {
     markHudDirty();
     paintHud();
   } else if (act.startsWith("theme:")) {
-    applyTheme(normalizeTheme(act.slice(6)));
+    applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
-    applyTheme(cycleList(listThemes().map((p) => p.id), currentTheme(), 1));
+    applyTheme(cycleList(listThemes().map((p) => p.id), currentTheme(), 1), true);
   } else if (act === "locale-cycle") {
     applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), 1));
   } else if (act.startsWith("locale:")) {
@@ -2720,6 +2755,56 @@ function drawGhosts(): void {
       layer.addChild(shape);
     }
   }
+}
+
+function finishCopy(): { title: string; cleared: string } {
+  if (finishKind === "daily") {
+    return { title: t("finish.dailyTitle"), cleared: t("finish.dailyCleared", { day: finishSubtitle || utcDateLabel() }) };
+  }
+  if (finishKind === "seeded") {
+    return { title: t("finish.seededTitle"), cleared: t("finish.seededCleared", { seed: finishSubtitle }) };
+  }
+  if (finishKind === "gauntlet") {
+    return { title: t("finish.gauntletTitle"), cleared: t("finish.gauntletCleared", { seed: finishSubtitle }) };
+  }
+  return { title: finishTitle || t("finish.title"), cleared: t("finish.cleared") };
+}
+
+function rememberFinish(session: PlaySession | null): void {
+  finishKind = session?.card ?? "classic";
+  finishTitle = session?.title || t("finish.title");
+  finishSubtitle = session?.subtitle || session?.seed || "";
+  const back = session?.returnTo;
+  finishReturnTo = back === "puzzles" || back === "puzzles-seeded" || back === "puzzles-gauntlet" ? back : "home";
+}
+
+async function shareWinShot(): Promise<void> {
+  const canvas = $("canvas") as HTMLCanvasElement | null;
+  if (!canvas) return;
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) return;
+  const name = `bloxorz-${finishKind || "win"}.png`;
+  const file = new File([blob], name, { type: "image/png" });
+  try {
+    const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean };
+    if (nav.share && nav.canShare?.({ files: [file] })) {
+      await nav.share({ files: [file], title: finishCopy().title });
+      return;
+    }
+  } catch {
+    /* download instead */
+  }
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+  } catch {
+    /* download instead */
+  }
+  const a = document.createElement("a");
+  const href = URL.createObjectURL(blob);
+  a.href = href;
+  a.download = name;
+  a.click();
+  window.setTimeout(() => URL.revokeObjectURL(href), 1500);
 }
 
 function showFinish(): void {
@@ -3663,17 +3748,16 @@ function syncOverlay(): void {
       run = null;
     }
     const back = playSession?.returnTo;
+    rememberFinish(playSession);
     lastLabel = label;
     overlayMode = "";
     menuParked = false;
+    const puzzleWin = back === "puzzles" || back === "puzzles-seeded" || back === "puzzles-gauntlet";
     if (
       back === "creator" ||
       back === "creator-edit" ||
       back === "creator-play" ||
       back === "creator-make" ||
-      back === "puzzles" ||
-      back === "puzzles-seeded" ||
-      back === "puzzles-gauntlet" ||
       back === "history" ||
       back === "load" ||
       back === "creator-saved"
@@ -3690,7 +3774,7 @@ function syncOverlay(): void {
       overlayMode = "menu";
       return;
     }
-    if (!usesHdType() && playSession?.classicRun && playSession.kind === "campaign") {
+    if (!puzzleWin && !usesHdType() && playSession?.classicRun && playSession.kind === "campaign") {
       setVanillaCongraVisible(true);
       hud?.setVisible(false);
       setExportRootMouse(true);
@@ -3778,6 +3862,7 @@ function syncOverlay(): void {
       const card = titleCardCopy();
       if (card) {
         syncStageCard(false);
+        setVanillaTitleVisible(false);
         if (!hud?.root.visible) {
           hud?.setVisible(true);
           raiseHud();
@@ -3789,8 +3874,23 @@ function syncOverlay(): void {
         }
       } else if (usesHdType()) {
         const n = padStage(window.stage?.levelNumber ?? 1);
-        syncStageCard(true, t("play.stageCard", { n }));
-        if (hud?.root.visible) hud.setVisible(false);
+        const title = t("play.stageCard", { n });
+        setVanillaTitleVisible(false);
+        if (canBillboard(title)) {
+          syncStageCard(false);
+          if (!hud?.root.visible) {
+            hud?.setVisible(true);
+            raiseHud();
+          }
+          const key = "title:" + title;
+          if (lastHudPaint !== key) {
+            lastHudPaint = key;
+            hud?.drawTitleCard(title);
+          }
+        } else {
+          syncStageCard(true, title);
+          if (hud?.root.visible) hud.setVisible(false);
+        }
       } else {
         syncStageCard(false);
         setVanillaTitleVisible(true);
@@ -3991,7 +4091,7 @@ export function startBloxorzShell(): void {
   applyBlockHue();
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) sel.value = currentTheme();
-  window.applyLiveTheme = (theme: string) => applyTheme(normalizeTheme(theme));
+  window.applyLiveTheme = (theme: string) => applyTheme(normalizeTheme(theme), true);
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
   if (applyPendingShare()) {
     raiseHud();
