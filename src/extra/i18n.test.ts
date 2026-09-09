@@ -21,6 +21,7 @@ describe("i18n", () => {
     const ids = listLocales().map((row) => row.id);
     expect(ids).toContain("en");
     expect(ids).toContain("en-classic");
+    expect(listLocales().find((row) => row.id === "en")?.name).toBe("English HD");
     expect(ids).toContain("es");
     expect(ids).toContain("zh");
     expect(ids).toContain("ja");

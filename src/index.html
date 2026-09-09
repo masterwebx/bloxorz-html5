@@ -268,11 +268,24 @@
 				<div id="stage-card" hidden><span id="stage-card-text">STAGE 01</span></div>
 				<p id="howto-page" hidden></p>
 				<p id="howto-copy" hidden></p>
-				<div id="pause-stats" hidden>
-					<div id="pause-time"><span class="lab">Time</span></div>
-					<div id="pause-stage"><span class="lab">Stage</span></div>
-					<div id="pause-tries"><span class="lab">Attempts</span></div>
+				<div id="howto-nav" hidden>
+					<button type="button" id="howto-back"></button>
+					<button type="button" id="howto-skip"></button>
+					<button type="button" id="howto-prev"></button>
+					<button type="button" id="howto-next"></button>
+					<button type="button" id="howto-start"></button>
 				</div>
+				<div id="pause-stats" hidden>
+					<div id="pause-time"><span class="lab">Time</span><b class="val" id="pause-time-val"></b></div>
+					<div id="pause-stage"><span class="lab">Stage</span><b class="val" id="pause-stage-val"></b></div>
+					<div id="pause-tries"><span class="lab">Attempts</span><b class="val" id="pause-tries-val"></b></div>
+				</div>
+				<div id="pause-nav" hidden>
+					<button type="button" id="pause-return"></button>
+					<button type="button" id="pause-sound"></button>
+					<button type="button" id="pause-quit"></button>
+				</div>
+				<p id="play-select" hidden></p>
 				<div id="hud-modal">
 					<div class="hud-modal-card">
 						<p id="hud-modal-title">Enter code</p>

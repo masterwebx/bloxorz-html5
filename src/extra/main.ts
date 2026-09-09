@@ -131,11 +131,41 @@ type CustomPlayOpts = {
   record?: boolean;
 };
 
-type PauseBtn = {
+type OverlayNode = BitmapMark & {
+  x?: number;
+  y?: number;
+  _off?: boolean;
+  currentFrame?: number;
   dispatchEvent?: (ev: unknown) => void;
+  localToGlobal?: (x: number, y: number) => { x: number; y: number };
+  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
+  nominalBounds?: { x: number; y: number; width: number; height: number };
+};
+
+type PauseBtn = OverlayNode & {
   gotoAndStop?: (n: string | number) => void;
   scaleX?: number;
   scaleY?: number;
+};
+
+type PauseStats = {
+  instance?: OverlayNode;
+  instance_1?: OverlayNode;
+  instance_2?: OverlayNode;
+  instance_3?: OverlayNode;
+  instance_4?: OverlayNode;
+  digit1?: OverlayNode;
+  digit2?: OverlayNode;
+  digit3?: OverlayNode;
+  digit4?: OverlayNode;
+  digit5?: OverlayNode;
+  digit6?: OverlayNode;
+  stage1?: OverlayNode;
+  stage2?: OverlayNode;
+  falls1?: OverlayNode;
+  falls2?: OverlayNode;
+  falls3?: OverlayNode;
+  falls4?: OverlayNode;
 };
 
 type PauseMenuClip = {
@@ -146,7 +176,7 @@ type PauseMenuClip = {
     toggleSound?: PauseBtn;
     quitToMenu?: PauseBtn;
   };
-  stats?: { instance?: { alpha?: number }; instance_1?: { alpha?: number }; instance_4?: { alpha?: number } };
+  stats?: PauseStats;
 };
 
 type BloxWorld = {
@@ -180,6 +210,7 @@ type StageLike = {
   totalMoves?: number;
   totalFalls?: number;
   levelAttempts?: number;
+  startTime?: number;
   touchMode?: boolean;
   localSave?: { get?: () => unknown; save?: (n: number) => void };
   gameContainer?: {
@@ -806,7 +837,7 @@ function applyDomCopy(): void {
   if (localeBtn) localeBtn.setAttribute("aria-label", t("settings.language"));
 }
 
-type BitmapMark = { alpha?: number; visible?: boolean; children?: { alpha?: number }[] };
+type BitmapMark = { alpha?: number; visible?: boolean; children?: { alpha?: number; visible?: boolean }[] };
 
 function playBitmapMarks(): BitmapMark[] {
   const bg = window.stage?.bloxWorld?.background as
@@ -863,8 +894,8 @@ function setBitmapPlayText(show: boolean): void {
   setMarkAlpha(bg?.menuButton, alpha, true);
 }
 
-function instructionTextMark(): BitmapMark | undefined {
-  return (window.exportRoot?.inst as { instance_4?: BitmapMark } | undefined)?.instance_4;
+function instructionTextMark(): OverlayNode | undefined {
+  return (window.exportRoot?.inst as { instance_4?: OverlayNode } | undefined)?.instance_4;
 }
 
 function setInstructionBitmaps(show: boolean): void {
@@ -880,6 +911,64 @@ function setVanillaTitleVisible(on: boolean): void {
   if (!title) return;
   title.visible = on;
   if (on && title.alpha === 0) title.alpha = 1;
+}
+
+function setVanillaCongraVisible(on: boolean): void {
+  const clip = (window.exportRoot as { instance_1?: BitmapMark } | undefined)?.instance_1;
+  if (!clip) return;
+  clip.visible = on;
+  clip.alpha = on ? 1 : 0;
+}
+
+function markLive(node: OverlayNode | undefined): boolean {
+  if (!node || node._off || node.visible === false) return false;
+  return (node.alpha ?? 1) > 0.15;
+}
+
+function setGlyphVisible(node: OverlayNode | undefined, show: boolean): void {
+  if (!node) return;
+  const kids = node.children;
+  if (kids?.length) {
+    for (const child of kids) child.visible = show;
+    return;
+  }
+  if (show && node.alpha === 0) node.alpha = 1;
+}
+
+function stageScale(): { sx: number; sy: number } {
+  const st = window.stage as { scaleX?: number; scaleY?: number } | undefined;
+  return { sx: st?.scaleX || 1, sy: st?.scaleY || 1 };
+}
+
+function placeOverlay(el: HTMLElement | null, node: OverlayNode | undefined, live: boolean): void {
+  if (!el) return;
+  el.hidden = !live;
+  if (!live || !node?.localToGlobal) return;
+  const p = node.localToGlobal(0, 0);
+  const { sx, sy } = stageScale();
+  const x = p.x / sx;
+  const y = p.y / sy;
+  el.style.left = (x / 550) * 100 + "%";
+  el.style.top = (y / 300) * 100 + "%";
+  el.style.transform = x > 470 ? "translate(-100%, -50%)" : "translate(-50%, -50%)";
+}
+
+function liveHowtoNext(inst: { nextButton?: OverlayNode; nextButton2?: OverlayNode } | undefined): OverlayNode | undefined {
+  if (markLive(inst?.nextButton2)) return inst?.nextButton2;
+  if (markLive(inst?.nextButton)) return inst?.nextButton;
+  return undefined;
+}
+
+function clickOverlay(node: OverlayNode | undefined): void {
+  node?.dispatchEvent?.({ type: "click" });
+}
+
+function padClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = String(Math.floor(total / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
 }
 
 function syncPlayChrome(on: boolean): void {
@@ -934,43 +1023,143 @@ function syncStageCard(on: boolean, title = ""): void {
 function syncHowto(on: boolean): void {
   const copy = $("howto-copy");
   const page = $("howto-page");
+  const nav = $("howto-nav");
   if (!copy || !page) return;
   const show = on && usesHdType();
+  const inst = instructionClip();
   if (!show) {
     copy.hidden = true;
     page.hidden = true;
+    if (nav) nav.hidden = true;
     setInstructionBitmaps(true);
+    for (const btn of [inst?.nextButton, inst?.nextButton2, inst?.prevButton, inst?.skipButton, inst?.backButton, inst?.startButton]) {
+      setGlyphVisible(btn, true);
+    }
     return;
   }
   setInstructionBitmaps(false);
-  const frame = instructionClip()?.currentFrame ?? 0;
+  const frame = inst?.currentFrame ?? 0;
   const slide = howtoSlide(frame);
   copy.hidden = false;
   page.hidden = false;
+  if (nav) nav.hidden = false;
   copy.textContent = t("howto." + slide);
   page.textContent = t("howto.page", { n: slide + 1 });
+  const back = $("howto-back");
+  const skip = $("howto-skip");
+  const prev = $("howto-prev");
+  const next = $("howto-next");
+  const start = $("howto-start");
+  if (back) back.textContent = t("howto.menu");
+  if (skip) skip.textContent = t("howto.skip");
+  if (prev) prev.textContent = t("howto.prev");
+  if (next) next.textContent = t("howto.next");
+  if (start) start.textContent = t("howto.start");
+  const nextSrc = liveHowtoNext(inst);
+  placeOverlay(back, inst?.backButton, markLive(inst?.backButton));
+  placeOverlay(skip, inst?.skipButton, markLive(inst?.skipButton));
+  placeOverlay(prev, inst?.prevButton, markLive(inst?.prevButton));
+  placeOverlay(next, nextSrc, markLive(nextSrc));
+  placeOverlay(start, inst?.startButton, markLive(inst?.startButton));
+  for (const btn of [inst?.nextButton, inst?.nextButton2, inst?.prevButton, inst?.skipButton, inst?.backButton, inst?.startButton]) {
+    setGlyphVisible(btn, false);
+  }
 }
 
 function syncPauseStats(on: boolean): void {
   const box = $("pause-stats");
+  const nav = $("pause-nav");
   if (!box) return;
   const show = on && usesHdType();
   box.hidden = !show;
-  const stats = pauseMenuClip()?.stats as
-    | { instance?: { alpha?: number }; instance_1?: { alpha?: number }; instance_4?: { alpha?: number } }
-    | undefined;
-  if (!stats) return;
-  const alpha = show ? 0 : 1;
-  if (stats.instance) stats.instance.alpha = alpha;
-  if (stats.instance_1) stats.instance_1.alpha = alpha;
-  if (stats.instance_4) stats.instance_4.alpha = alpha;
-  if (!show) return;
+  if (nav) nav.hidden = !show;
+  const menu = pauseMenuClip();
+  const stats = menu?.stats;
+  const buttons = menu?.buttons;
+  const digitMarks = [
+    stats?.instance,
+    stats?.instance_1,
+    stats?.instance_2,
+    stats?.instance_3,
+    stats?.instance_4,
+    stats?.digit1,
+    stats?.digit2,
+    stats?.digit3,
+    stats?.digit4,
+    stats?.digit5,
+    stats?.digit6,
+    stats?.stage1,
+    stats?.stage2,
+    stats?.falls1,
+    stats?.falls2,
+    stats?.falls3,
+    stats?.falls4,
+  ];
+  const btnMarks = [buttons?.returnToGame, buttons?.toggleSound, buttons?.quitToMenu];
+  if (!show) {
+    for (const mark of digitMarks) setMarkAlpha(mark, 1, false);
+    for (const mark of btnMarks) setMarkAlpha(mark, 1, true);
+    return;
+  }
+  for (const mark of digitMarks) setMarkAlpha(mark, 0, false);
+  for (const mark of btnMarks) setMarkAlpha(mark, 0, true);
   const timeLab = $("pause-time")?.querySelector(".lab");
   const stageLab = $("pause-stage")?.querySelector(".lab");
   const tryLab = $("pause-tries")?.querySelector(".lab");
   if (timeLab) timeLab.textContent = t("hud.time") + ":";
   if (stageLab) stageLab.textContent = t("hud.stage") + ":";
   if (tryLab) tryLab.textContent = t("hud.attempts") + ":";
+  const st = window.stage;
+  const started = st?.startTime ?? Date.now();
+  const timeVal = $("pause-time-val");
+  const stageVal = $("pause-stage-val");
+  const tryVal = $("pause-tries-val");
+  if (timeVal) timeVal.textContent = padClock(Date.now() - started);
+  if (stageVal) stageVal.textContent = padStage(st?.levelNumber ?? 1);
+  if (tryVal) tryVal.textContent = String((st?.totalFalls ?? 0) + 1);
+  const ret = $("pause-return");
+  const sound = $("pause-sound");
+  const quit = $("pause-quit");
+  if (ret) {
+    ret.textContent = t("pause.resume");
+    ret.classList.toggle("is-focus", pauseFocus === 0);
+  }
+  if (sound) {
+    sound.textContent = t("pause.sound");
+    sound.classList.toggle("is-focus", pauseFocus === 1);
+  }
+  if (quit) {
+    quit.textContent = t("pause.quit");
+    quit.classList.toggle("is-focus", pauseFocus === 2);
+  }
+}
+
+function syncSelectPrompt(on: boolean): void {
+  const el = $("play-select");
+  if (!el) return;
+  const hd = on && usesHdType();
+  let live: OverlayNode | undefined;
+  for (const block of playBlocks()) {
+    walkNodes(block, (node) => {
+      const sel = node.select;
+      if (!sel) return;
+      if (hd && !live && !sel._off && (sel.currentFrame ?? 0) > 0) live = sel;
+    });
+  }
+  if (!hd) {
+    el.hidden = true;
+    return;
+  }
+  el.textContent = t("play.select");
+  if (!live?.localToGlobal) {
+    el.hidden = true;
+    return;
+  }
+  const p = live.localToGlobal(12, -28);
+  const { sx, sy } = stageScale();
+  el.hidden = false;
+  el.style.left = (p.x / sx / 550) * 100 + "%";
+  el.style.top = (p.y / sy / 300) * 100 + "%";
 }
 
 function cycleList(ids: string[], cur: string, dir: -1 | 1): string {
@@ -2537,6 +2726,7 @@ function showFinish(): void {
   overlayMode = "";
   menuParked = false;
   parkCreateJsMenu();
+  setVanillaCongraVisible(false);
   setMouseOverRate(5);
   hud?.setVisible(true);
   raiseHud();
@@ -2556,6 +2746,7 @@ function leavePlayTo(view: Screen): void {
   syncHowto(false);
   syncStageCard(false);
   syncPauseStats(false);
+  syncSelectPrompt(false);
   clearTheme3d();
   clearGhosts();
   stopAutoSolve("");
@@ -2691,6 +2882,7 @@ type PlayBlock = {
   filters?: unknown;
   cacheID?: number;
   __bloxHue?: number;
+  select?: OverlayNode;
   cache?: (x: number, y: number, w: number, h: number) => void;
   updateCache?: () => void;
   uncache?: () => void;
@@ -3034,6 +3226,12 @@ function instructionClip(): {
   gotoAndPlay?: (n: string | number) => void;
   currentFrame?: number;
   paused?: boolean;
+  nextButton?: OverlayNode;
+  nextButton2?: OverlayNode;
+  prevButton?: OverlayNode;
+  skipButton?: OverlayNode;
+  backButton?: OverlayNode;
+  startButton?: OverlayNode;
 } | undefined {
   return window.exportRoot?.inst;
 }
@@ -3492,9 +3690,24 @@ function syncOverlay(): void {
       overlayMode = "menu";
       return;
     }
+    if (!usesHdType() && playSession?.classicRun && playSession.kind === "campaign") {
+      setVanillaCongraVisible(true);
+      hud?.setVisible(false);
+      setExportRootMouse(true);
+      playSession = null;
+      overlayMode = "run";
+      return;
+    }
+    setVanillaCongraVisible(false);
     playSession = null;
     showFinish();
     overlayMode = "menu";
+    return;
+  }
+  if (label === "finish" && !usesHdType()) {
+    setVanillaCongraVisible(true);
+    hud?.setVisible(false);
+    setExportRootMouse(true);
     return;
   }
   lastLabel = label;
@@ -3528,6 +3741,7 @@ function syncOverlay(): void {
     syncPlayChrome(playing);
     syncHowto(label === "instructions");
     syncPauseStats(playing && isPauseMenuOpen());
+    syncSelectPrompt(playing);
     if (playing) {
       syncStageCard(false);
       tickSolve();
@@ -3608,6 +3822,7 @@ function syncOverlay(): void {
   syncHowto(false);
   syncStageCard(false);
   syncPauseStats(false);
+  syncSelectPrompt(false);
   placeSettingsChrome(extraView === "settings");
   touchChrome?.sync(false);
 
@@ -3709,6 +3924,14 @@ export function startBloxorzShell(): void {
     btn?.menuButton?.dispatchEvent?.({ type: "click" });
     if (!btn?.menuButton) togglePauseMenu();
   });
+  $("howto-next")?.addEventListener("click", () => clickOverlay(liveHowtoNext(instructionClip())));
+  $("howto-prev")?.addEventListener("click", () => clickOverlay(instructionClip()?.prevButton));
+  $("howto-skip")?.addEventListener("click", () => clickOverlay(instructionClip()?.skipButton));
+  $("howto-back")?.addEventListener("click", () => clickOverlay(instructionClip()?.backButton));
+  $("howto-start")?.addEventListener("click", () => clickOverlay(instructionClip()?.startButton));
+  $("pause-return")?.addEventListener("click", () => clickPauseButton("returnToGame"));
+  $("pause-sound")?.addEventListener("click", () => clickPauseButton("toggleSound"));
+  $("pause-quit")?.addEventListener("click", () => clickPauseButton("quitToMenu"));
   void (async () => {
     const theme = await bootThemes(currentTheme());
     setCurrentThemeId(theme);

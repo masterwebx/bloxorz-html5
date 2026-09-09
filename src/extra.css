@@ -168,6 +168,79 @@ body.has-theme-media #canvas {
 	text-shadow: 0 0 0.4cqh #c45a18;
 }
 
+#pause-time,
+#pause-stage,
+#pause-tries {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	column-gap: 0.7em;
+	align-items: baseline;
+}
+
+#pause-stats .val {
+	letter-spacing: 0.14em;
+	font-weight: 700;
+}
+
+#howto-nav,
+#pause-nav {
+	position: absolute;
+	inset: 0;
+	z-index: 15;
+	pointer-events: none;
+}
+
+#howto-nav button,
+#pause-nav button {
+	pointer-events: auto;
+	position: absolute;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0.15em 0.2em;
+	border: 0;
+	background: transparent;
+	color: #fff;
+	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
+	text-shadow: 0 0 0.4cqh #ff4a12, 0 0 0.8cqh #c43000;
+	white-space: nowrap;
+	cursor: pointer;
+	text-align: center;
+	overflow: visible;
+}
+
+#howto-nav button {
+	width: auto;
+	height: auto;
+	transform: translate(-50%, -50%);
+}
+
+#howto-nav button.is-focus,
+#pause-nav button.is-focus {
+	text-shadow: 0 0 0.5cqh #fff, 0 0 1cqh #ff6a18;
+}
+
+#howto-back { left: 56.4%; top: 90.1%; }
+#howto-skip { left: 79.5%; top: 90.1%; }
+#howto-prev { left: 85.6%; top: 90.1%; }
+#howto-next { left: 97%; top: 90.1%; }
+#howto-start { left: 97%; top: 90.1%; }
+
+#pause-return { left: 3.6%; top: 42.5%; width: auto; height: auto; text-align: left; }
+#pause-sound { left: 3.6%; top: 49.5%; width: auto; height: auto; text-align: left; }
+#pause-quit { left: 3.6%; top: 56.5%; width: auto; height: auto; text-align: left; }
+
+#play-select {
+	position: absolute;
+	z-index: 14;
+	margin: 0;
+	pointer-events: none;
+	transform: translate(-50%, -100%);
+	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
+	color: #fff;
+	text-shadow: 0 0 0.4cqh #ff4a12, 0 0 0.8cqh #c43000;
+	letter-spacing: 0.12em;
+}
+
 #hud-theme-select,
 #hud-locale-select,
 #hud-theme-upload-btn,
@@ -281,7 +354,10 @@ body.has-theme-media #canvas {
 #stage-card[hidden],
 #howto-copy[hidden],
 #howto-page[hidden],
+#howto-nav[hidden],
 #pause-stats[hidden],
+#pause-nav[hidden],
+#play-select[hidden],
 #theme-media[hidden] {
 	display: none !important;
 }
