@@ -91,9 +91,15 @@ export async function loadExtraLocales(): Promise<void> {
 
 const RTL = new Set(["ar", "he", "fa", "ur"]);
 
+/** English Classic keeps the original bitmap marks. Every other language uses HD type. */
+export function usesHdType(id = current): boolean {
+  return id !== "en-classic";
+}
+
 export function applyDocumentLocale(id = current): void {
   if (typeof document === "undefined") return;
   const base = id.split("-")[0] ?? id;
   document.documentElement.lang = id === "en-classic" ? "en" : id;
   document.documentElement.dir = RTL.has(base) ? "rtl" : "ltr";
+  document.body?.classList.toggle("is-hd-type", usesHdType(id));
 }

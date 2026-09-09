@@ -26,6 +26,21 @@ body.has-theme-media #canvas {
 	color: #000;
 }
 
+#play-chrome,
+#play-menu,
+#play-pass,
+#play-moves,
+#play-pass-lab,
+#play-moves-lab,
+#play-pass-val,
+#play-moves-val {
+	text-shadow:
+		0 0 1px #fff,
+		0 0 0.45cqh #fff,
+		0 0 1.1cqh #ffc070,
+		0 0 2cqh #ff6a18;
+}
+
 #play-menu {
 	pointer-events: auto;
 	box-sizing: border-box;
@@ -42,6 +57,11 @@ body.has-theme-media #canvas {
 	background: transparent;
 	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
 	color: #000;
+	text-shadow:
+		0 0 1px #fff,
+		0 0 0.45cqh #fff,
+		0 0 1.1cqh #ffc070,
+		0 0 2cqh #ff6a18;
 	letter-spacing: 0;
 	text-align: left;
 	white-space: nowrap;

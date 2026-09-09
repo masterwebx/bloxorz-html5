@@ -62,7 +62,7 @@ import {
   type Action,
   type ThemeId,
 } from "./settings";
-import { applyDocumentLocale, bootLocales, listLocales, loadExtraLocales, localeId, setLocale, t } from "./i18n";
+import { applyDocumentLocale, bootLocales, listLocales, loadExtraLocales, localeId, setLocale, t, usesHdType } from "./i18n";
 import { LOCALE_TABLE } from "./locale.gen";
 import {
   atlasUrlFor,
@@ -806,46 +806,92 @@ function applyDomCopy(): void {
   if (localeBtn) localeBtn.setAttribute("aria-label", t("settings.language"));
 }
 
-function hideBitmapPlayText(): void {
+type BitmapMark = { alpha?: number; visible?: boolean; children?: { alpha?: number }[] };
+
+function playBitmapMarks(): BitmapMark[] {
   const bg = window.stage?.bloxWorld?.background as
     | {
-        digit1?: { alpha?: number };
-        digit2?: { alpha?: number };
-        digit3?: { alpha?: number };
-        digit4?: { alpha?: number };
-        digit5?: { alpha?: number };
-        digit6?: { alpha?: number };
-        digit1a?: { alpha?: number };
-        digit2a?: { alpha?: number };
-        digit3a?: { alpha?: number };
-        digit4a?: { alpha?: number };
-        digit5a?: { alpha?: number };
-        digit6a?: { alpha?: number };
-        instance_1?: { alpha?: number };
-        menuButton?: { alpha?: number };
+        digit1?: BitmapMark;
+        digit2?: BitmapMark;
+        digit3?: BitmapMark;
+        digit4?: BitmapMark;
+        digit5?: BitmapMark;
+        digit6?: BitmapMark;
+        digit1a?: BitmapMark;
+        digit2a?: BitmapMark;
+        digit3a?: BitmapMark;
+        digit4a?: BitmapMark;
+        digit5a?: BitmapMark;
+        digit6a?: BitmapMark;
+        instance_1?: BitmapMark;
+        menuButton?: BitmapMark;
       }
     | undefined;
-  if (!bg) return;
-  for (const key of ["digit1", "digit2", "digit3", "digit4", "digit5", "digit6", "digit1a", "digit2a", "digit3a", "digit4a", "digit5a", "digit6a"] as const) {
-    if (bg[key]) bg[key]!.alpha = 0;
+  if (!bg) return [];
+  return [
+    bg.digit1,
+    bg.digit2,
+    bg.digit3,
+    bg.digit4,
+    bg.digit5,
+    bg.digit6,
+    bg.digit1a,
+    bg.digit2a,
+    bg.digit3a,
+    bg.digit4a,
+    bg.digit5a,
+    bg.digit6a,
+    bg.instance_1,
+    bg.menuButton,
+  ].filter((mark): mark is BitmapMark => !!mark);
+}
+
+function setMarkAlpha(mark: BitmapMark | undefined, alpha: number, cascade = false): void {
+  if (!mark) return;
+  mark.alpha = alpha;
+  if (!cascade) return;
+  for (const child of mark.children ?? []) {
+    if (alpha === 0 || child.alpha === 0) child.alpha = alpha;
   }
-  if (bg.instance_1) bg.instance_1.alpha = 0;
-  if (bg.menuButton) {
-    bg.menuButton.alpha = 0;
-    const kids = (bg.menuButton as { children?: { alpha?: number }[] }).children;
-    for (const child of kids ?? []) child.alpha = 0;
-  }
+}
+
+function setBitmapPlayText(show: boolean): void {
+  const alpha = show ? 1 : 0;
+  const marks = playBitmapMarks();
+  for (const mark of marks) setMarkAlpha(mark, alpha, false);
+  const bg = window.stage?.bloxWorld?.background as { menuButton?: BitmapMark } | undefined;
+  setMarkAlpha(bg?.menuButton, alpha, true);
+}
+
+function instructionTextMark(): BitmapMark | undefined {
+  return (window.exportRoot?.inst as { instance_4?: BitmapMark } | undefined)?.instance_4;
+}
+
+function setInstructionBitmaps(show: boolean): void {
+  setMarkAlpha(instructionTextMark(), show ? 1 : 0, true);
+}
+
+function vanillaTitleClip(): BitmapMark | undefined {
+  return window.exportRoot?.stagetitle as BitmapMark | undefined;
+}
+
+function setVanillaTitleVisible(on: boolean): void {
+  const title = vanillaTitleClip();
+  if (!title) return;
+  title.visible = on;
+  if (on && title.alpha === 0) title.alpha = 1;
 }
 
 function syncPlayChrome(on: boolean): void {
   const box = $("play-chrome");
   if (!box) return;
-  box.hidden = !on;
-  if (!on) {
+  const show = on && usesHdType();
+  box.hidden = !show;
+  setBitmapPlayText(!show);
+  if (!show) {
     lastPlayHudKey = "";
     return;
   }
-  hideBitmapPlayText();
   const world = window.stage?.bloxWorld as { moves?: number; background?: { menuButton?: { dispatchEvent?: (ev: unknown) => void } } } | undefined;
   const stageNo = window.stage?.levelNumber ?? 0;
   const moves = (world?.moves ?? 0) + (window.stage?.totalMoves ?? 0);
@@ -871,24 +917,15 @@ function syncPlayChrome(on: boolean): void {
   }
 }
 
-function hideInstructionBitmaps(): void {
-  const inst = window.exportRoot?.inst as {
-    instance_4?: { alpha?: number; visible?: boolean; children?: { alpha?: number }[] };
-  } | undefined;
-  const tween = inst?.instance_4;
-  if (!tween) return;
-  tween.alpha = 0;
-  for (const child of tween.children ?? []) child.alpha = 0;
-}
-
 function syncStageCard(on: boolean, title = ""): void {
   const box = $("stage-card");
   const lab = $("stage-card-text");
   if (!box) return;
-  box.hidden = !on;
-  if (lab && on) lab.textContent = title;
-  const clip = window.exportRoot?.stagetitle as { alpha?: number; visible?: boolean } | undefined;
-  if (clip && on) {
+  const show = on && usesHdType();
+  box.hidden = !show;
+  if (lab && show) lab.textContent = title;
+  const clip = vanillaTitleClip();
+  if (clip && show) {
     clip.alpha = 0;
     clip.visible = false;
   }
@@ -898,12 +935,14 @@ function syncHowto(on: boolean): void {
   const copy = $("howto-copy");
   const page = $("howto-page");
   if (!copy || !page) return;
-  if (!on) {
+  const show = on && usesHdType();
+  if (!show) {
     copy.hidden = true;
     page.hidden = true;
+    setInstructionBitmaps(true);
     return;
   }
-  hideInstructionBitmaps();
+  setInstructionBitmaps(false);
   const frame = instructionClip()?.currentFrame ?? 0;
   const slide = howtoSlide(frame);
   copy.hidden = false;
@@ -915,14 +954,17 @@ function syncHowto(on: boolean): void {
 function syncPauseStats(on: boolean): void {
   const box = $("pause-stats");
   if (!box) return;
-  box.hidden = !on;
+  const show = on && usesHdType();
+  box.hidden = !show;
   const stats = pauseMenuClip()?.stats as
     | { instance?: { alpha?: number }; instance_1?: { alpha?: number }; instance_4?: { alpha?: number } }
     | undefined;
-  if (!on || !stats) return;
-  if (stats.instance) stats.instance.alpha = 0;
-  if (stats.instance_1) stats.instance_1.alpha = 0;
-  if (stats.instance_4) stats.instance_4.alpha = 0;
+  if (!stats) return;
+  const alpha = show ? 0 : 1;
+  if (stats.instance) stats.instance.alpha = alpha;
+  if (stats.instance_1) stats.instance_1.alpha = alpha;
+  if (stats.instance_4) stats.instance_4.alpha = alpha;
+  if (!show) return;
   const timeLab = $("pause-time")?.querySelector(".lab");
   const stageLab = $("pause-stage")?.querySelector(".lab");
   const tryLab = $("pause-tries")?.querySelector(".lab");
@@ -2612,11 +2654,6 @@ function titleCardCopy(): { title: string; subtitle: string } | null {
   };
 }
 
-function setVanillaTitleVisible(on: boolean): void {
-  const title = window.exportRoot?.stagetitle as { visible?: boolean } | undefined;
-  if (title) title.visible = on;
-}
-
 function syncLetterbox(on: boolean): void {
   const st = window.stage;
   const root = window.exportRoot as
@@ -2801,13 +2838,27 @@ function cacheStaticWorldTiles(): void {
 
 function syncHelpText(): void {
   const ht = window.stage?.bloxWorld?.helpText;
+  const gc = window.stage?.gameContainer as {
+    children?: { buttons?: unknown; menuButton?: unknown; roll?: unknown; totalFrames?: number; visible?: boolean; alpha?: number }[];
+  } | undefined;
+  if (!usesHdType()) {
+    if (ht && ht.visible === false) {
+      ht.visible = true;
+      ht.alpha = 1;
+    }
+    for (const child of gc?.children ?? []) {
+      if (child.buttons || child.menuButton || child.roll) continue;
+      if (typeof child.totalFrames === "number" && child.totalFrames >= 40 && child.totalFrames <= 52 && child.visible === false) {
+        child.visible = true;
+        child.alpha = 1;
+      }
+    }
+    return;
+  }
   if (ht) {
     ht.alpha = 0;
     ht.visible = false;
   }
-  const gc = window.stage?.gameContainer as {
-    children?: { buttons?: unknown; menuButton?: unknown; roll?: unknown; totalFrames?: number; visible?: boolean; alpha?: number }[];
-  } | undefined;
   for (const child of gc?.children ?? []) {
     if (child.buttons || child.menuButton || child.roll) continue;
     if (typeof child.totalFrames === "number" && child.totalFrames >= 40 && child.totalFrames <= 52) {
@@ -3522,9 +3573,13 @@ function syncOverlay(): void {
           lastHudPaint = key;
           hud?.drawTitleCard(card.title, card.subtitle);
         }
-      } else {
+      } else if (usesHdType()) {
         const n = padStage(window.stage?.levelNumber ?? 1);
         syncStageCard(true, t("play.stageCard", { n }));
+        if (hud?.root.visible) hud.setVisible(false);
+      } else {
+        syncStageCard(false);
+        setVanillaTitleVisible(true);
         if (hud?.root.visible) hud.setVisible(false);
       }
     } else {

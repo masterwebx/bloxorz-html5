@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootLocales, detectLocale, listLocales, setLocale, t } from "./i18n";
+import { bootLocales, detectLocale, listLocales, setLocale, t, usesHdType } from "./i18n";
 import { LOCALE_TABLE } from "./locale.gen";
 
 describe("i18n", () => {
@@ -36,5 +36,12 @@ describe("i18n", () => {
     setLocale("es");
     expect(t("play.stageCard", { n: "01" })).toBe("FASE 01");
     expect(t("howto.0")).toContain("33");
+  });
+
+  it("keeps English Classic on bitmap marks and English on HD type", () => {
+    bootLocales(LOCALE_TABLE, "en-classic");
+    expect(usesHdType("en-classic")).toBe(false);
+    expect(usesHdType("en")).toBe(true);
+    expect(usesHdType("es")).toBe(true);
   });
 });
