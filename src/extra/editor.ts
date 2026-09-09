@@ -6,14 +6,14 @@ export const EDITOR_TOOLS = [
   { id: "erase", label: "Erase", ch: " " },
   { id: "stone", label: "Stone", ch: "b" },
   { id: "exit", label: "Exit", ch: "e" },
-  { id: "soft", label: "Soft Sw.", ch: "s" },
-  { id: "heavy", label: "Heavy Sw.", ch: "h" },
+  { id: "soft", label: "Soft Switch", ch: "s" },
+  { id: "heavy", label: "Heavy Switch", ch: "h" },
   { id: "fragile", label: "Fragile", ch: "f" },
   { id: "split", label: "Split", ch: "v" },
   { id: "bridgeL", label: "Bridge L", ch: "l" },
   { id: "bridgeR", label: "Bridge R", ch: "r" },
   { id: "spawn", label: "Spawn", ch: null },
-  { id: "link", label: "Link Sw.", ch: null },
+  { id: "link", label: "Link Switch", ch: null },
 ] as const;
 
 export type EditorToolId = (typeof EDITOR_TOOLS)[number]["id"];
@@ -168,7 +168,7 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
     }
     setTile(def, x, y, tool.ch);
     if (tool.ch === " ") state.hint = "Erased.";
-    else if (tool.ch === "s" || tool.ch === "h") state.hint = "Switch placed. Use Link Sw. to attach a bridge.";
+    else if (tool.ch === "s" || tool.ch === "h") state.hint = "Switch placed. Use Link Switch to attach a bridge.";
     else if (tool.ch === "l" || tool.ch === "r") state.hint = "Bridge starts OFF. Click again to start ON.";
     else state.hint = "";
   }

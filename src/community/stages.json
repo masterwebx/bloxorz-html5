@@ -1,0 +1,40 @@
+{
+  "updated": "2026-09-08",
+  "howToAdd": "Append an object to stages. Use name, author, and either a BX1. share code, or tiles (10 strings of 15 characters) plus spawn [x,y]. Optional switches and splits match the editor format.",
+  "stages": [
+    {
+      "name": "Little Path",
+      "author": "Community",
+      "spawn": [2, 4],
+      "tiles": [
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "  bbbbbbbe    ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               "
+      ]
+    },
+    {
+      "name": "The Bend",
+      "author": "Community",
+      "spawn": [2, 3],
+      "tiles": [
+        "               ",
+        "               ",
+        "               ",
+        "  bbb          ",
+        "    b          ",
+        "    bbbbe      ",
+        "               ",
+        "               ",
+        "               ",
+        "               "
+      ]
+    }
+  ]
+}

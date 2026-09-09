@@ -1,4 +1,6 @@
-import { playMenuWhoosh, playUiClick, playUiLatch } from "./audio";
+import { playHomeWhoosh, playUiClick, playUiLatch } from "./audio";
+import { EDITOR_TOOLS } from "./editor";
+import { DEFAULT_ISO, TILE_FACE, TOOL_CH, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
 import { currentTheme, type ThemeId } from "./settings";
 
 declare const createjs: {
@@ -53,6 +55,9 @@ type HudShape = HudNode & {
     beginFill: (c: string) => HudShape["graphics"];
     beginStroke: (c: string) => HudShape["graphics"];
     setStrokeStyle: (n: number) => HudShape["graphics"];
+    moveTo: (x: number, y: number) => HudShape["graphics"];
+    lineTo: (x: number, y: number) => HudShape["graphics"];
+    endFill: () => HudShape["graphics"];
     drawRect: (x: number, y: number, w: number, h: number, r?: number) => HudShape["graphics"];
     drawCircle: (x: number, y: number, r: number) => HudShape["graphics"];
     clear: () => HudShape["graphics"];
@@ -163,20 +168,6 @@ const BILLBOARD: Record<string, string[]> = {
   " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
   "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
   ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
-};
-
-const TILE_FILL: Record<string, string> = {
-  " ": "#14110f",
-  b: "#c45a18",
-  e: "#0d0d0d",
-  s: "#3d7ad9",
-  h: "#8b3ad9",
-  f: "#d9a13a",
-  v: "#2f9d7a",
-  l: "#7a3a18",
-  k: "#a05020",
-  r: "#5a2a10",
-  q: "#804018",
 };
 
 function glow(node: HudText, hot: boolean, theme: ThemePaint): void {
@@ -299,6 +290,7 @@ export function drawBillboard(container: HudNode, label: string, x: number, y: n
 export class ExtraHud {
   readonly root: HudNode;
   private layer: HudNode;
+  private board: HudNode | null = null;
   private mascot: HudNode | null = null;
   onAction: (act: string) => void = () => undefined;
   makeMascot: (() => HudNode | null) | null = null;
@@ -369,7 +361,7 @@ export class ExtraHud {
       rows.push(row);
     });
     if (animate) {
-      playMenuWhoosh();
+      playHomeWhoosh();
       rows.forEach((row, i) => {
         const tw = createjs.Tween?.get(row, { override: true });
         if (tw) tw.wait(i * 35).to({ x: 40 }, 320, createjs.Ease?.quadOut);
@@ -398,7 +390,6 @@ export class ExtraHud {
     this.add(text("Bloxorz — Damien Clarke / DX Interactive, 2007.", 40, 80, 11, theme.muted));
     this.add(text("Playfield: Coolmath Animate HTML5 export.", 40, 102, 11, theme.muted));
     this.add(text("Timer & themes — Nathan Spencer.", 40, 124, 11, theme.muted));
-    this.add(text("The block still rolls in their engine.", 40, 146, 11, theme.muted));
   }
 
   drawLoadPasscode(error: string): void {
@@ -431,6 +422,7 @@ export class ExtraHud {
   drawSettings(opts: {
     rumble: boolean;
     showTimer: boolean;
+    themeBg: boolean;
     music: number;
     sfx: number;
     theme: string;
@@ -452,13 +444,16 @@ export class ExtraHud {
     this.add(
       hitRow(opts.showTimer ? "> Speedrun timer  On" : "  Speedrun timer  Off", 40, 166, 12, () => this.onAction("toggle-timer"), false, 240),
     );
-    this.add(text("Theme", 40, 192, 12));
+    this.add(text("Theme", 40, 188, 12));
     (["original", "gray", "holiday"] as const).forEach((th, i) => {
       const mark = opts.theme === th ? "> " : "  ";
-      this.add(hitRow(mark + th, 110 + i * 110, 192, 12, () => this.onAction("theme:" + th), false, 100));
+      this.add(hitRow(mark + th, 110 + i * 110, 188, 12, () => this.onAction("theme:" + th), false, 100));
     });
-    this.add(hitRow("Remap controls", 40, 220, 12, () => this.onAction("remap"), false, 180));
-    this.add(hitRow("Save", 40, 250, 13, () => this.onAction("save-name"), false, 80));
+    this.add(
+      hitRow(opts.themeBg ? "> Theme background  On" : "  Theme background  Off", 40, 212, 12, () => this.onAction("toggle-theme-bg"), false, 260),
+    );
+    this.add(hitRow("Remap controls", 40, 234, 12, () => this.onAction("remap"), false, 180));
+    this.add(hitRow("Save", 40, 256, 13, () => this.onAction("save-name"), false, 80));
   }
 
   drawRemap(rows: { id: string; label: string; bind: string }[], waiting: string | null): void {
@@ -476,15 +471,28 @@ export class ExtraHud {
     });
   }
 
-  drawFinish(moves: number, falls: number): void {
+  drawFinish(opts: {
+    moves: number;
+    falls: number;
+    fails: number;
+    showStats: boolean;
+    rows: { title: string; meta: string }[];
+  }): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(text("Congratulations", 275, 40, 22, theme.ink, "center"));
-    this.add(text("You cleared the run.", 275, 80, 12, theme.muted, "center"));
-    this.add(text("Moves  " + moves, 275, 120, 13, theme.ink, "center"));
-    this.add(text("Falls  " + falls, 275, 142, 13, theme.ink, "center"));
-    this.add(hitRow("Menu", 230, 190, 14, () => this.onAction("back"), false, 90));
+    this.add(text("Congratulations", 275, 28, 20, theme.ink, "center"));
+    this.add(text("You cleared the run.", 275, 56, 12, theme.muted, "center"));
+    this.add(text("Moves  " + opts.moves + "    Falls  " + opts.falls + "    Attempts  " + opts.fails, 275, 82, 12, theme.ink, "center"));
+    this.add(hitRow(opts.showStats ? "> Hide Stats" : "  Show Stats", 40, 104, 12, () => this.onAction("toggle-stats"), false, 160));
+    this.add(hitRow("Menu", 230, 104, 12, () => this.onAction("back"), false, 90));
+    if (opts.showStats) {
+      if (!opts.rows.length) this.add(text("No per-stage times recorded.", 40, 140, 11, theme.muted));
+      opts.rows.slice(0, 6).forEach((row, i) => {
+        this.add(text(row.title, 40, 136 + i * 22, 11));
+        this.add(text(row.meta, 320, 136 + i * 22, 11, theme.muted));
+      });
+    }
   }
 
   drawPuzzles(diff: string, count: number, dailyMeta: string): void {
@@ -493,7 +501,7 @@ export class ExtraHud {
     const theme = paint();
     this.add(hitRow("Back", 24, 16, 12, () => this.onAction("back"), false, 80));
     this.add(text("Puzzles", 275, 28, 20, theme.ink, "center"));
-    this.add(text("Generated here. Played in their engine.", 40, 58, 11, theme.muted));
+    this.add(text("Daily is today's UTC date plus difficulty. Seeded rebuilds the same run.", 40, 58, 11, theme.muted));
     (["easy", "medium", "hard", "insane"] as const).forEach((d, i) => {
       const mark = d === diff ? "> " : "  ";
       this.add(hitRow(mark + d, 40 + i * 120, 90, 12, () => this.onAction("diff:" + d), false, 100));
@@ -504,22 +512,28 @@ export class ExtraHud {
       const mark = n === count ? "> " : "  ";
       this.add(hitRow(mark + n, 40 + i * 70, 168, 12, () => this.onAction("len:" + n), false, 50));
     });
-    this.add(fieldBox(40, 198, 240));
-    this.add(hitRow("Start Seeded Run", 40, 230, 13, () => this.onAction("puzzle-run"), false, 180));
+    this.add(hitRow("Start Seeded Run", 40, 210, 13, () => this.onAction("puzzle-run"), false, 180));
+    this.add(text("Opens a seed prompt. Same seed always rebuilds the same maps.", 40, 236, 10, theme.muted));
   }
 
-  drawHistory(rows: { title: string; meta: string; replay?: () => void }[]): void {
+  drawHistory(opts: {
+    rows: { title: string; meta: string; replay?: () => void }[];
+    seeGhosts: boolean;
+  }): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
     this.add(hitRow("Back", 24, 16, 12, () => this.onAction("back"), false, 80));
-    this.add(text("History", 275, 28, 20, theme.ink, "center"));
-    if (!rows.length) {
-      this.add(text("No runs yet.", 40, 80, 12, theme.muted));
+    this.add(text("History", 275, 16, 18, theme.ink, "center"));
+    this.add(
+      hitRow(opts.seeGhosts ? "> See ghosts  On" : "  See ghosts  Off", 320, 16, 11, () => this.onAction("toggle-ghosts"), false, 180),
+    );
+    if (!opts.rows.length) {
+      this.add(text("No runs yet. Finish campaign stages to record routes here.", 40, 80, 12, theme.muted));
       return;
     }
-    rows.slice(0, 6).forEach((row, i) => {
-      const y = 62 + i * 36;
+    opts.rows.slice(0, 6).forEach((row, i) => {
+      const y = 52 + i * 36;
       this.add(text(row.title, 40, y, 11));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
       if (row.replay) this.add(hitRow("Replay", 420, y, 11, row.replay, false, 80));
@@ -534,88 +548,135 @@ export class ExtraHud {
     hint: string;
     seed: string;
     canSave: boolean;
+    canUndo: boolean;
+    canRedo: boolean;
     marks: { x: number; y: number; label: string }[];
   }): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 16, 8, 12, () => this.onAction("back"), false, 70));
-    this.add(text("Stage Creator", 110, 10, 16));
-    this.add(text(opts.badge, 330, 14, 11, theme.green));
-    this.add(hitRow("Test", 430, 8, 12, () => this.onAction("creator-test"), false, 60));
+    this.add(hitRow("Back", 10, 6, 12, () => this.onAction("back"), false, 56));
+    this.add(text("Stage Creator", 72, 8, 15));
+    this.add(text(opts.badge, 250, 10, 11, theme.green));
+    this.add(hitRow("Test", 490, 6, 12, () => this.onAction("creator-test"), false, 50));
 
-    const cell = 16;
-    const ox = 18;
-    const oy = 48;
-    const grid = new createjs.Shape();
-    grid.mouseEnabled = false;
-    for (let y = 0; y < 10; y++) {
-      for (let x = 0; x < 15; x++) {
-        const ch = opts.tiles[y][x] ?? " ";
-        const px = ox + x * cell;
-        const py = oy + y * cell;
-        grid.graphics.beginFill(TILE_FILL[ch] || "#14110f").drawRect(px, py, cell - 1, cell - 1);
-        if (ch === "e") grid.graphics.beginStroke("#f4d36a").setStrokeStyle(1).drawRect(px + 0.5, py + 0.5, cell - 2, cell - 2);
-      }
-    }
-    this.add(grid);
+    this.board = new createjs.Container();
+    this.refreshCreatorBoard(opts);
+    this.add(this.board);
 
+    const m = DEFAULT_ISO;
     const hit = new createjs.Shape();
-    hit.graphics.beginFill("rgba(0,0,0,0.01)").drawRect(ox, oy, 15 * cell, 10 * cell);
+    hit.graphics.beginFill("rgba(0,0,0,0.01)").drawRect(8, 28, 360, 220);
     hit.mouseEnabled = true;
     hit.cursor = "pointer";
-    hit.addEventListener("click", (ev?: unknown) => {
+    const cellOf = (ev?: unknown): { x: number; y: number } | null => {
       const e = ev as { localX?: number; localY?: number };
-      if (typeof e?.localX !== "number" || typeof e?.localY !== "number") return;
-      const cx = Math.floor((e.localX - ox) / cell);
-      const cy = Math.floor((e.localY - oy) / cell);
-      if (cx < 0 || cy < 0 || cx >= 15 || cy >= 10) return;
-      this.onAction("paint:" + cx + ":" + cy);
+      if (typeof e?.localX !== "number" || typeof e?.localY !== "number") return null;
+      return pickIsoCell(e.localX, e.localY, m);
+    };
+    hit.addEventListener("mousedown", (ev?: unknown) => {
+      const c = cellOf(ev);
+      if (c) this.onAction("paint:" + c.x + ":" + c.y + ":start");
     });
+    hit.addEventListener("pressmove", (ev?: unknown) => {
+      const c = cellOf(ev);
+      if (c) this.onAction("paint:" + c.x + ":" + c.y + ":drag");
+    });
+    hit.addEventListener("pressup", () => this.onAction("paint-end"));
     this.add(hit);
 
-    for (let y = 0; y < 10; y++) {
-      for (let x = 0; x < 15; x++) {
-        if (opts.spawn[0] === x && opts.spawn[1] === y) {
-          this.add(text("B", ox + x * cell + 3, oy + y * cell + 2, 9, "#fff"));
-        }
-        const mark = opts.marks.find((m) => m.x === x && m.y === y);
-        if (mark) this.add(text(mark.label, ox + x * cell + 3, oy + y * cell + 2, 9, "#fff"));
-      }
-    }
-
-    const tools = ["erase", "stone", "exit", "soft", "heavy", "fragile", "split", "bridgeL", "bridgeR", "spawn", "link"];
-    const labels: Record<string, string> = {
-      erase: "Erase",
-      stone: "Stone",
-      exit: "Exit",
-      soft: "Soft Sw.",
-      heavy: "Heavy Sw.",
-      fragile: "Fragile",
-      split: "Split",
-      bridgeL: "Bridge L",
-      bridgeR: "Bridge R",
-      spawn: "Spawn",
-      link: "Link Sw.",
-    };
-    tools.forEach((id, i) => {
-      const mark = opts.tool === id ? "> " : "  ";
-      this.add(hitRow(mark + labels[id], 280, 48 + i * 16, 12, () => this.onAction("tool:" + id), false, 120));
+    EDITOR_TOOLS.forEach((tool, i) => {
+      const y = 30 + i * 18;
+      const mark = opts.tool === tool.id ? "> " : "  ";
+      const icon = toolIcon(tool.id, 372, y + 3);
+      this.add(icon);
+      this.add(hitRow(mark + tool.label, 392, y, 11, () => this.onAction("tool:" + tool.id), false, 150));
     });
 
-    this.add(text(opts.hint, 18, 216, 10, theme.muted));
-    this.add(hitRow("New", 18, 236, 12, () => this.onAction("creator-new"), false, 50));
-    this.add(hitRow("Save", 70, 236, 12, () => this.onAction("creator-save"), !opts.canSave, 50));
-    this.add(text(opts.seed, 140, 238, 10, theme.muted));
-    this.add(fieldBox(18, 256, 250, 20));
-    this.add(hitRow("Enter Code", 280, 256, 11, () => this.onAction("creator-load"), false, 110));
+    if (opts.hint) this.add(text(opts.hint, 10, 248, 10, theme.muted));
+    this.add(hitRow("New", 10, 266, 11, () => this.onAction("creator-new"), false, 40));
+    this.add(hitRow("Clear", 56, 266, 11, () => this.onAction("creator-clear"), false, 48));
+    this.add(hitRow("Undo", 112, 266, 11, () => this.onAction("creator-undo"), !opts.canUndo, 44));
+    this.add(hitRow("Redo", 164, 266, 11, () => this.onAction("creator-redo"), !opts.canRedo, 44));
+    this.add(hitRow("Save", 216, 266, 11, () => this.onAction("creator-save"), !opts.canSave, 44));
+    this.add(hitRow("Copy Seed", 268, 266, 11, () => this.onAction("creator-copy"), false, 88));
+    this.add(hitRow("Enter Code", 364, 266, 11, () => this.onAction("creator-load"), false, 96));
+    this.add(hitRow("Online", 468, 266, 11, () => this.onAction("online"), false, 64));
   }
 
-  drawInGameDev(): void {
+  refreshCreatorBoard(opts: {
+    tiles: string[];
+    spawn: [number, number];
+    marks: { x: number; y: number; label: string }[];
+  }): void {
+    if (!this.board) return;
+    this.board.removeAllChildren();
+    const m = DEFAULT_ISO;
+    const mesh = new createjs.Shape();
+    mesh.mouseEnabled = false;
+    for (let y = 0; y < 10; y++) {
+      for (let x = 14; x >= 0; x--) {
+        drawIsoTile(mesh, x, y, opts.tiles[y][x] ?? " ", m);
+      }
+    }
+    this.board.addChild(mesh);
+    const spawn = isoCenter(opts.spawn[0], opts.spawn[1], m);
+    const block = new createjs.Shape();
+    block.graphics.beginFill("#ff7a18").drawRect(-5, -14, 10, 16);
+    block.x = spawn.x;
+    block.y = spawn.y;
+    block.mouseEnabled = false;
+    this.board.addChild(block);
+    for (const mark of opts.marks) {
+      const p = isoCenter(mark.x, mark.y, m);
+      this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
+    }
+  }
+
+  drawOnline(rows: { title: string; meta: string; play: () => void }[], status: string): void {
     this.clear();
     this.hideMascot();
-    // Coolmath Menu sits ~y=12; stack our DEV tools under it (not on top of it).
+    const theme = paint();
+    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("creator"), false, 80));
+    this.add(text("Online Stages", 275, 18, 18, theme.ink, "center"));
+    if (status) this.add(text(status, 40, 80, 12, theme.muted));
+    rows.slice(0, 7).forEach((row, i) => {
+      const y = 54 + i * 30;
+      this.add(text(row.title, 40, y, 12));
+      this.add(text(row.meta, 40, y + 14, 10, theme.muted));
+      this.add(hitRow("Play", 430, y, 11, row.play, false, 70));
+    });
+  }
+
+  drawInGameDev(banner = ""): void {
+    this.clear();
+    this.hideMascot();
     this.add(hitRow("Beat stage for me", 12, 30, 11, () => this.onAction("dev-beat"), false, 160));
     this.add(hitRow("Dev menu", 12, 50, 11, () => this.onAction("dev-menu"), false, 120));
+    if (banner) this.add(text(banner, 12, 72, 11, paint().green));
   }
+}
+
+function toolIcon(id: string, x: number, y: number): HudShape {
+  const ch = TOOL_CH[id] || "b";
+  const face = TILE_FACE[ch] || TILE_FACE.b;
+  const s = new createjs.Shape();
+  s.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(1).drawRect(x, y, 12, 10);
+  s.mouseEnabled = false;
+  return s;
+}
+
+function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMetrics): void {
+  const face = TILE_FACE[ch] || TILE_FACE[" "];
+  const a = isoPt(x, y, m);
+  const b = isoPt(x + 1, y, m);
+  const c = isoPt(x + 1, y + 1, m);
+  const d = isoPt(x, y + 1, m);
+  const h = ch === " " ? 0 : 5 * m.s;
+  if (h > 0) {
+    shape.graphics.beginFill(face.left).moveTo(a.x, a.y).lineTo(d.x, d.y).lineTo(d.x, d.y + h).lineTo(a.x, a.y + h).endFill();
+    shape.graphics.beginFill(face.right).moveTo(d.x, d.y).lineTo(c.x, c.y).lineTo(c.x, c.y + h).lineTo(d.x, d.y + h).endFill();
+  }
+  shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(0.8)
+    .moveTo(a.x, a.y - h).lineTo(b.x, b.y - h).lineTo(c.x, c.y - h).lineTo(d.x, d.y - h).lineTo(a.x, a.y - h).endFill();
 }

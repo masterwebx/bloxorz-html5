@@ -9,11 +9,12 @@ import {
   saveStage,
   stageId,
 } from "./customLevels";
-import { campaignDefs, defToCreateJs } from "./convert";
+import { campaignDefs, createJsToDef, defToCreateJs } from "./convert";
 import { dailySeed, difficultyLabel, generatePuzzle, generateRun, type Difficulty } from "./generate";
 import { actionFromCode, pollGamepad, pollMenuPad, rumble } from "./gamepad";
-import { applyVolumes, ensureMenuMusic, gateSoundPlay, stopMenuMusic, unlockAudio } from "./audio";
-import { loadRuns, pushGhost, saveRun, winningTape, type RunRecord, type TapeCmd } from "./history";
+import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, stopMenuMusic, unlockAudio } from "./audio";
+import { fetchOnlineStages } from "./community";
+import { loadRuns, loadSeeGhosts, pushGhost, saveRun, saveSeeGhosts, winningTape, type RunRecord, type TapeCmd } from "./history";
 import {
   ACTIONS,
   ACTION_LABEL,
@@ -44,6 +45,7 @@ type Screen =
   | "load"
   | "credits"
   | "finish"
+  | "online"
   | "auto";
 
 type PlaySession = {
@@ -132,6 +134,17 @@ let nameRead = false;
 let animateHome = false;
 /** Authored CreateJS fps (RAF-synced). Keep tick-based delays in sync. */
 const TICK_SCALE = 1;
+let undoStack: LevelDef[] = [];
+let redoStack: LevelDef[] = [];
+let lastPaintCell = "";
+let lastFinished: RunRecord | null = null;
+let showStats = false;
+let solvePending: WalkCmd[] | null = null;
+let solveArm = 0;
+let beatBanner = "";
+let onlineRows: { title: string; meta: string; play: () => void }[] = [];
+let onlineStatus = "";
+let modalKind: "code" | "seed" | null = null;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -181,6 +194,7 @@ function getName(): string {
 
 function setName(name: string): void {
   const next = name.trim().slice(0, NAME_MAX);
+  const wasDev = cachedDev;
   try {
     localStorage.setItem(NAME_KEY, next);
     const s = loadSettings();
@@ -189,6 +203,7 @@ function setName(name: string): void {
     cachedName = next;
     cachedDev = isDevName(next);
     nameRead = true;
+    if (cachedDev && !wasDev) playDevJingle();
   } catch {
     /* ignore */
   }
@@ -233,12 +248,20 @@ function parkExportRoot(park: boolean): void {
   }
 }
 
+function applyThemeBg(): void {
+  const on = loadSettings().themeBg;
+  document.body.classList.toggle("no-theme-bg", !on);
+  if (sky) sky.visible = sky.visible && on;
+}
+
 function showGameSky(on: boolean): void {
   ensureSky();
-  if (sky) sky.visible = on;
+  const bg = loadSettings().themeBg;
+  if (sky) sky.visible = on && bg;
   parkExportRoot(on);
   const box = window.stage?.gameContainer;
   if (box) box.visible = !on;
+  document.body.classList.toggle("no-theme-bg", !bg);
 }
 
 function syncSidePanel(show: boolean): void {
@@ -393,6 +416,7 @@ function hudKey(): string {
     getName(),
     String(s.rumble),
     String(s.showTimer),
+    String(s.themeBg),
     String(s.music),
     String(s.sfx),
     currentTheme(),
@@ -447,6 +471,7 @@ function paintHud(): void {
     hud.drawSettings({
       rumble: s.rumble,
       showTimer: s.showTimer,
+      themeBg: s.themeBg,
       music: s.music,
       sfx: s.sfx,
       theme: currentTheme(),
@@ -459,13 +484,22 @@ function paintHud(): void {
     );
   } else if (extraView === "finish") {
     const st = window.stage;
-    hud.drawFinish(st?.totalMoves ?? 0, st?.totalFalls ?? 0);
+    hud.drawFinish({
+      moves: lastFinished?.totalMoves ?? st?.totalMoves ?? 0,
+      falls: st?.totalFalls ?? 0,
+      fails: lastFinished?.fails ?? 0,
+      showStats,
+      rows: (lastFinished?.levels ?? []).map((lv) => ({
+        title: `Stage ${String(lv.stage).padStart(2, "0")}`,
+        meta: `${lv.moves} moves · ${lv.attempts} attempts`,
+      })),
+    });
   } else if (extraView === "puzzles") {
     hud.drawPuzzles(puzzleDiff, puzzleCount, dailySeed(new Date(), puzzleDiff) + " · " + difficultyLabel(puzzleDiff));
-    placeHudInput(true, "7.3%", "66%", "43%", "Seed (optional)", "");
   } else if (extraView === "history") {
-    hud.drawHistory(
-      loadRuns()
+    hud.drawHistory({
+      seeGhosts: loadSeeGhosts(),
+      rows: loadRuns()
         .slice(0, 6)
         .map((rec) => {
           const lv = rec.levels.find((l) => winningTape(l));
@@ -478,13 +512,16 @@ function paintHud(): void {
                   const def = campaignDefs()[(lv.stage || 1) - 1];
                   if (def && cmds) {
                     startCustom([def], "history");
-                    enqueueSolve(cmds);
+                    solvePending = cmds;
+                    solveArm = 24;
                   }
                 }
               : undefined,
           };
         }),
-    );
+    });
+  } else if (extraView === "online") {
+    hud.drawOnline(onlineRows, onlineStatus);
   } else if (extraView === "creator") {
     const issue = isPlayable(draft);
     hud.drawCreator({
@@ -492,12 +529,13 @@ function paintHud(): void {
       spawn: draft.spawn,
       tool: paint.tool,
       badge: beatLabel,
-      hint: paint.hint || "Paint a 15x10 stage. Split is pad, then cube A, then cube B.",
+      hint: paint.hint,
       seed: stageId(draft),
       canSave: beaten && !issue,
+      canUndo: undoStack.length > 0,
+      canRedo: redoStack.length > 0,
       marks: splitMarks(draft),
     });
-    placeHudInput(true, "3.3%", "85.5%", "45%", "BXS- / BXS. / BX1. / name", hudInput()?.value || "");
   }
 }
 
@@ -576,6 +614,24 @@ function handleHudAction(act: string): void {
     saveSettings(s);
     markHudDirty();
     paintHud();
+  } else if (act === "toggle-theme-bg") {
+    const s = loadSettings();
+    s.themeBg = !s.themeBg;
+    saveSettings(s);
+    applyThemeBg();
+    showGameSky(true);
+    markHudDirty();
+    paintHud();
+  } else if (act === "toggle-stats") {
+    showStats = !showStats;
+    markHudDirty();
+    paintHud();
+  } else if (act === "toggle-ghosts") {
+    saveSeeGhosts(!loadSeeGhosts());
+    markHudDirty();
+    paintHud();
+  } else if (act === "online") {
+    openOnline();
   } else if (act.startsWith("music:")) {
     const s = loadSettings();
     s.music = Number(act.slice(6));
@@ -600,13 +656,29 @@ function handleHudAction(act: string): void {
   } else if (act === "creator-test") playDraft();
   else if (act === "creator-save") saveDraft();
   else if (act === "creator-new") {
+    pushUndo();
     draft = emptyDraft();
     beaten = false;
     paint = newPaintState();
     scheduleBeatCheck();
     markHudDirty();
     paintHud();
-  } else if (act === "creator-load") loadShare();
+  } else if (act === "creator-clear") {
+    pushUndo();
+    draft = emptyDraft();
+    draft.tiles = draft.tiles.map(() => "               ");
+    draft.switches = [];
+    draft.splits = [];
+    beaten = false;
+    paint = newPaintState();
+    paint.hint = "Cleared.";
+    scheduleBeatCheck();
+    markHudDirty();
+    paintHud();
+  } else if (act === "creator-undo") creatorUndo();
+  else if (act === "creator-redo") creatorRedo();
+  else if (act === "creator-copy") copySeed();
+  else if (act === "creator-load") openCodeModal();
   else if (act.startsWith("tool:")) {
     paint.tool = act.slice(5) as EditorToolId;
     paint.splitStep = 0;
@@ -616,8 +688,21 @@ function handleHudAction(act: string): void {
     paintHud();
   } else if (act.startsWith("paint:")) {
     const parts = act.split(":");
-    paintEditorCell(draft, Number(parts[1]), Number(parts[2]), paint);
+    const x = Number(parts[1]);
+    const y = Number(parts[2]);
+    const phase = parts[3] || "start";
+    const key = x + ":" + y;
+    if (phase === "start") {
+      pushUndo();
+      lastPaintCell = "";
+    }
+    if (key === lastPaintCell && phase === "drag") return;
+    lastPaintCell = key;
+    paintEditorCell(draft, x, y, paint);
     beaten = false;
+    hud?.refreshCreatorBoard({ tiles: draft.tiles, spawn: draft.spawn, marks: splitMarks(draft) });
+  } else if (act === "paint-end") {
+    lastPaintCell = "";
     scheduleBeatCheck();
     markHudDirty();
     paintHud();
@@ -634,18 +719,143 @@ function handleHudAction(act: string): void {
   } else if (act === "puzzle-daily") {
     const p = generatePuzzle(dailySeed(new Date(), puzzleDiff), puzzleDiff);
     startCustom([p.def], "puzzles", "Daily");
-  } else if (act === "puzzle-run") {
-    const seed = hudInput()?.value.trim() || `seed-${Date.now()}`;
+  } else if (act === "puzzle-run") openSeedModal();
+  else if (act === "dev-beat") beatCurrentStage();
+  else if (act === "dev-menu") {
+    returnToMenu();
+    openPanel("load");
+  }
+}
+
+function cloneDef(d: LevelDef): LevelDef {
+  return structuredClone(d);
+}
+
+function pushUndo(): void {
+  undoStack.push(cloneDef(draft));
+  if (undoStack.length > 80) undoStack.shift();
+  redoStack = [];
+}
+
+function creatorUndo(): void {
+  const prev = undoStack.pop();
+  if (!prev) return;
+  redoStack.push(cloneDef(draft));
+  draft = prev;
+  beaten = false;
+  scheduleBeatCheck();
+  markHudDirty();
+  paintHud();
+}
+
+function creatorRedo(): void {
+  const next = redoStack.pop();
+  if (!next) return;
+  undoStack.push(cloneDef(draft));
+  draft = next;
+  beaten = false;
+  scheduleBeatCheck();
+  markHudDirty();
+  paintHud();
+}
+
+function copySeed(): void {
+  const seed = encodeSeed(draft);
+  void navigator.clipboard?.writeText(seed).catch(() => undefined);
+  paint.hint = "Copied " + seed;
+  markHudDirty();
+  paintHud();
+}
+
+function modalBox(): HTMLElement | null {
+  return $("hud-modal");
+}
+
+function modalInput(): HTMLInputElement | null {
+  return $("hud-modal-input") as HTMLInputElement | null;
+}
+
+function openModal(kind: "code" | "seed", title: string, placeholder: string): void {
+  modalKind = kind;
+  const box = modalBox();
+  const titleEl = $("hud-modal-title");
+  const input = modalInput();
+  if (titleEl) titleEl.textContent = title;
+  if (input) {
+    input.placeholder = placeholder;
+    input.value = "";
+    input.maxLength = kind === "seed" ? 80 : 80;
+  }
+  box?.classList.add("is-open");
+  window.setTimeout(() => input?.focus(), 0);
+}
+
+function closeModal(): void {
+  modalKind = null;
+  modalBox()?.classList.remove("is-open");
+}
+
+function submitModal(): void {
+  const value = modalInput()?.value.trim() || "";
+  const kind = modalKind;
+  closeModal();
+  if (kind === "code") {
+    const def = parseShare(value, listSaved());
+    if (!def) {
+      paint.hint = "Could not read that code. Use BXS- / BXS. / BX1.";
+      markHudDirty();
+      paintHud();
+      return;
+    }
+    pushUndo();
+    draft = def;
+    beaten = false;
+    paint = newPaintState();
+    paint.hint = "Loaded share code.";
+    scheduleBeatCheck();
+    markHudDirty();
+    paintHud();
+    return;
+  }
+  if (kind === "seed") {
+    const seed = value || `seed-${Date.now()}`;
     startCustom(
       generateRun(seed, puzzleDiff, puzzleCount).map((p) => p.def),
       "puzzles",
       seed,
     );
-  } else if (act === "dev-beat") beatCurrentStage();
-  else if (act === "dev-menu") {
-    returnToMenu();
-    openPanel("load");
   }
+}
+
+function openCodeModal(): void {
+  openModal("code", "Enter stage code", "BXS- / BXS. / BX1.");
+}
+
+function openSeedModal(): void {
+  openModal("seed", "Seeded run", "Seed (optional)");
+}
+
+async function openOnline(): Promise<void> {
+  onlineStatus = "Loading community stages…";
+  onlineRows = [];
+  openPanel("online");
+  const rows = await fetchOnlineStages();
+  onlineStatus = rows.length ? "" : "No community stages found.";
+  onlineRows = rows.map((row) => ({
+    title: row.name,
+    meta: row.author + " · " + row.seed,
+    play: () => startCustom([structuredClone(row.def)], "online", row.name),
+  }));
+  markHudDirty();
+  paintHud();
+}
+
+function playDef(): LevelDef | null {
+  const n = window.stage?.levelNumber ?? 1;
+  if (playSession?.defs.length) return playSession.defs[n - 1] ?? null;
+  const raw = origGetLevels?.();
+  if (raw?.[n - 1]) return createJsToDef(raw[n - 1] as ReturnType<typeof defToCreateJs>, n - 1);
+  return campaignDefs()[n - 1] ?? null;
 }
 
 function showFinish(): void {
@@ -688,7 +898,9 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   if (stage) stage.levelNumber = levelNumber;
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
   syncSidePanel(!!session.classicRun && loadSettings().showTimer);
-  window.exportRoot?.gotoAndPlay?.("game");
+  const intro =
+    session.classicRun && session.kind === "campaign" && levelNumber === 1 ? "instructions" : "stagetitle";
+  window.exportRoot?.gotoAndPlay?.(intro);
 }
 
 function startCustom(defs: LevelDef[], returnTo: Screen, title?: string): void {
@@ -706,32 +918,55 @@ function cmdToCode(cmd: WalkCmd): string {
 
 function enqueueSolve(cmds: WalkCmd[]): void {
   solveQueue = cmds.slice();
-  solveHold = Math.round(12 * TICK_SCALE);
+  solveHold = Math.round(20 * TICK_SCALE);
 }
 
 function tickSolve(): void {
   const stage = window.stage;
-  if (!stage?.triggerKeyDown || currentLabel() !== "game") return;
+  if (currentLabel() !== "game") return;
+  if (solvePending && stage?.triggerKeyDown) {
+    if (solveArm > 0) {
+      solveArm--;
+      return;
+    }
+    enqueueSolve(solvePending);
+    solvePending = null;
+    beatBanner = "Auto-solve";
+    lastHudPaint = "";
+    hud?.drawInGameDev(beatBanner);
+  }
+  if (!stage?.triggerKeyDown) return;
   if (solveHold > 0) {
     solveHold--;
-    if (solveHold === Math.round(8 * TICK_SCALE) && solveCode) stage.triggerKeyUp?.({ code: solveCode });
+    if (solveHold === Math.round(10 * TICK_SCALE) && solveCode) stage.triggerKeyUp?.({ code: solveCode });
     return;
   }
   const cmd = solveQueue.shift();
   if (!cmd) return;
   solveCode = cmdToCode(cmd);
   stage.triggerKeyDown({ code: solveCode });
-  solveHold = Math.round((cmd === "swap" ? 10 : 18) * TICK_SCALE);
+  solveHold = Math.round((cmd === "swap" ? 16 : 28) * TICK_SCALE);
 }
 
 function beatCurrentStage(): void {
-  const stage = window.stage;
-  const n = stage?.levelNumber ?? 1;
-  const def = playSession?.defs.length ? playSession.defs[n - 1] : campaignDefs()[n - 1];
-  if (!def) return;
-  const result = solveLevel(def, 200_000);
-  if (!result.ok) return;
-  enqueueSolve(result.cmds);
+  const def = playDef();
+  if (!def) {
+    beatBanner = "No stage loaded";
+    hud?.drawInGameDev(beatBanner);
+    return;
+  }
+  const result = solveLevel(def, 250_000);
+  if (!result.ok || !result.cmds.length) {
+    beatBanner = "No solution found";
+    hud?.drawInGameDev(beatBanner);
+    return;
+  }
+  beatBanner = "Auto-solve";
+  hud?.drawInGameDev(beatBanner);
+  solvePending = result.cmds;
+  solveQueue = [];
+  solveArm = 28;
+  window.exportRoot?.gotoAndPlay?.("restart");
 }
 
 function commitTape(won: boolean, stageNo: number): void {
@@ -822,24 +1057,6 @@ function loadPasscode(): void {
   beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: false });
 }
 
-function loadShare(): void {
-  const field = hudInput();
-  const def = parseShare(field?.value || "", listSaved());
-  if (!def) {
-    paint.hint = "Could not read that code. Use BXS- / BXS. / BX1.";
-    markHudDirty();
-    paintHud();
-    return;
-  }
-  draft = def;
-  beaten = false;
-  paint = newPaintState();
-  paint.hint = "Loaded share code.";
-  scheduleBeatCheck();
-  markHudDirty();
-  paintHud();
-}
-
 function bindMenuPad(): void {
   for (const ev of pollMenuPad()) {
     if (extraView === "home") {
@@ -867,11 +1084,26 @@ function bind(): void {
 
   const unlock = (): void => {
     unlockAudio(() => {
-      if (!isLegacy() && currentLabel() !== "game") ensureMenuMusic();
+      const label = currentLabel();
+      if (!isLegacy() && label !== "game" && label !== "restart" && label !== "stagetitle" && label !== "instructions") {
+        ensureMenuMusic();
+      }
     });
-    // Also kick immediately; ensureMenuMusic retries if the context is still suspended.
-    if (!isLegacy() && currentLabel() !== "game") ensureMenuMusic();
   };
+  $("hud-modal-ok")?.addEventListener("click", () => submitModal());
+  $("hud-modal-cancel")?.addEventListener("click", () => closeModal());
+  modalInput()?.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      submitModal();
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeModal();
+    }
+  });
+  modalInput()?.addEventListener("keyup", (ev) => ev.stopPropagation());
+  modalInput()?.addEventListener("keypress", (ev) => ev.stopPropagation());
   window.addEventListener("pointerdown", unlock, { capture: true });
   window.addEventListener("keydown", unlock, { capture: true });
 
@@ -888,7 +1120,6 @@ function bind(): void {
     if (extraView === "name") handleHudAction("name-continue");
     else if (extraView === "load") handleHudAction("load-go");
     else if (extraView === "settings") handleHudAction("save-name");
-    else if (extraView === "creator") handleHudAction("creator-load");
     else if (extraView === "puzzles") handleHudAction("puzzle-run");
   });
   input?.addEventListener("keyup", (ev) => ev.stopPropagation());
@@ -942,7 +1173,10 @@ function bind(): void {
       paintHud();
     } else if (ev.key === "Enter") {
       const item = homeItems()[homeCursor];
-      if (item && !item.disabled) handleHudAction(item.id);
+      if (item && !item.disabled) {
+        playUiLatch();
+        handleHudAction(item.id);
+      }
     }
   });
 }
@@ -966,8 +1200,10 @@ function syncOverlay(): void {
   }
 
   if (label === "restart" && lastLabel === "game") {
-    rumble(180, 0.6, 0.4);
-    commitTape(false, stage?.levelNumber ?? lastLevelNum);
+    if (!solvePending) {
+      rumble(180, 0.6, 0.4);
+      commitTape(false, stage?.levelNumber ?? lastLevelNum);
+    }
   }
 
   if ((playing || label === "stagetitle") && stage) {
@@ -982,6 +1218,8 @@ function syncOverlay(): void {
       run.complete = true;
       run.totalTimeMs = Date.now() - run.at;
       run.totalMoves = stage?.totalMoves ?? run.totalMoves;
+      lastFinished = run;
+      showStats = false;
       saveRun(run);
       run = null;
     }
@@ -989,7 +1227,7 @@ function syncOverlay(): void {
     lastLabel = label;
     overlayMode = "";
     menuParked = false;
-    if (back === "creator" || back === "puzzles" || back === "history" || back === "load") {
+    if (back === "creator" || back === "puzzles" || back === "history" || back === "load" || back === "online") {
       parkCreateJsMenu();
       setExportRootMouse(false);
       setMouseOverRate(5);
@@ -1043,9 +1281,9 @@ function syncOverlay(): void {
           hud?.setVisible(true);
           raiseHud();
         }
-        if (lastHudPaint !== "ingame") {
-          lastHudPaint = "ingame";
-          hud?.drawInGameDev();
+        if (lastHudPaint !== "ingame:" + beatBanner) {
+          lastHudPaint = "ingame:" + beatBanner;
+          hud?.drawInGameDev(beatBanner);
         }
       } else if (hud?.root.visible) {
         hud?.setVisible(false);
@@ -1131,7 +1369,7 @@ declare global {
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.6.0");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.7.0");
   refreshNameCache();
   gateSoundPlay();
   wrapGetLevels();

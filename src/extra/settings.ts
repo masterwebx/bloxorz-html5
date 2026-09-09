@@ -28,6 +28,7 @@ export interface Settings {
   sfx: number;
   rumble: boolean;
   showTimer: boolean;
+  themeBg: boolean;
   playerName: string;
   keys: Record<Action, string>;
   pads: Record<Action, number>;
@@ -38,6 +39,7 @@ const DEFAULTS: Settings = {
   sfx: 0.9,
   rumble: true,
   showTimer: true,
+  themeBg: true,
   playerName: "",
   keys: {
     up: "ArrowUp",
@@ -80,6 +82,7 @@ export function loadSettings(): Settings {
       sfx: clamp01(parsed.sfx ?? DEFAULTS.sfx),
       rumble: parsed.rumble !== false,
       showTimer: parsed.showTimer !== false,
+      themeBg: parsed.themeBg !== false,
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       keys: { ...DEFAULTS.keys, ...parsed.keys },
       pads: { ...DEFAULTS.pads, ...parsed.pads },
