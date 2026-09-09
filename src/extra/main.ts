@@ -1,7 +1,6 @@
 import { checkBeatable, newPaintState, paintEditorCell, splitMarks, type EditorToolId } from "./editor";
 import {
   emptyDraft,
-  encodeLevel,
   encodeSeed,
   isPlayable,
   listSaved,
@@ -11,7 +10,7 @@ import {
 } from "./customLevels";
 import { createJsToDef, defToCreateJs } from "./convert";
 import { dailySeed, generatePuzzle, generateRun, type Difficulty } from "./generate";
-import { actionFromCode, pollGamepad, pollMenuPad, rumble } from "./gamepad";
+import { actionFromCode, heldPadButtons, pollGamepad, pollMenuPad, rumble } from "./gamepad";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopMenuMusic, unlockAudio } from "./audio";
 import { fetchOnlineStages } from "./community";
 import {
@@ -166,7 +165,6 @@ let lastPaintCell = "";
 let lastFinished: RunRecord | null = null;
 let showStats = false;
 let solvePending: WalkCmd[] | null = null;
-let solveArm = 0;
 let beatBanner = "";
 let autoSolve = false;
 let onlineRows: { title: string; meta: string; play: () => void }[] = [];
@@ -179,7 +177,9 @@ type TintShape = {
   visible: boolean;
 };
 let tintLayer: TintShape | null = null;
-let lastBlockHue = -1;
+let blocksWereIdle = true;
+let prevPadButtons = new Set<number>();
+let solveWait = 0;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -501,6 +501,7 @@ function hudKey(): string {
     draft.spawn.join(","),
     String(loadFinishedStages().length),
     JSON.stringify(s.keys),
+    JSON.stringify(s.pads),
   ].join("|");
 }
 
@@ -553,7 +554,11 @@ function paintHud(): void {
     placeHudInput(true, "18.2%", "10.6%", "40%", "", getName(), NAME_MAX);
   } else if (extraView === "remap") {
     hud.drawRemap(
-      ACTIONS.map((id) => ({ id, label: ACTION_LABEL[id], bind: prettyKey(s.keys[id]) })),
+      ACTIONS.map((id) => ({
+        id,
+        label: ACTION_LABEL[id],
+        bind: prettyKey(s.keys[id]) + " · pad " + s.pads[id],
+      })),
       rebindAction,
     );
   } else if (extraView === "finish") {
@@ -589,7 +594,7 @@ function paintHud(): void {
                       startCustom([def], "history");
                       autoSolve = true;
                       solvePending = rec.cmds;
-                      solveArm = 8;
+                      solveWait = 0;
                     }
                   }
                 : undefined,
@@ -802,6 +807,7 @@ function handleHudAction(act: string): void {
     const s = loadSettings();
     s.rumble = !s.rumble;
     saveSettings(s);
+    if (s.rumble) rumble(180, 0.6, 0.5);
     markHudDirty();
     paintHud();
   } else if (act === "toggle-timer") {
@@ -861,7 +867,6 @@ function handleHudAction(act: string): void {
     const s = loadSettings();
     s.blockHue = Number(act.slice(9));
     saveSettings(s);
-    lastBlockHue = -1;
     applyBlockHue();
     markHudDirty();
     paintHud();
@@ -980,7 +985,7 @@ function creatorRedo(): void {
 function copySeed(): void {
   const seed = encodeSeed(draft);
   void navigator.clipboard?.writeText(seed).catch(() => undefined);
-  paint.hint = "Copied " + seed;
+  paint.hint = "Copied reverse seed " + seed;
   markHudDirty();
   paintHud();
 }
@@ -1002,7 +1007,7 @@ function openModal(kind: "code" | "seed", title: string, placeholder: string): v
   if (input) {
     input.placeholder = placeholder;
     input.value = "";
-    input.maxLength = kind === "seed" ? 80 : 80;
+    input.maxLength = 160;
   }
   box?.classList.add("is-open");
   window.setTimeout(() => input?.focus(), 0);
@@ -1020,7 +1025,7 @@ function submitModal(): void {
   if (kind === "code") {
     const def = parseShare(value, listSaved());
     if (!def) {
-      paint.hint = "Could not read that code. Use BXS- / BXS. / BX1.";
+      paint.hint = "Could not read that reverse seed. Paste a BXS. code.";
       markHudDirty();
       paintHud();
       return;
@@ -1045,7 +1050,7 @@ function submitModal(): void {
 }
 
 function openCodeModal(): void {
-  openModal("code", "Enter stage code", "BXS- / BXS. / BX1.");
+  openModal("code", "Enter reverse seed", "BXS. reverse seed");
 }
 
 function openSeedModal(): void {
@@ -1143,16 +1148,33 @@ function cmdToCode(cmd: WalkCmd): string {
   return "ArrowRight";
 }
 
-type PlayBlock = { roll?: { idle?: boolean }; currentFrame?: number };
+type PlayBlock = {
+  roll?: { idle?: boolean };
+  currentFrame?: number;
+  children?: PlayBlock[];
+  image?: unknown;
+  spriteSheet?: unknown;
+  filters?: unknown;
+  cacheID?: number;
+  __bloxHue?: number;
+  cache?: (x: number, y: number, w: number, h: number) => void;
+  updateCache?: () => void;
+  uncache?: () => void;
+  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
+};
+
+function walkNodes(node: PlayBlock | undefined, fn: (n: PlayBlock) => void): void {
+  if (!node) return;
+  fn(node);
+  for (const child of node.children ?? []) walkNodes(child, fn);
+}
 
 function playBlocks(): PlayBlock[] {
-  const gc = window.stage?.gameContainer as { children?: { children?: PlayBlock[] }[] } | undefined;
+  const gc = window.stage?.gameContainer as PlayBlock | undefined;
   const out: PlayBlock[] = [];
-  for (const child of gc?.children ?? []) {
-    for (const node of child.children ?? []) {
-      if (node.roll) out.push(node);
-    }
-  }
+  walkNodes(gc, (node) => {
+    if (node.roll) out.push(node);
+  });
   return out;
 }
 
@@ -1169,7 +1191,7 @@ function solveCmdsForCurrent(): WalkCmd[] | null {
     if (result.ok && result.cmds.length) return result.cmds;
   }
   const n = window.stage?.levelNumber ?? 1;
-  if (!playSession?.defs.length && CAMPAIGN_WALKTHROUGH[n - 1]) {
+  if (playSession?.kind === "campaign" && !playSession.defs.length && CAMPAIGN_WALKTHROUGH[n - 1]) {
     return expandWalkthrough(CAMPAIGN_WALKTHROUGH[n - 1]);
   }
   return null;
@@ -1182,7 +1204,7 @@ function stopAutoSolve(banner = ""): void {
   if (solveCode) window.stage?.triggerKeyUp?.({ code: solveCode });
   solveCode = "";
   solveHold = 0;
-  solveArm = 0;
+  solveWait = 0;
   beatBanner = banner;
   lastHudPaint = "";
 }
@@ -1194,13 +1216,14 @@ function tickSolve(): void {
   if (!stage?.triggerKeyDown) return;
 
   if (solvePending) {
-    if (!blocksIdle()) return;
-    if (solveArm > 0) {
-      solveArm--;
+    const ready = !playBlocks().length || blocksIdle();
+    if (!ready && solveWait < 90) {
+      solveWait++;
       return;
     }
     solveQueue = solvePending.slice();
     solvePending = null;
+    solveWait = 0;
     beatBanner = "Auto-solve";
     lastHudPaint = "";
     hud?.drawInGameDev(beatBanner, true);
@@ -1214,10 +1237,9 @@ function tickSolve(): void {
       return;
     }
     solveHold++;
-    const last = !solveQueue.length;
-    if (!last && solveHold > 10) {
+    if (solveHold > 24) {
       stage.triggerKeyUp?.({ code: solveCode });
-      stage.triggerKeyDown({ code: solveCode });
+      solveCode = "";
       solveHold = 0;
     }
     return;
@@ -1249,27 +1271,30 @@ function beatCurrentStage(): void {
     hud?.drawInGameDev(beatBanner, false);
     return;
   }
+  const n = window.stage?.levelNumber ?? 1;
+  const session = playSession;
   autoSolve = true;
   beatBanner = "Auto-solve";
   hud?.drawInGameDev(beatBanner, true);
   solvePending = cmds;
   solveQueue = [];
   solveCode = "";
-  solveArm = 6;
-  window.exportRoot?.gotoAndPlay?.("restart");
+  solveWait = 0;
+  if (session) beginPlay(n, session);
+  else window.exportRoot?.gotoAndPlay?.("restart");
 }
 
 function syncHelpText(): void {
-  const n = window.stage?.levelNumber ?? 0;
+  const classicFirst =
+    !!playSession?.classicRun && playSession.kind === "campaign" && (window.stage?.levelNumber ?? 0) === 1;
   const gc = window.stage?.gameContainer as {
     children?: { buttons?: unknown; menuButton?: unknown; roll?: unknown; totalFrames?: number; visible?: boolean; alpha?: number }[];
   } | undefined;
   for (const child of gc?.children ?? []) {
     if (child.buttons || child.menuButton || child.roll) continue;
     if (typeof child.totalFrames === "number" && child.totalFrames >= 40 && child.totalFrames <= 52) {
-      const show = n === 1;
-      child.visible = show;
-      child.alpha = show ? 1 : 0;
+      child.visible = classicFirst;
+      child.alpha = classicFirst ? 1 : 0;
     }
   }
 }
@@ -1277,7 +1302,9 @@ function syncHelpText(): void {
 function applyPlayTint(): void {
   const gc = window.stage?.gameContainer as {
     addChildAt?: (c: unknown, i: number) => void;
+    setChildIndex?: (c: unknown, i: number) => void;
     children?: unknown[];
+    numChildren?: number;
     __bloxTint?: TintShape;
   } | undefined;
   const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
@@ -1286,8 +1313,11 @@ function applyPlayTint(): void {
   if (!overlay || !gc.children?.includes(overlay)) {
     overlay = new cjs.Shape();
     overlay.mouseEnabled = false;
-    gc.addChildAt(overlay, Math.min(1, gc.children?.length ?? 0));
+    gc.addChildAt(overlay, 1);
     gc.__bloxTint = overlay;
+  } else if (gc.setChildIndex) {
+    const top = Math.max(0, (gc.numChildren ?? gc.children?.length ?? 1) - 1);
+    gc.setChildIndex(overlay, Math.min(1, top));
   }
   const s = loadSettings();
   overlay.graphics.clear();
@@ -1306,27 +1336,45 @@ function applyBlockHue(): void {
     ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
     ColorMatrixFilter?: new (m: unknown) => unknown;
   };
-  const blocks = playBlocks() as (PlayBlock & {
-    filters?: unknown;
-    cache?: (x: number, y: number, w: number, h: number) => void;
-    uncache?: () => void;
-  })[];
-  if (!blocks.length || !cjs.ColorMatrix || !cjs.ColorMatrixFilter) return;
-  const rolling = blocks.some((b) => !b.roll?.idle);
-  const key = hue * 1000 + (rolling ? -1 : 1);
-  if (key === lastBlockHue) return;
-  lastBlockHue = key;
+  const blocks = playBlocks();
+  const ColorMatrix = cjs.ColorMatrix;
+  const ColorMatrixFilter = cjs.ColorMatrixFilter;
+  if (!blocks.length || !ColorMatrix || !ColorMatrixFilter) return;
+  const deg = hue <= 180 ? hue : hue - 360;
   for (const block of blocks) {
-    if (!hue || rolling) {
+    let leaves = 0;
+    walkNodes(block, (node) => {
+      if (node === block || (!node.image && !node.spriteSheet)) return;
+      leaves++;
+      if (!hue) {
+        node.filters = null;
+        node.uncache?.();
+        node.__bloxHue = 0;
+        return;
+      }
+      if (node.__bloxHue === hue && node.cacheID) return;
+      const matrix = new ColorMatrix();
+      matrix.adjustHue(deg);
+      node.filters = [new ColorMatrixFilter(matrix)];
+      const b = node.getBounds?.();
+      node.cache?.(b?.x ?? -40, b?.y ?? -40, Math.max(8, b?.width ?? 80), Math.max(8, b?.height ?? 80));
+      node.__bloxHue = hue;
+    });
+    if (!hue) {
+      block.filters = null;
       block.uncache?.();
-      if (!hue) block.filters = null;
       continue;
     }
-    const deg = hue <= 180 ? hue : hue - 360;
-    const matrix = new cjs.ColorMatrix();
+    if (leaves) {
+      block.uncache?.();
+      block.filters = null;
+      continue;
+    }
+    const matrix = new ColorMatrix();
     matrix.adjustHue(deg);
-    block.filters = [new cjs.ColorMatrixFilter(matrix)];
-    block.cache?.(-70, -110, 140, 180);
+    block.filters = [new ColorMatrixFilter(matrix)];
+    if (block.cacheID) block.updateCache?.();
+    else block.cache?.(-70, -110, 140, 180);
   }
 }
 
@@ -1374,13 +1422,13 @@ function saveDraft(): void {
   const saved = {
     name,
     author: getName() || "Unknown",
-    code: encodeLevel(draft),
+    code: encodeSeed(draft),
     seed: stageId(draft),
     def: structuredClone(draft),
     source: "local" as const,
   };
   saveStage(saved);
-  paint.hint = `Saved ${saved.seed}. ${encodeSeed(draft)}`;
+  paint.hint = "Saved. Reverse seed: " + saved.code;
   markHudDirty();
   paintHud();
 }
@@ -1416,6 +1464,25 @@ function loadPasscode(): void {
   }
   loadError = "";
   beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: false });
+}
+
+function capturePadRebind(): void {
+  if (extraView !== "remap" || !rebindAction) {
+    prevPadButtons = heldPadButtons();
+    return;
+  }
+  const held = heldPadButtons();
+  for (const btn of held) {
+    if (prevPadButtons.has(btn)) continue;
+    const s = loadSettings();
+    s.pads[rebindAction] = btn;
+    saveSettings(s);
+    rebindAction = null;
+    markHudDirty();
+    paintHud();
+    break;
+  }
+  prevPadButtons = held;
 }
 
 function bindMenuPad(): void {
@@ -1599,6 +1666,7 @@ function syncOverlay(): void {
     if (lastLevelNum > 0 && stage.levelNumber > lastLevelNum) {
       commitTape(true, lastLevelNum);
       persistWonStage(lastLevelNum);
+      rumble(220, 0.45, 0.4);
       if (autoSolve) stopAutoSolve("");
     }
     lastLevelNum = stage.levelNumber;
@@ -1606,6 +1674,7 @@ function syncOverlay(): void {
 
   if (label === "finish" && !isLegacy() && lastLabel !== "finish") {
     if (autoSolve) stopAutoSolve("");
+    rumble(220, 0.45, 0.4);
     beaten = playSession?.returnTo === "creator-edit" ? true : beaten;
     if (tape.length) {
       commitTape(true, lastLevelNum || stage?.levelNumber || 1);
@@ -1693,12 +1762,15 @@ function syncOverlay(): void {
       raiseHud();
     }
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
+    applyPlayTint();
     if (playing) {
       tickSolve();
       pollGamepad(stage);
       syncHelpText();
-      applyPlayTint();
       applyBlockHue();
+      const idle = !playBlocks().length || blocksIdle();
+      if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);
+      blocksWereIdle = idle;
       if (cachedDev) {
         if (!hud?.root.visible) {
           hud?.setVisible(true);
@@ -1733,6 +1805,7 @@ function syncOverlay(): void {
   }
 
   bindMenuPad();
+  capturePadRebind();
   if (extraView === "finish") {
     paintHud();
     return;

@@ -15,15 +15,23 @@ type StageLike = {
 export function rumble(ms: number, strong = 0.45, weak = 0.3): void {
   const settings = loadSettings();
   if (!settings.rumble) return;
+  let pulsed = false;
   for (const pad of navigator.getGamepads()) {
-    if (!gActuator(pad)) continue;
-    void gActuator(pad)!.playEffect("dual-rumble", {
+    const actuator = gActuator(pad);
+    if (!actuator?.playEffect) continue;
+    pulsed = true;
+    void actuator.playEffect("dual-rumble", {
       startDelay: 0,
       duration: ms,
       strongMagnitude: strong,
       weakMagnitude: weak,
     });
   }
+  if (!pulsed && typeof navigator.vibrate === "function") navigator.vibrate(ms);
+}
+
+export function heldPadButtons(): Set<number> {
+  return collectHeld();
 }
 
 function gActuator(pad: Gamepad | null): GamepadHapticActuator | undefined {

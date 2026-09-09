@@ -84,6 +84,7 @@ describe("reverse seeds", () => {
     setTile(def, 4, 4, "v");
     const seed = encodeSeed(def);
     expect(seed.startsWith("BXS.")).toBe(true);
+    expect(seed.length).toBeLessThan(80);
     const back = decodeSeed(seed);
     expect(back?.tiles).toEqual(def.tiles);
     expect(back?.spawn).toEqual(def.spawn);

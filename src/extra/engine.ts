@@ -1,3 +1,4 @@
+import { LEVELS } from "./levels";
 import type { LevelDef, SwitchMode } from "./types";
 
 export const W = 15;
@@ -401,8 +402,14 @@ export class Stage {
   }
 }
 
+export function levelByCode(code: string): number {
+  return LEVELS.findIndex((l) => l.code === code);
+}
+
 export function nextBridge(on: boolean, mode: SwitchMode): boolean {
   if (mode === "on") return true;
   if (mode === "off") return false;
   return !on;
 }
+
+export { LEVELS };

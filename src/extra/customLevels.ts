@@ -126,16 +126,7 @@ function fromB64(text: string): Uint8Array | null {
   }
 }
 
-/** Self-contained share seed that reconstructs the painted map (not a generator seed). */
-export function encodeSeed(def: LevelDef): string {
-  const bytes: number[] = [1];
-  const flat = padTiles(def.tiles).join("").slice(0, 150);
-  for (let i = 0; i < 150; i += 2) {
-    const a = Math.max(0, TILE_PACK.indexOf(flat[i] ?? " "));
-    const b = Math.max(0, TILE_PACK.indexOf(flat[i + 1] ?? " "));
-    bytes.push((a << 4) | b);
-  }
-  bytes.push(cellCode(def.spawn[0], def.spawn[1]));
+function writeLinks(bytes: number[], def: LevelDef): void {
   const switches = def.switches ?? [];
   bytes.push(Math.min(255, switches.length));
   for (const sw of switches) {
@@ -150,6 +141,50 @@ export function encodeSeed(def: LevelDef): string {
   for (const s of splits) {
     bytes.push(cellCode(s.x, s.y), cellCode(s.a[0], s.a[1]), cellCode(s.b[0], s.b[1]));
   }
+}
+
+function readLinks(bytes: Uint8Array, i: number): { i: number; switches: LevelDef["switches"]; splits: LevelDef["splits"] } {
+  const switches: LevelDef["switches"] = [];
+  const nsw = bytes[i++] ?? 0;
+  for (let s = 0; s < nsw; s++) {
+    const [x, y] = fromCell(bytes[i++] ?? 0);
+    const nb = bytes[i++] ?? 0;
+    const bridges: { x: number; y: number; mode: SwitchMode }[] = [];
+    for (let b = 0; b < nb; b++) {
+      const [bx, by] = fromCell(bytes[i++] ?? 0);
+      const modeByte = bytes[i++] ?? 0;
+      const mode: SwitchMode = modeByte === 1 ? "on" : modeByte === 2 ? "off" : "onoff";
+      bridges.push({ x: bx, y: by, mode });
+    }
+    switches.push({ x, y, bridges });
+  }
+  const splits: LevelDef["splits"] = [];
+  const nsp = bytes[i++] ?? 0;
+  for (let s = 0; s < nsp; s++) {
+    const [x, y] = fromCell(bytes[i++] ?? 0);
+    const a = fromCell(bytes[i++] ?? 0);
+    const b = fromCell(bytes[i++] ?? 0);
+    splits.push({ x, y, a, b });
+  }
+  return { i, switches, splits };
+}
+
+/** Compact reverse seed that reconstructs the painted map. Sparse v2, dense v1 still decodes. */
+export function encodeSeed(def: LevelDef): string {
+  const tiles = padTiles(def.tiles);
+  const occupied: { n: number; ch: string }[] = [];
+  for (let y = 0; y < 10; y++) {
+    for (let x = 0; x < 15; x++) {
+      const ch = tiles[y][x] ?? " ";
+      if (ch !== " ") occupied.push({ n: cellCode(x, y), ch });
+    }
+  }
+  const bytes: number[] = [2, Math.min(255, occupied.length)];
+  for (const cell of occupied) {
+    bytes.push(cell.n, Math.max(0, TILE_PACK.indexOf(cell.ch)));
+  }
+  bytes.push(cellCode(def.spawn[0], def.spawn[1]));
+  writeLinks(bytes, def);
   return `BXS.${toB64(Uint8Array.from(bytes))}`;
 }
 
@@ -158,39 +193,31 @@ export function decodeSeed(text: string): LevelDef | null {
     const trimmed = text.trim();
     if (!trimmed.startsWith("BXS.")) return null;
     const bytes = fromB64(trimmed.slice(4));
-    if (!bytes || bytes.length < 79 || bytes[0] !== 1) return null;
+    if (!bytes || bytes.length < 4) return null;
+    const cells = Array.from({ length: 150 }, () => " ");
     let i = 1;
-    const cells: string[] = [];
-    for (let n = 0; n < 75; n++) {
-      const byte = bytes[i++] ?? 0;
-      cells.push(TILE_PACK[(byte >> 4) & 15] ?? " ", TILE_PACK[byte & 15] ?? " ");
+    if (bytes[0] === 1) {
+      if (bytes.length < 79) return null;
+      for (let n = 0; n < 75; n++) {
+        const byte = bytes[i++] ?? 0;
+        cells[n * 2] = TILE_PACK[(byte >> 4) & 15] ?? " ";
+        cells[n * 2 + 1] = TILE_PACK[byte & 15] ?? " ";
+      }
+    } else if (bytes[0] === 2) {
+      const count = bytes[i++] ?? 0;
+      for (let n = 0; n < count; n++) {
+        const at = bytes[i++] ?? 0;
+        const ch = TILE_PACK[bytes[i++] ?? 0] ?? " ";
+        if (at < 150) cells[at] = ch;
+      }
+    } else {
+      return null;
     }
     const tiles: string[] = [];
     for (let y = 0; y < 10; y++) tiles.push(cells.slice(y * 15, y * 15 + 15).join(""));
     const spawn = fromCell(bytes[i++] ?? 0);
-    const nsw = bytes[i++] ?? 0;
-    const switches: LevelDef["switches"] = [];
-    for (let s = 0; s < nsw; s++) {
-      const [x, y] = fromCell(bytes[i++] ?? 0);
-      const nb = bytes[i++] ?? 0;
-      const bridges: { x: number; y: number; mode: SwitchMode }[] = [];
-      for (let b = 0; b < nb; b++) {
-        const [bx, by] = fromCell(bytes[i++] ?? 0);
-        const modeByte = bytes[i++] ?? 0;
-        const mode: SwitchMode = modeByte === 1 ? "on" : modeByte === 2 ? "off" : "onoff";
-        bridges.push({ x: bx, y: by, mode });
-      }
-      switches.push({ x, y, bridges });
-    }
-    const nsp = bytes[i++] ?? 0;
-    const splits: LevelDef["splits"] = [];
-    for (let s = 0; s < nsp; s++) {
-      const [x, y] = fromCell(bytes[i++] ?? 0);
-      const a = fromCell(bytes[i++] ?? 0);
-      const b = fromCell(bytes[i++] ?? 0);
-      splits.push({ x, y, a, b });
-    }
-    return { id: "custom", code: "000000", tiles, spawn, switches, splits };
+    const links = readLinks(bytes, i);
+    return { id: "custom", code: "000000", tiles, spawn, switches: links.switches, splits: links.splits };
   } catch {
     return null;
   }

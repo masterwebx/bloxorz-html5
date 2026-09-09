@@ -1,0 +1,51 @@
+/** Hue-rotate RGB and bake the shift into pixel buffers (same matrix CreateJS ColorMatrix.adjustHue uses). */
+
+export function clampByte(n: number): number {
+  return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+export function hueRotateRgb(r: number, g: number, b: number, degrees: number): [number, number, number] {
+  if (!degrees) return [r, g, b];
+  const rad = ((degrees % 360) * Math.PI) / 180;
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  const nr =
+    r * (0.213 + c * 0.787 - s * 0.213) + g * (0.715 - c * 0.715 - s * 0.715) + b * (0.072 - c * 0.072 + s * 0.928);
+  const ng =
+    r * (0.213 - c * 0.213 + s * 0.143) + g * (0.715 + c * 0.285 + s * 0.14) + b * (0.072 - c * 0.072 - s * 0.283);
+  const nb =
+    r * (0.213 - c * 0.213 - s * 0.787) + g * (0.715 - c * 0.715 + s * 0.715) + b * (0.072 + c * 0.928 + s * 0.072);
+  return [clampByte(nr), clampByte(ng), clampByte(nb)];
+}
+
+export function bakeHueIntoPixels(data: Uint8ClampedArray, degrees: number): void {
+  if (!degrees) return;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const [r, g, b] = hueRotateRgb(data[i], data[i + 1], data[i + 2], degrees);
+    data[i] = r;
+    data[i + 1] = g;
+    data[i + 2] = b;
+  }
+}
+
+export const RUST_TOP: [number, number, number] = [196, 104, 32];
+export const RUST_LEFT: [number, number, number] = [122, 48, 16];
+export const RUST_RIGHT: [number, number, number] = [160, 68, 20];
+
+export function rustFaces(hue: number): { top: string; left: string; right: string; edge: string } {
+  const top = hueRotateRgb(RUST_TOP[0], RUST_TOP[1], RUST_TOP[2], hue);
+  const left = hueRotateRgb(RUST_LEFT[0], RUST_LEFT[1], RUST_LEFT[2], hue);
+  const right = hueRotateRgb(RUST_RIGHT[0], RUST_RIGHT[1], RUST_RIGHT[2], hue);
+  const edge = hueRotateRgb(240, 180, 120, hue);
+  return {
+    top: `rgb(${top[0]},${top[1]},${top[2]})`,
+    left: `rgb(${left[0]},${left[1]},${left[2]})`,
+    right: `rgb(${right[0]},${right[1]},${right[2]})`,
+    edge: `rgb(${edge[0]},${edge[1]},${edge[2]})`,
+  };
+}
+
+export function cssRgb(rgb: [number, number, number]): string {
+  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+}

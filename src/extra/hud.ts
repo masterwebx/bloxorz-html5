@@ -8,6 +8,7 @@ import {
 import { EDITOR_TOOLS } from "./editor";
 import { difficultyHint } from "./generate";
 import { DEFAULT_ISO, TILE_FACE, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
+import { rustFaces } from "./hue";
 import { currentTheme, type ThemeId } from "./settings";
 
 declare const createjs: {
@@ -490,7 +491,8 @@ export class ExtraHud {
     this.add(text(String(Math.round(opts.bgHue)), 300, 210, 11, theme.muted));
     this.add(text("Block hue", 40, 232, 12));
     this.add(slider(160, 232, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
-    this.add(swatch(300, 234, opts.blockHue, opts.blockHue > 0 ? 1 : 0));
+    this.add(swatch(300, 234, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
+    this.add(blockPreview(360, 214, opts.blockHue));
     this.add(hitRow("Remap controls", 40, 256, 12, () => this.onAction("remap"), false, 180));
   }
 
@@ -500,7 +502,7 @@ export class ExtraHud {
     const theme = paint();
     this.add(hitRow("Back", 24, 12, 12, () => this.onAction("settings"), false, 80));
     this.add(text("Remap controls", 275, 12, 18, theme.ink, "center"));
-    this.add(text(waiting ? "Press a key for " + waiting + "…" : "Click a row, then press a key.", 40, 40, 11, theme.muted));
+    this.add(text(waiting ? "Press a key or pad button for " + waiting + "…" : "Click a row, then press a key or pad button.", 40, 40, 11, theme.muted));
     rows.forEach((row, i) => {
       const y = 68 + i * 22;
       const mark = waiting === row.id ? "> " : "  ";
@@ -783,6 +785,21 @@ function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMe
   }
   shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(0.8)
     .moveTo(a.x, a.y - h).lineTo(b.x, b.y - h).lineTo(c.x, c.y - h).lineTo(d.x, d.y - h).lineTo(a.x, a.y - h).endFill();
+}
+
+function blockPreview(x: number, y: number, hue: number): HudShape {
+  const face = rustFaces(hue);
+  const s = new createjs.Shape();
+  const ox = x + 18;
+  const oy = y + 28;
+  s.graphics.beginFill(face.top).beginStroke(face.edge).setStrokeStyle(1)
+    .moveTo(ox, oy - 22).lineTo(ox + 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox - 16, oy - 14).lineTo(ox, oy - 22).endFill();
+  s.graphics.beginFill(face.left)
+    .moveTo(ox - 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox, oy + 12).lineTo(ox - 16, oy + 4).lineTo(ox - 16, oy - 14).endFill();
+  s.graphics.beginFill(face.right)
+    .moveTo(ox, oy - 6).lineTo(ox + 16, oy - 14).lineTo(ox + 16, oy + 4).lineTo(ox, oy + 12).lineTo(ox, oy - 6).endFill();
+  s.mouseEnabled = false;
+  return s;
 }
 
 function swatch(x: number, y: number, hue: number, amt: number): HudShape {
