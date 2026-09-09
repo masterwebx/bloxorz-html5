@@ -128,6 +128,8 @@ let mouseOverHz = -1;
 let cachedName = "";
 let cachedDev = false;
 let nameRead = false;
+/** When true, next home paint slides menu rows in with whoosh. */
+let animateHome = false;
 /** Authored CreateJS fps (RAF-synced). Keep tick-based delays in sync. */
 const TICK_SCALE = 1;
 
@@ -427,8 +429,10 @@ function paintHud(): void {
   hudDirty = false;
   placeHudInput(false, "0", "0", "0", "", "");
   const s = loadSettings();
-  if (extraView === "home") hud.drawHome(brandName(getName()), homeItems(), homeCursor);
-  else if (extraView === "name") {
+  if (extraView === "home") {
+    hud.drawHome(brandName(getName()), homeItems(), homeCursor, animateHome);
+    animateHome = false;
+  } else if (extraView === "name") {
     hud.drawName();
     placeHudInput(true, "7.3%", "42.5%", "43%", "NAME", getName(), NAME_MAX);
   } else if (extraView === "credits") hud.drawCredits();
@@ -501,6 +505,7 @@ function openPanel(name: Screen): void {
   extraView = name;
   markHudDirty();
   lastHudPaint = "";
+  if (name === "home") animateHome = true;
   if (name === "load") loadError = "";
   if (name === "creator") scheduleBeatCheck();
   if (name !== "remap") rebindAction = null;
@@ -861,7 +866,10 @@ function bind(): void {
   bound = true;
 
   const unlock = (): void => {
-    unlockAudio();
+    unlockAudio(() => {
+      if (!isLegacy() && currentLabel() !== "game") ensureMenuMusic();
+    });
+    // Also kick immediately; ensureMenuMusic retries if the context is still suspended.
     if (!isLegacy() && currentLabel() !== "game") ensureMenuMusic();
   };
   window.addEventListener("pointerdown", unlock, { capture: true });
@@ -1056,6 +1064,11 @@ function syncOverlay(): void {
     hud?.setVisible(true);
     raiseHud();
     ensureMenuMusic();
+    if (extraView === "home") {
+      animateHome = true;
+      markHudDirty();
+      lastHudPaint = "";
+    }
   }
 
   bindMenuPad();

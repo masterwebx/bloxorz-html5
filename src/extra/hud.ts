@@ -1,3 +1,4 @@
+import { playMenuWhoosh, playUiClick, playUiLatch } from "./audio";
 import { currentTheme, type ThemeId } from "./settings";
 
 declare const createjs: {
@@ -5,6 +6,16 @@ declare const createjs: {
   Text: new (text: string, font: string, color: string) => HudText;
   Shape: new () => HudShape;
   Shadow: new (color: string, x: number, y: number, blur: number) => unknown;
+  Tween?: {
+    get: (
+      target: HudNode,
+      props?: { override?: boolean },
+    ) => {
+      wait: (ms: number) => { to: (props: object, dur: number, ease?: unknown) => unknown };
+      to: (props: object, dur: number, ease?: unknown) => unknown;
+    };
+  };
+  Ease?: { quadOut?: unknown };
 };
 
 type HudNode = {
@@ -199,8 +210,12 @@ function hitRow(label: string, x: number, y: number, size: number, fn: () => voi
   if (!disabled) {
     const ink = theme.ink;
     const hot = theme.hot;
-    area.addEventListener("click", fn);
+    area.addEventListener("click", () => {
+      playUiLatch();
+      fn();
+    });
     area.addEventListener("mouseover", () => {
+      playUiClick();
       t.color = hot;
       glow(t, true, theme);
     });
@@ -338,18 +353,29 @@ export class ExtraHud {
     if (this.mascot.parent === this.root) this.root.removeChild?.(this.mascot);
   }
 
-  drawHome(title: string, items: MenuItem[], cursor: number): void {
+  drawHome(title: string, items: MenuItem[], cursor: number, animate = false): void {
     this.clear();
     const brandX = 28;
     const brandY = 14;
     const w = drawBillboard(this.layer, title, brandX, brandY, 300);
     this.placeMascot(w, brandX, brandY);
+    const rows: HudNode[] = [];
     items.forEach((item, i) => {
       const prefix = i === cursor && !item.disabled ? "> " : "  ";
-      this.add(
-        hitRow(prefix + item.label, 40, 72 + i * 20, 13, () => this.onAction(item.id), !!item.disabled, 240),
-      );
+      const targetX = 40;
+      const y = 72 + i * 20;
+      const row = hitRow(prefix + item.label, animate ? -160 : targetX, y, 13, () => this.onAction(item.id), !!item.disabled, 240);
+      this.add(row);
+      rows.push(row);
     });
+    if (animate) {
+      playMenuWhoosh();
+      rows.forEach((row, i) => {
+        const tw = createjs.Tween?.get(row, { override: true });
+        if (tw) tw.wait(i * 35).to({ x: 40 }, 320, createjs.Ease?.quadOut);
+        else row.x = 40;
+      });
+    }
   }
 
   drawName(): void {
@@ -588,7 +614,8 @@ export class ExtraHud {
   drawInGameDev(): void {
     this.clear();
     this.hideMascot();
-    this.add(hitRow("Beat stage for me", 12, 8, 11, () => this.onAction("dev-beat"), false, 160));
-    this.add(hitRow("Dev menu", 180, 8, 11, () => this.onAction("dev-menu"), false, 100));
+    // Coolmath Menu sits ~y=12; stack our DEV tools under it (not on top of it).
+    this.add(hitRow("Beat stage for me", 12, 30, 11, () => this.onAction("dev-beat"), false, 160));
+    this.add(hitRow("Dev menu", 12, 50, 11, () => this.onAction("dev-menu"), false, 120));
   }
 }
