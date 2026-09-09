@@ -10,6 +10,7 @@ import { difficultyHint } from "./generate";
 import { DEFAULT_ISO, TILE_FACE, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
 import { rustFaces } from "./hue";
 import { currentTheme, type ThemeId } from "./settings";
+import { wantsVirtualPad } from "./touchPad";
 
 declare const createjs: {
   Container: new () => HudNode;
@@ -193,6 +194,10 @@ function text(str: string, x: number, y: number, size: number, color?: string, a
   return t;
 }
 
+function hitFill(): string {
+  return wantsVirtualPad() ? "rgba(255,180,80,0.16)" : "rgba(255,180,80,0.08)";
+}
+
 function hitRow(label: string, x: number, y: number, size: number, fn: () => void, disabled = false, minW = 220, focused = false): HudNode {
   const theme = paint();
   const row = new createjs.Container();
@@ -201,19 +206,26 @@ function hitRow(label: string, x: number, y: number, size: number, fn: () => voi
   const t = text(label, 0, 0, size, disabled ? theme.muted : focused ? theme.hot : theme.ink);
   t.mouseEnabled = false;
   if (focused && !disabled) glow(t, true, theme);
-  const w = Math.max(minW, (t.getMeasuredWidth?.() || label.length * size * 0.62) + 24);
-  const h = Math.max(22, size + 10);
+  const pad = wantsVirtualPad();
+  const w = Math.max(minW, (t.getMeasuredWidth?.() || label.length * size * 0.62) + (pad ? 36 : 24));
+  const h = Math.max(pad ? 32 : 24, size + (pad ? 16 : 10));
   const area = new createjs.Shape();
-  area.graphics.beginFill("rgba(0,0,0,0.01)").drawRect(-8, -4, w, h);
+  area.graphics.beginFill(hitFill()).drawRect(-8, -6, w, h);
   area.mouseEnabled = !disabled;
   area.cursor = disabled ? "default" : "pointer";
   if (!disabled) {
     const ink = theme.ink;
     const hot = theme.hot;
-    area.addEventListener("click", () => {
+    let last = 0;
+    const fire = (): void => {
+      const now = Date.now();
+      if (now - last < 280) return;
+      last = now;
       playUiLatch();
       fn();
-    });
+    };
+    area.addEventListener("click", fire);
+    area.addEventListener("mousedown", fire);
     area.addEventListener("mouseover", () => {
       playUiClick();
       t.color = hot;
@@ -250,8 +262,8 @@ function slider(x: number, y: number, w: number, value: number, onSet: (v: numbe
   fill.graphics.beginFill(theme.fill).drawRect(28, 4, Math.max(2, w * value), 10);
   const minus = hitRow("-", 0, 0, 14, () => onSet(Math.max(0, Math.round((value - 0.1) * 10) / 10)), false, 24);
   const plus = hitRow("+", 36 + w, 0, 14, () => onSet(Math.min(1, Math.round((value + 0.1) * 10) / 10)), false, 24);
-  const hit = new createjs.Shape();
-  hit.graphics.beginFill("rgba(0,0,0,0.01)").drawRect(28, 0, w, 18);
+    const hit = new createjs.Shape();
+    hit.graphics.beginFill(hitFill()).drawRect(28, 0, w, 22);
   hit.cursor = "pointer";
   hit.mouseEnabled = true;
   hit.addEventListener("click", (ev?: unknown) => {
@@ -389,8 +401,8 @@ export class ExtraHud {
     items.forEach((item, i) => {
       const prefix = i === cursor && !item.disabled ? "> " : "  ";
       const targetX = 40;
-      const y = 72 + i * 20;
-      const row = hitRow(prefix + item.label, animate ? -160 : targetX, y, 13, () => this.onAction(item.id), !!item.disabled, 240);
+      const y = 70 + i * (wantsVirtualPad() ? 24 : 20);
+      const row = hitRow(prefix + item.label, animate ? -160 : targetX, y, wantsVirtualPad() ? 15 : 13, () => this.onAction(item.id), !!item.disabled, 260);
       this.add(row);
       rows.push(row);
     });
@@ -409,7 +421,7 @@ export class ExtraHud {
     this.hideMascot();
     const theme = paint();
     const hit = new createjs.Shape();
-    hit.graphics.beginFill("rgba(0,0,0,0.01)").drawRect(0, 0, 550, 300);
+    hit.graphics.beginFill("rgba(255,180,80,0.04)").drawRect(0, 0, 550, 300);
     hit.mouseEnabled = true;
     hit.cursor = "pointer";
     hit.addEventListener("click", () => {
@@ -554,16 +566,23 @@ export class ExtraHud {
     }
   }
 
-  drawPuzzles(): void {
+  drawPuzzles(date: string): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
-    this.add(text("Puzzles", 275, 28, 20, theme.ink, "center"));
-    this.add(this.act("puzzle-daily", "Daily", 40, 90, 16, false, 200));
-    this.add(this.act("puzzles-seeded", "Seeded", 40, 124, 16, false, 200));
-    this.add(this.act("puzzles-gauntlet", "Gauntlet", 40, 158, 16, false, 200));
-    this.add(text("Same insane stage for everyone today, or share a seed.", 40, 214, 11, theme.muted));
+    this.add(this.act("back", "Back", 24, 12, 12, false, 80));
+    this.add(text("Puzzles", 275, 12, 18, theme.ink, "center"));
+    const card = new createjs.Shape();
+    card.graphics.beginFill("rgba(255,120,30,0.16)").beginStroke("#c45a18").setStrokeStyle(1).drawRect(24, 44, 502, 148);
+    card.mouseEnabled = false;
+    this.add(card);
+    this.add(text("DAILY PUZZLE", 40, 56, 22, theme.ink));
+    this.add(text(date, 40, 86, 14, theme.muted));
+    this.add(text("Full 15×10 board. Same brutal stage for everyone today.", 40, 110, 12, theme.muted));
+    this.add(this.act("puzzle-daily", "Play Daily", 40, 142, 16, false, 200));
+    this.add(this.act("puzzles-seeded", "Seeded", 40, 208, 14, false, 140));
+    this.add(this.act("puzzles-gauntlet", "Gauntlet", 200, 208, 14, false, 140));
+    this.add(text("Share a seed, or run five stages.", 40, 248, 11, theme.muted));
   }
 
   drawSeeded(): void {
@@ -575,7 +594,7 @@ export class ExtraHud {
     this.add(text("Play this seed, or type another.", 40, 80, 12, theme.muted));
     this.add(fieldBox(40, 112, 280));
     this.add(this.act("puzzle-seed-go", "Play", 40, 154, 14, false, 100));
-    this.add(text("Maps aim for 20+ moves with switches you have to use.", 40, 200, 11, theme.muted));
+    this.add(text("Same seed, same map. Built to need the switches.", 40, 200, 11, theme.muted));
   }
 
   drawGauntlet(diff: string): void {
@@ -599,6 +618,10 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
+    const bg = new createjs.Shape();
+    bg.graphics.beginFill("#000").drawRect(0, 0, 550, 300);
+    bg.mouseEnabled = false;
+    this.add(bg);
     const label = title.toUpperCase().slice(0, 18);
     const pitch = Math.min(5.2, 500 / (Math.max(1, label.length) * 6));
     const width = label.length * 6 * pitch;
@@ -615,13 +638,13 @@ export class ExtraHud {
     const theme = paint();
     this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("History", 275, 16, 18, theme.ink, "center"));
-    this.add(this.act("toggle-ghosts", opts.seeGhosts ? "> See ghosts  On" : "  See ghosts  Off", 320, 16, 11, false, 180));
+    this.add(this.act("toggle-ghosts", opts.seeGhosts ? "> See ghosts   On" : "  See ghosts   Off", 40, 48, 14, false, 280));
     if (!opts.rows.length) {
-      this.add(text("No finished stages yet. Clear a stage to record it here.", 40, 80, 12, theme.muted));
+      this.add(text("No finished stages yet. Clear a stage to record it here.", 40, 96, 12, theme.muted));
       return;
     }
-    opts.rows.slice(0, 6).forEach((row, i) => {
-      const y = 52 + i * 36;
+    opts.rows.slice(0, 5).forEach((row, i) => {
+      const y = 86 + i * 38;
       this.add(text(row.title, 40, y, 11));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
       if (row.replay) this.add(this.act("replay:" + i, "Replay", 420, y, 11, false, 80));
@@ -634,7 +657,7 @@ export class ExtraHud {
     this.add(text(title, 40, 70, 20));
     items.forEach((item, i) => {
       const mark = i === cursor ? "> " : "  ";
-      this.add(hitRow(mark + item.label, 40, 118 + i * 28, 15, () => this.onAction(item.id), !!item.disabled, 220));
+      this.add(hitRow(mark + item.label, 40, 118 + i * 32, 16, () => this.onAction(item.id), !!item.disabled, 260));
     });
   }
 
@@ -657,11 +680,10 @@ export class ExtraHud {
       return;
     }
     opts.rows.forEach((row, i) => {
-      const y = 50 + i * 36;
-      this.add(text(row.title, 40, y, 12));
-      this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      this.add(this.act(row.openId, "Open", row.deleteId ? 360 : 430, y, 11, false, 64));
-      if (row.deleteId) this.add(this.act(row.deleteId, "Delete", 434, y, 11, false, 70));
+      const y = 48 + i * 38;
+      this.add(this.act(row.openId, row.title || "Untitled", 40, y, 13, false, 300));
+      this.add(text(row.meta, 40, y + 18, 10, theme.muted));
+      if (row.deleteId) this.add(this.act(row.deleteId, "Delete", 420, y, 13, false, 96));
     });
     if (opts.total > opts.pageSize) {
       const trackH = 210;
@@ -704,7 +726,7 @@ export class ExtraHud {
     this.add(this.board);
 
     const hit = new createjs.Shape();
-    hit.graphics.beginFill("rgba(0,0,0,0.01)").drawRect(BOARD_VIEW.x, BOARD_VIEW.y, BOARD_VIEW.w, BOARD_VIEW.h);
+    hit.graphics.beginFill("rgba(255,180,80,0.04)").drawRect(BOARD_VIEW.x, BOARD_VIEW.y, BOARD_VIEW.w, BOARD_VIEW.h);
     hit.mouseEnabled = true;
     hit.cursor = "pointer";
     const cellOf = (ev?: unknown): { x: number; y: number } | null => {
@@ -724,11 +746,14 @@ export class ExtraHud {
     this.add(hit);
 
     EDITOR_TOOLS.forEach((tool, i) => {
-      const y = 30 + i * 18;
+      const col = i < 6 ? 0 : 1;
+      const row = i < 6 ? i : i - 6;
+      const x = 360 + col * 96;
+      const y = 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
-      const icon = this.toolClip(tool.id, 372, y);
+      const icon = this.toolClip(tool.id, x, y);
       if (icon) this.add(icon);
-      this.add(this.act("tool:" + tool.id, mark + tool.label, 392, y, 11, false, 150));
+      this.add(this.act("tool:" + tool.id, mark + tool.label, x + 18, y, 11, false, 78));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, 248, 10, theme.muted));

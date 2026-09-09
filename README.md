@@ -36,6 +36,8 @@ npm run tauri dev
 
 ## Version
 
-The main menu shows **v2.8.5** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+The main menu shows **v2.8.6** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+
+On a phone, install it as an app and play in **portrait**. The stage stays on top and a virtual gamepad sits underneath. Landscape in the browser is too tight for the pad.
 
 `npm test` runs the TypeScript extra-library tests. `npm run build` bundles `src/extra/` into `extra.bundle.js` and copies `src` to `dist`.

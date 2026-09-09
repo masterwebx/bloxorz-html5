@@ -1,1 +1,1 @@
-window.GAME_VERSION = "2.8.5";
+window.GAME_VERSION = "2.8.6";

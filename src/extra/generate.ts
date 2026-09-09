@@ -34,11 +34,29 @@ export const QUALITY: Record<Difficulty, QualityOpts> = {
   insane: { minMoves: 26, minUsed: 8, attempts: 48, bfs: 120_000 },
 };
 
-export const DAILY_OPTS: QualityOpts = { minMoves: 30, minUsed: 10, attempts: 64, bfs: 150_000 };
-export const SEEDED_OPTS: QualityOpts = { minMoves: 20, minUsed: 8, attempts: 48, bfs: 120_000 };
+/** Gauntlet floors are ~10× the old casual QUALITY bands (8 / 14 / 20 / 26). */
+export const GAUNTLET_QUALITY: Record<Difficulty, QualityOpts> = {
+  easy: { minMoves: 40, minUsed: 12, attempts: 8, bfs: 120_000 },
+  medium: { minMoves: 55, minUsed: 16, attempts: 8, bfs: 140_000 },
+  hard: { minMoves: 70, minUsed: 20, attempts: 10, bfs: 160_000 },
+  insane: { minMoves: 85, minUsed: 24, attempts: 10, bfs: 180_000 },
+};
+
+export const DAILY_OPTS: QualityOpts = { minMoves: 80, minUsed: 24, attempts: 12, bfs: 200_000 };
+export const SEEDED_OPTS: QualityOpts = { minMoves: 28, minUsed: 10, attempts: 12, bfs: 140_000 };
 export const GAUNTLET_LEN = 5;
 
 const OBSTACLE_CH = "shfvlkrq";
+
+export function filledCellCount(tiles: string[]): number {
+  let n = 0;
+  for (const row of tiles) {
+    for (const ch of row) {
+      if (ch !== " ") n++;
+    }
+  }
+  return n;
+}
 
 export function countObstacles(tiles: string[]): number {
   let n = 0;
@@ -531,6 +549,231 @@ function snakePath(rng: () => number, want: number): [number, number][] {
   return path;
 }
 
+/**
+ * Eight rooms packed into the full 15×10 board, snake-linked by off bridges.
+ * Empty cells only sit in the unused gaps so the stage uses almost every tile.
+ */
+function tryPacked(rng: () => number, seed: string, difficulty: Difficulty): Puzzle | null {
+  const cols = 4;
+  const iw = 3;
+  const gap = 1;
+  const ih0 = 4 + Math.floor(rng() * 2);
+  const ih1 = H - gap - ih0;
+  if (ih1 < 3) return null;
+  const heights = [ih0, ih1];
+  const grid = emptyGrid();
+  const rooms: [number, number][][][] = [[], []];
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cells: [number, number][] = [];
+      const x0 = c * (iw + gap);
+      const y0 = r === 0 ? 0 : heights[0] + gap;
+      for (let a = 0; a < iw; a++) {
+        for (let b = 0; b < heights[r]; b++) {
+          grid[y0 + b][x0 + a] = "b";
+          cells.push([x0 + a, y0 + b]);
+        }
+      }
+      rooms[r][c] = cells;
+    }
+  }
+
+  const path: [number, number][] =
+    rng() < 0.5
+      ? [
+          [0, 0],
+          [0, 1],
+          [0, 2],
+          [0, 3],
+          [1, 3],
+          [1, 2],
+          [1, 1],
+          [1, 0],
+        ]
+      : [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [1, 2],
+          [1, 3],
+          [0, 3],
+          [0, 2],
+          [0, 1],
+        ];
+
+  const switches: SwitchDef[] = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const [r1, c1] = path[i];
+    const [r2, c2] = path[i + 1];
+    const kind = rng() < 0.5 ? "l" : "r";
+    const targets: SwitchDef["bridges"] = [];
+    if (r1 === r2) {
+      const left = Math.min(c1, c2);
+      const x0 = left * (iw + gap) + iw;
+      const yBase = r1 === 0 ? 0 : heights[0] + gap;
+      const y = yBase + Math.floor(rng() * heights[r1]);
+      for (let g = 0; g < gap; g++) {
+        grid[y][x0 + g] = kind;
+        targets.push({ x: x0 + g, y, mode: "on" });
+      }
+    } else {
+      const x0 = c1 * (iw + gap) + Math.floor(rng() * iw);
+      const y0 = heights[0];
+      for (let g = 0; g < gap; g++) {
+        grid[y0 + g][x0] = kind;
+        targets.push({ x: x0, y: y0 + g, mode: "on" });
+      }
+    }
+    if (!targets.length) return null;
+    const swPool = rooms[r1][c1].filter((c) => grid[c[1]][c[0]] === "b");
+    if (!swPool.length) return null;
+    const sw = farthest(swPool, [targets[0].x, targets[0].y]);
+    grid[sw[1]][sw[0]] = "s";
+    switches.push({ x: sw[0], y: sw[1], bridges: targets });
+  }
+
+  const first = rooms[path[0][0]][path[0][1]];
+  const last = rooms[path[path.length - 1][0]][path[path.length - 1][1]];
+  const spawnPool = first.filter((c) => grid[c[1]][c[0]] === "b");
+  const endPool = last.filter((c) => grid[c[1]][c[0]] === "b");
+  if (!spawnPool.length || !endPool.length) return null;
+  const spawn = farthest(spawnPool, [switches[0].x, switches[0].y]);
+  const end = farthest(endPool, spawn);
+  if (spawn[0] === end[0] && spawn[1] === end[1]) return null;
+  grid[end[1]][end[0]] = "e";
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (grid[y][x] === "b" && rng() < 0.22 && !(x === spawn[0] && y === spawn[1])) grid[y][x] = "f";
+    }
+  }
+
+  const splits: SplitDef[] = [];
+  const padPool = last.filter((c) => grid[c[1]][c[0]] === "b" || grid[c[1]][c[0]] === "f");
+  if (padPool.length >= 4) {
+    const pad = pick(rng, padPool);
+    const drops = last.filter((c) => manhattan(c, pad) >= 2 && !(c[0] === end[0] && c[1] === end[1]));
+    if (drops.length >= 2) {
+      const a = pick(rng, drops);
+      const b = farthest(drops, a);
+      grid[pad[1]][pad[0]] = "v";
+      splits.push({ x: pad[0], y: pad[1], a, b });
+    }
+  }
+
+  const def = packDef(toTiles(grid), spawn, seed, switches, splits);
+  return finishPuzzle(def, seed, difficulty, 200_000);
+}
+
+/**
+ * Every cell of the 15×10 board is a tile. Six 5×5 rooms snake through
+ * gated off-bridges so Daily / hard gauntlets actually use the whole stage.
+ */
+function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): Puzzle | null {
+  const rw = 5;
+  const rh = 5;
+  const grid = emptyGrid();
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) grid[y][x] = "b";
+  }
+
+  const snake: [number, number][] =
+    rng() < 0.5
+      ? [
+          [0, 0],
+          [0, 1],
+          [0, 2],
+          [1, 2],
+          [1, 1],
+          [1, 0],
+        ]
+      : [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [1, 2],
+          [0, 2],
+          [0, 1],
+        ];
+
+  const room = (r: number, c: number): [number, number][] => {
+    const cells: [number, number][] = [];
+    const x0 = c * rw;
+    const y0 = r * rh;
+    for (let y = 0; y < rh; y++) {
+      for (let x = 0; x < rw; x++) cells.push([x0 + x, y0 + y]);
+    }
+    return cells;
+  };
+
+  const switches: SwitchDef[] = [];
+  for (let i = 0; i < snake.length - 1; i++) {
+    const [r1, c1] = snake[i];
+    const [r2, c2] = snake[i + 1];
+    const kind = rng() < 0.5 ? "l" : "r";
+    const targets: SwitchDef["bridges"] = [];
+    if (r1 === r2) {
+      const left = Math.min(c1, c2);
+      const xGate = (left + 1) * rw;
+      const y0 = r1 * rh;
+      for (let k = 0; k < rh; k++) {
+        grid[y0 + k][xGate] = kind;
+        targets.push({ x: xGate, y: y0 + k, mode: "on" });
+      }
+    } else {
+      const top = Math.min(r1, r2);
+      const yGate = (top + 1) * rh;
+      const x0 = c1 * rw;
+      for (let k = 0; k < rw; k++) {
+        grid[yGate][x0 + k] = kind;
+        targets.push({ x: x0 + k, y: yGate, mode: "on" });
+      }
+    }
+    if (!targets.length) return null;
+    const swPool = room(r1, c1).filter((c) => grid[c[1]][c[0]] === "b");
+    if (!swPool.length) return null;
+    const sw = farthest(swPool, [targets[0].x, targets[0].y]);
+    grid[sw[1]][sw[0]] = "s";
+    switches.push({ x: sw[0], y: sw[1], bridges: targets });
+  }
+
+  const first = room(snake[0][0], snake[0][1]);
+  const last = room(snake[snake.length - 1][0], snake[snake.length - 1][1]);
+  const spawnPool = first.filter((c) => grid[c[1]][c[0]] === "b");
+  const endPool = last.filter((c) => grid[c[1]][c[0]] === "b");
+  if (!spawnPool.length || !endPool.length || !switches.length) return null;
+  const spawn = farthest(spawnPool, [switches[0].x, switches[0].y]);
+  const end = farthest(endPool, spawn);
+  if (spawn[0] === end[0] && spawn[1] === end[1]) return null;
+  grid[end[1]][end[0]] = "e";
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (grid[y][x] === "b" && rng() < 0.12 && !(x === spawn[0] && y === spawn[1])) grid[y][x] = "f";
+    }
+  }
+
+  const splits: SplitDef[] = [];
+  const padPool = last.filter((c) => grid[c[1]][c[0]] === "b" || grid[c[1]][c[0]] === "f");
+  if (padPool.length >= 4) {
+    const pad = pick(rng, padPool);
+    const drops = last.filter((c) => manhattan(c, pad) >= 2 && !(c[0] === end[0] && c[1] === end[1]));
+    if (drops.length >= 2) {
+      const a = pick(rng, drops);
+      const b = farthest(drops, a);
+      grid[pad[1]][pad[0]] = "v";
+      splits.push({ x: pad[0], y: pad[1], a, b });
+    }
+  }
+
+  return finishPuzzle(packDef(toTiles(grid), spawn, seed, switches, splits), seed, difficulty, 200_000);
+}
+
+export function generateFullBoard(seed: string): Puzzle {
+  const rng = mulberry32(hashSeed(`full:${seed}`));
+  return tryFullBoard(rng, seed, "insane") ?? generatePuzzle(seed, "easy");
+}
+
 /** Two-wide winding corridor with forced bridge cuts. */
 function tryRibbon(rng: () => number, seed: string, difficulty: Difficulty): Puzzle | null {
   const line = snakePath(rng, 30 + Math.floor(rng() * 16));
@@ -585,9 +828,11 @@ export function generateQualityPuzzle(seed: string, opts: QualityOpts, difficult
     let p: Puzzle | null = null;
     const tall = opts.minMoves >= 26;
     const islands = opts.minMoves >= 30 ? (roll < 0.55 ? 5 : 4) : roll < 0.22 ? 5 : roll < 0.5 ? 4 : 3;
-    if (roll < 0.78) p = trySlots(rng, `${seed}:${i}`, difficulty, islands, tall);
-    else if (roll < 0.9) p = tryRibbon(rng, `${seed}:${i}`, difficulty);
-    else if (roll < 0.96) p = tryBridges(rng, `${seed}:${i}`, difficulty);
+    if (opts.minMoves >= 50 && roll < 0.8) p = tryFullBoard(rng, `${seed}:${i}`, difficulty);
+    else if (opts.minMoves >= 40 && roll < 0.78) p = tryPacked(rng, `${seed}:${i}`, difficulty);
+    else if (roll < 0.82) p = trySlots(rng, `${seed}:${i}`, difficulty, islands, tall);
+    else if (roll < 0.92) p = tryRibbon(rng, `${seed}:${i}`, difficulty);
+    else if (roll < 0.97) p = tryBridges(rng, `${seed}:${i}`, difficulty);
     else p = trySplit(rng, `${seed}:${i}`, difficulty);
     if (!p) continue;
     const used = p.usedObstacles;
@@ -640,7 +885,22 @@ export function generatePuzzle(seed: string, difficulty: Difficulty): Puzzle {
 }
 
 export function generateDaily(date: Date): Puzzle {
-  return generateQualityPuzzle(dailySeed(date), DAILY_OPTS, "insane");
+  const seed = dailySeed(date);
+  const rng = mulberry32(hashSeed(`daily-full:${seed}`));
+  let best: Puzzle | null = null;
+  let bestScore = -1;
+  for (let i = 0; i < 8; i++) {
+    const p = tryFullBoard(rng, `${seed}:${i}`, "insane");
+    if (!p) continue;
+    const sc = scorePuzzle(p.solutionLen, p.usedObstacles, DAILY_OPTS);
+    if (sc > bestScore) {
+      best = p;
+      bestScore = sc;
+    }
+    if (p.solutionLen >= 50 && p.usedObstacles >= 16) return { ...p, seed };
+  }
+  if (best) return { ...best, seed };
+  return generateQualityPuzzle(seed, DAILY_OPTS, "insane");
 }
 
 export function generateSeeded(seed: string): Puzzle {
@@ -650,7 +910,16 @@ export function generateSeeded(seed: string): Puzzle {
 
 export function generateRun(seed: string, difficulty: Difficulty, count: number): Puzzle[] {
   const n = Math.max(1, Math.min(15, count));
-  return Array.from({ length: n }, (_, i) => generatePuzzle(`${seed}#${i}`, difficulty));
+  const opts = GAUNTLET_QUALITY[difficulty];
+  return Array.from({ length: n }, (_, i) => {
+    const tag = `${seed}#${i}`;
+    const rng = mulberry32(hashSeed(`gfull:${difficulty}:${tag}`));
+    const full = tryFullBoard(rng, tag, difficulty);
+    if (full && full.solutionLen >= Math.min(28, opts.minMoves)) return full;
+    const packed = tryPacked(rng, `${tag}:p`, difficulty);
+    if (packed) return packed;
+    return generateQualityPuzzle(tag, opts, difficulty);
+  });
 }
 
 export const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard", "insane"];
@@ -660,7 +929,7 @@ export function difficultyLabel(d: Difficulty): string {
 }
 
 export function difficultyHint(d: Difficulty): string {
-  const q = QUALITY[d];
+  const q = GAUNTLET_QUALITY[d];
   return `${q.minMoves}+ moves · ${q.minUsed}+ used obstacles`;
 }
 

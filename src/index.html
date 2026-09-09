@@ -4,8 +4,16 @@
 <head>
 	<meta name='robots' content='noindex'>
 	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black">
+	<meta name="theme-color" content="#000000">
 	<meta name="authoring-tool" content="Adobe_Animate_CC">
 	<title>bloxorz</title>
+	<link rel="manifest" href="manifest.json">
+	<link rel="icon" href="icon.svg" type="image/svg+xml">
+	<link rel="apple-touch-icon" href="icon.svg">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
@@ -274,6 +282,29 @@
 				</div>
 			</div>
 		</div>
+	</div>
+	<div id="touch-pad" hidden>
+		<div class="tp-cluster tp-dpad" aria-label="Move">
+			<button type="button" class="tp-btn tp-up" data-dir="up" aria-label="Up">▲</button>
+			<button type="button" class="tp-btn tp-left" data-dir="left" aria-label="Left">◀</button>
+			<button type="button" class="tp-btn tp-right" data-dir="right" aria-label="Right">▶</button>
+			<button type="button" class="tp-btn tp-down" data-dir="down" aria-label="Down">▼</button>
+		</div>
+		<div class="tp-cluster tp-actions">
+			<button type="button" class="tp-btn tp-swap" data-act="swap">SWAP</button>
+			<button type="button" class="tp-btn tp-menu" data-act="pause">MENU</button>
+		</div>
+	</div>
+	<div id="install-hint" hidden>
+		<p>Install Bloxorz as an app and play in portrait — the stage sits on top, the gamepad underneath. Landscape in the browser is too tight.</p>
+		<div class="install-row">
+			<button type="button" id="install-now">Install app</button>
+			<button type="button" id="install-dismiss">Not now</button>
+		</div>
+		<p id="install-how" hidden></p>
+	</div>
+	<div id="landscape-hint" hidden>
+		<p>Rotate to portrait, or install as an app. Landscape leaves no room for the gamepad.</p>
 	</div>
 	<div id="_preload_div_">
 		<img id="preload_img" src="images/preloader.gif" />

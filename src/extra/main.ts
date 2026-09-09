@@ -55,6 +55,7 @@ import type { LevelDef } from "./types";
 import { ExtraHud, type MenuItem } from "./hud";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
 import type { ClipName } from "./coolmathBoard";
+import { registerServiceWorker, TouchChrome } from "./touchPad";
 
 type Screen =
   | "splash"
@@ -104,6 +105,8 @@ type BloxWorld = {
   destroy?: () => void;
   blocks?: { roll?: { idle?: boolean } }[];
   keys?: { code?: string };
+  transitionOutLevelQuit?: () => void;
+  __bloxQuit?: boolean;
 };
 
 type StageLike = {
@@ -120,6 +123,9 @@ type StageLike = {
   toggleSound?: () => void;
   totalMoves?: number;
   totalFalls?: number;
+  levelAttempts?: number;
+  touchMode?: boolean;
+  localSave?: { get?: () => unknown; save?: (n: number) => void };
   gameContainer?: { visible?: boolean };
   menuMusic?: { stop?: () => void } | null;
   bloxWorld?: BloxWorld | null;
@@ -181,6 +187,7 @@ let rootParked = false;
 let menuParked = false;
 let rebindAction: Action | null = null;
 let overlayMode: "run" | "menu" | "" = "";
+let playLaunching = false;
 let draftName = "Untitled";
 let listScroll = 0;
 let puzzleSeed = "";
@@ -214,6 +221,8 @@ let prevPadButtons = new Set<number>();
 let bakedHue = -1;
 let atlasFrames: FrameBackup[] | null = null;
 let atlasCanvas: HTMLCanvasElement | null = null;
+let touchChrome: TouchChrome | null = null;
+let localSaveWrapped = false;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -450,6 +459,16 @@ function syncSidePanel(show: boolean): void {
   split?.classList.toggle("has-timer", show);
 }
 
+function hideVanillaMenu(): void {
+  const menu = window.exportRoot?.menu as { visible?: boolean; scaleX?: number; scaleY?: number } | undefined;
+  if (menu) {
+    menu.visible = false;
+    menu.scaleX = 1;
+    menu.scaleY = 1;
+  }
+  setVanillaButtonsVisible(false);
+}
+
 function parkCreateJsMenu(): void {
   if (menuParked) return;
   menuParked = true;
@@ -465,7 +484,7 @@ function parkCreateJsMenu(): void {
     st.menuMusic.stop?.();
     st.menuMusic = null;
   }
-  setVanillaButtonsVisible(false);
+  hideVanillaMenu();
   showGameSky(true);
   syncSidePanel(false);
 }
@@ -513,6 +532,45 @@ function wrapGetLevels(): void {
   w.getLevels = function wrappedLevels() {
     if (playSession?.defs.length) return playSession.defs.map((d) => defToCreateJs(d));
     return origGetLevels!();
+  };
+}
+
+function keepRunTotals(session: PlaySession): boolean {
+  return session.card === "gauntlet" || (!!session.classicRun && session.kind === "campaign" && !session.defs.length);
+}
+
+function wrapLocalSave(): void {
+  const st = window.stage;
+  if (!st?.localSave?.save || localSaveWrapped) return;
+  const orig = st.localSave.save.bind(st.localSave);
+  localSaveWrapped = true;
+  st.localSave.save = (num: number) => {
+    if (playSession?.classicRun && playSession.kind === "campaign" && !playSession.defs.length) orig(num);
+  };
+}
+
+function resetStageTotals(): void {
+  const st = window.stage;
+  if (!st) return;
+  st.totalMoves = 0;
+  st.totalFalls = 0;
+  st.levelAttempts = 0;
+}
+
+function quitPlay(): void {
+  const back = playSession?.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
+  leavePlayTo(back);
+}
+
+function hookWorldQuit(): void {
+  const world = window.stage?.bloxWorld;
+  if (!world || world.__bloxQuit) return;
+  world.__bloxQuit = true;
+  const orig = world.transitionOutLevelQuit?.bind(world);
+  world.transitionOutLevelQuit = () => {
+    const back = playSession?.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
+    orig?.();
+    leavePlayTo(back);
   };
 }
 
@@ -616,7 +674,7 @@ function navItems(): NavItem[] {
     ];
   }
   if (extraView === "history") {
-    const rows = loadFinishedStages().slice(0, 6);
+    const rows = loadFinishedStages().slice(0, 5);
     return [
       { id: "back" },
       { id: "toggle-ghosts" },
@@ -760,6 +818,8 @@ function hudKey(): string {
     draft.tiles.join(""),
     draft.spawn.join(","),
     String(loadFinishedStages().length),
+    String(loadSeeGhosts()),
+    listSaved().map((row) => row.code).join(","),
     JSON.stringify(s.keys),
     JSON.stringify(s.pads),
   ].join("|");
@@ -837,7 +897,7 @@ function paintHud(): void {
       })),
     });
   } else if (extraView === "puzzles") {
-    hud.drawPuzzles();
+    hud.drawPuzzles(utcDateLabel());
   } else if (extraView === "puzzles-seeded") {
     hud.drawSeeded();
     placeHudInput(true, "7.3%", "37.5%", "51%", "SEED", puzzleSeed, 24);
@@ -848,7 +908,7 @@ function paintHud(): void {
     hud.drawHistory({
       seeGhosts: loadSeeGhosts(),
       rows: loadFinishedStages()
-        .slice(0, 6)
+        .slice(0, 5)
         .map((rec) => {
           const title = rec.title || `Stage ${String(rec.stage).padStart(2, "0")}`;
           return {
@@ -1101,6 +1161,7 @@ function handleHudAction(act: string): void {
     paintHud();
   } else if (act === "toggle-ghosts") {
     saveSeeGhosts(!loadSeeGhosts());
+    lastHudPaint = "";
     markHudDirty();
     paintHud();
   } else if (act.startsWith("music:")) {
@@ -1232,6 +1293,7 @@ function handleHudAction(act: string): void {
     deleteStage(row.code);
     const maxScroll = Math.max(0, listSaved().length - LIST_PAGE);
     if (listScroll > maxScroll) listScroll = maxScroll;
+    lastHudPaint = "";
     markHudDirty();
     paintHud();
   } else if (act.startsWith("replay:")) {
@@ -1463,20 +1525,27 @@ function leavePlayTo(view: Screen): void {
 }
 
 function beginPlay(levelNumber: number, session: PlaySession): void {
+  if (session.kind === "custom") {
+    for (const def of session.defs) def.code = "000000";
+  }
   playSession = session;
   extraView = "auto";
   tape = [];
   lastLevelNum = levelNumber;
   overlayMode = "run";
+  playLaunching = true;
   enterPlayVisuals();
   hushPlayAudio();
   unlockAudio();
   const stage = window.stage;
+  if (stage) stage.touchMode = false;
   if (stage?.menuMusic) {
     stage.menuMusic.stop?.();
     stage.menuMusic = null;
   }
   if (stage) stage.levelNumber = levelNumber;
+  wrapLocalSave();
+  if (!keepRunTotals(session) || levelNumber <= 1) resetStageTotals();
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
   syncSidePanel(!!session.classicRun && loadSettings().showTimer);
   const intro =
@@ -1528,20 +1597,30 @@ function setVanillaTitleVisible(on: boolean): void {
 
 function syncLetterbox(on: boolean): void {
   const st = window.stage;
+  const root = window.exportRoot as
+    | (StageLike & { __bloxBox?: TintShape; addChildAt?: (c: unknown, i: number) => void })
+    | undefined;
   const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
-  if (!st?.addChildAt || !cjs?.Shape) {
-    document.body.classList.toggle("title-letterbox", on);
-    return;
-  }
+  document.body.classList.toggle("title-letterbox", on);
+  if (on && sky) sky.visible = false;
+  if (!cjs?.Shape) return;
+
   if (!letterbox) {
     letterbox = new cjs.Shape();
-    letterbox.graphics.beginFill("#000").drawRect(0, 0, 550, 300);
+    letterbox.graphics.beginFill("#000").drawRect(-80, -80, 710, 460);
     letterbox.mouseEnabled = false;
-    st.addChildAt(letterbox, 0);
   }
   letterbox.visible = on;
-  if (on && st.setChildIndex) st.setChildIndex(letterbox, 0);
-  document.body.classList.toggle("title-letterbox", on);
+
+  if (root?.addChildAt) {
+    if (!root.contains?.(letterbox)) root.addChildAt(letterbox, 0);
+    else if (root.setChildIndex) root.setChildIndex(letterbox, 0);
+    return;
+  }
+  if (st?.addChildAt) {
+    if (!st.contains?.(letterbox)) st.addChildAt(letterbox, 0);
+    else if (st.setChildIndex) st.setChildIndex(letterbox, 0);
+  }
 }
 
 type PlayBlock = {
@@ -1719,7 +1798,9 @@ function commitTape(won: boolean, stageNo: number): void {
 }
 
 function scheduleBeatCheck(): void {
-  beatLabel = beatBadge(draft, isPlayable(draft));
+  const issue = isPlayable(draft);
+  beatLabel = beatBadge(draft, issue);
+  beaten = !issue && beatLabel === "CAN BE BEAT";
   if (extraView === "creator-edit" || extraView === "creator") {
     markHudDirty();
     paintHud();
@@ -1923,16 +2004,20 @@ function bind(): void {
 
     if (currentLabel() === "game") {
       const act = actionFromCode(ev.code);
+      if (act === "pause" || act === "back" || ev.key === "Escape") {
+        ev.preventDefault();
+        quitPlay();
+        return;
+      }
       let code = ev.code;
       if (act === "up") code = "ArrowUp";
       else if (act === "down") code = "ArrowDown";
       else if (act === "left") code = "ArrowLeft";
       else if (act === "right") code = "ArrowRight";
       else if (act === "swap") code = "Space";
-      else if (act === "pause" || act === "back") code = "Escape";
       const cmd = KEY_CMD[code];
       if (cmd) tape.push(cmd);
-      if (cmd || act === "pause" || act === "back") {
+      if (cmd) {
         ev.preventDefault();
         window.stage?.triggerKeyDown?.({ code });
       }
@@ -1967,19 +2052,21 @@ function syncOverlay(): void {
   const version = $("build-version");
   const label = currentLabel();
   const stage = window.stage;
-  const launching = !!playSession && extraView === "auto";
-  const inRun =
-    !!playSession &&
-    (launching ||
-      label === "game" ||
-      label === "restart" ||
-      label === "stagetitle" ||
-      label === "instructions");
+  const labeledRun =
+    label === "game" || label === "restart" || label === "stagetitle" || label === "instructions";
+  if (labeledRun) playLaunching = false;
+  const inRun = !!playSession && (labeledRun || playLaunching);
   const playing = label === "game" || label === "restart";
   const onTitle = label === "instructions" || label === "stagetitle";
   syncLetterbox(onTitle);
   if (onTitle) setVanillaTitleVisible(usesVanillaTitle());
   else setVanillaTitleVisible(true);
+
+  if (playSession && !playLaunching && !labeledRun && (extraView === "auto" || label === "menu" || label === "splash")) {
+    const back = playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
+    leavePlayTo(back);
+    return;
+  }
 
   if (version) {
     const hide = inRun;
@@ -2080,12 +2167,14 @@ function syncOverlay(): void {
       enterPlayVisuals();
       raiseHud();
     }
+    hookWorldQuit();
+    touchChrome?.sync(playing);
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
     applyPlayTint();
     applyBlockHue();
     if (playing) {
       tickSolve();
-      pollGamepad(stage);
+      pollGamepad(stage, quitPlay);
       syncHelpText();
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);
@@ -2137,11 +2226,13 @@ function syncOverlay(): void {
       lastHudPaint = "";
     }
   }
+  hideVanillaMenu();
+  touchChrome?.sync(false);
 
   applyBlockHue();
   bindMenuPad();
   capturePadRebind();
-  if (playSession && extraView === "auto") return;
+  if (playLaunching) return;
   if (extraView === "finish") {
     paintHud();
     return;
@@ -2208,7 +2299,22 @@ export function startBloxorzShell(): void {
   refreshNameCache();
   gateSoundPlay();
   wrapGetLevels();
+  wrapLocalSave();
+  if (window.stage) window.stage.touchMode = false;
   bind();
+  if (!touchChrome) {
+    touchChrome = new TouchChrome();
+    touchChrome.mount({
+      down: (code) => {
+        const cmd = KEY_CMD[code];
+        if (cmd) tape.push(cmd);
+        window.stage?.triggerKeyDown?.({ code });
+      },
+      up: (code) => window.stage?.triggerKeyUp?.({ code }),
+      pause: quitPlay,
+    });
+    registerServiceWorker();
+  }
   if (window.stage && !hud) {
     hud = new ExtraHud(window.stage as { addChild: (c: unknown) => void });
     hud.onAction = handleHudAction;

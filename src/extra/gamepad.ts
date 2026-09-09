@@ -60,8 +60,8 @@ function collectHeld(): Set<number> {
   return held;
 }
 
-/** In-game: map pad to CreateJS arrow/space codes. */
-export function pollGamepad(stage: StageLike | undefined): void {
+/** In-game: map pad to CreateJS arrow/space codes. Pause leaves the extra shell. */
+export function pollGamepad(stage: StageLike | undefined, onPause?: () => void): void {
   if (!stage?.triggerKeyDown) return;
   const settings = loadSettings();
   const held = collectHeld();
@@ -70,18 +70,17 @@ export function pollGamepad(stage: StageLike | undefined): void {
     if (held.has(settings.pads[dir])) pressed[DIR_CODE[dir]] = true;
   }
   if (held.has(settings.pads.swap)) pressed.Space = true;
-  if (held.has(settings.pads.pause)) pressed.Escape = true;
+  const pause = held.has(settings.pads.pause);
 
   for (const code of Object.keys(pressed)) {
     if (!prevHeld[code]) stage.triggerKeyDown?.({ code });
   }
   for (const code of Object.keys(prevHeld)) {
+    if (code === "pause") continue;
     if (!pressed[code]) stage.triggerKeyUp?.({ code });
   }
-  if (pressed.Escape && !prevHeld.Escape) {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
-  }
-  prevHeld = pressed;
+  if (pause && !prevHeld.pause) onPause?.();
+  prevHeld = pause ? { ...pressed, pause: true } : pressed;
 }
 
 export type MenuPadEvent = "up" | "down" | "left" | "right" | "confirm" | "back";

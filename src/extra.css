@@ -89,3 +89,163 @@ body.title-letterbox #canvas {
 	color: #fff;
 	border-color: #fff;
 }
+
+#animation_container {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+#canvas,
+#dom_overlay_container {
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+}
+
+#touch-pad,
+#install-hint,
+#landscape-hint {
+	box-sizing: border-box;
+	-webkit-user-select: none;
+	user-select: none;
+	touch-action: none;
+}
+
+#touch-pad[hidden],
+#install-hint[hidden],
+#landscape-hint[hidden],
+#install-how[hidden] {
+	display: none !important;
+}
+
+#install-hint,
+#landscape-hint {
+	position: fixed;
+	left: 12px;
+	right: 12px;
+	z-index: 30;
+	padding: 12px 14px;
+	background: #140e0a;
+	border: 1px solid #c45a18;
+	color: #ffe6c4;
+	font: 600 13px/1.4 Orbitron, sans-serif;
+}
+
+#install-hint {
+	bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+#landscape-hint {
+	top: 12px;
+}
+
+.install-row {
+	display: flex;
+	gap: 10px;
+	margin-top: 10px;
+}
+
+#install-hint button,
+#landscape-hint button {
+	font: 700 12px/1 Orbitron, sans-serif;
+	color: #ffe6c4;
+	background: transparent;
+	border: 1px solid #c45a18;
+	padding: 10px 12px;
+	min-height: 40px;
+}
+
+#touch-pad {
+	display: flex;
+	align-items: stretch;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+	background: #0a0705;
+}
+
+.tp-cluster {
+	position: relative;
+}
+
+.tp-dpad {
+	width: min(46vw, 220px);
+	height: min(46vw, 220px);
+}
+
+.tp-btn {
+	appearance: none;
+	border: 1px solid #c45a18;
+	background: #1a120c;
+	color: #ffe6c4;
+	font: 700 16px/1 Orbitron, sans-serif;
+	border-radius: 12px;
+	padding: 0;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.tp-btn.is-down {
+	background: #c45a18;
+	color: #fff;
+}
+
+.tp-dpad .tp-btn {
+	position: absolute;
+	width: 32%;
+	height: 32%;
+}
+
+.tp-up { left: 34%; top: 0; }
+.tp-down { left: 34%; bottom: 0; }
+.tp-left { left: 0; top: 34%; }
+.tp-right { right: 0; top: 34%; }
+
+.tp-actions {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 14px;
+	min-width: 28vw;
+}
+
+.tp-swap,
+.tp-menu {
+	min-height: 64px;
+	padding: 0 16px;
+}
+
+body.is-mobile.is-portrait.is-playing #screen-split {
+	flex: 0 0 auto;
+	height: auto;
+}
+
+body.is-mobile.is-portrait.is-playing #animation_container {
+	width: 100vw;
+	height: calc(100vw * 300 / 550);
+	max-height: 46dvh;
+	flex: 0 0 auto;
+}
+
+body.is-mobile.is-portrait.is-playing #touch-pad {
+	display: flex;
+	flex: 1 1 auto;
+	min-height: 220px;
+}
+
+body.is-mobile #hud-input,
+body.is-mobile #hud-modal-input {
+	height: 36px;
+	font-size: 16px;
+}
+
+body.is-mobile .hud-modal-row button {
+	min-height: 44px;
+	padding: 10px 16px;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+	#install-hint {
+		display: none !important;
+	}
+}

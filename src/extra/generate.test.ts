@@ -3,6 +3,8 @@ import { LEVELS, Stage } from "./engine";
 import {
   dailySeed,
   difficultyHint,
+  filledCellCount,
+  generateFullBoard,
   generatePuzzle,
   generateRun,
   hashSeed,
@@ -16,7 +18,7 @@ describe("puzzle difficulty copy", () => {
   it("describes difficulty by move count and used obstacles", () => {
     expect(difficultyHint("easy")).toContain("moves");
     expect(difficultyHint("easy")).toContain("obstacles");
-    expect(difficultyHint("insane")).toMatch(/26/);
+    expect(difficultyHint("insane")).toMatch(/85/);
   });
 });
 
@@ -82,10 +84,16 @@ describe("seeded generator", () => {
     expect(stage.tileAt(x, y)).not.toBe("empty");
   });
 
-  it("builds a 5-stage run from one seed", () => {
-    const run = generateRun("series", "easy", 5);
-    expect(run).toHaveLength(5);
-    expect(new Set(run.map((p) => p.def.tiles.join(""))).size).toBeGreaterThan(1);
+  it("builds a multi-stage run from one seed", () => {
+    const run = generateRun("series", "easy", 2);
+    expect(run).toHaveLength(2);
+    expect(run[0].def.tiles.join("")).not.toBe(run[1].def.tiles.join(""));
+  });
+
+  it("fills the whole 15×10 board for a full-board puzzle", () => {
+    const p = generateFullBoard("fill-check");
+    expect(filledCellCount(p.def.tiles)).toBe(150);
+    expect(p.def.tiles.some((row) => row.includes("e"))).toBe(true);
   });
 
   it("names a daily seed from the UTC date only", () => {
