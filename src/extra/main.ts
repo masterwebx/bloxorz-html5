@@ -2073,6 +2073,18 @@ function handleTouchPadUp(code: string): void {
   if (inStagePlay()) window.stage?.triggerKeyUp?.({ code });
 }
 
+function handleTouchPadConfirm(): void {
+  if (currentLabel() === "instructions") {
+    advanceInstructions(1);
+    return;
+  }
+  if (inStagePlay()) {
+    if (isPauseMenuOpen()) clickPauseButton("returnToGame");
+    return;
+  }
+  handleMenuNav("confirm");
+}
+
 function handleTouchPadPause(): void {
   if (currentLabel() === "instructions") {
     advanceInstructions(0);
@@ -2545,6 +2557,7 @@ export function startBloxorzShell(): void {
       up: handleTouchPadUp,
       pause: handleTouchPadPause,
       rotate: toggleRotateScreen,
+      confirm: handleTouchPadConfirm,
     });
     registerServiceWorker();
   }

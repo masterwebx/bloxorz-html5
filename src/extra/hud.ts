@@ -488,8 +488,8 @@ export class ExtraHud {
     this.hideMascot();
     const theme = paint();
     this.add(text("On-screen controls", 275, 36, 20, theme.ink, "center"));
-    this.add(text("This looks like a phone. Put a D-pad under the", 275, 80, 12, theme.muted, "center"));
-    this.add(text("stage for move and split? Best in portrait.", 275, 100, 12, theme.muted, "center"));
+    this.add(text("This looks like a phone. Overlay a D-pad on the", 275, 80, 12, theme.muted, "center"));
+    this.add(text("stage for move, confirm, and split?", 275, 100, 12, theme.muted, "center"));
     this.add(this.act("mobile-pad-on", "Enable", 40, 150, 16, false, 160));
     this.add(this.act("mobile-pad-off", "Not now", 230, 150, 16, false, 160));
     this.add(text("You can change this later in Settings.", 275, 220, 11, theme.muted, "center"));

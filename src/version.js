@@ -1,1 +1,1 @@
-window.GAME_VERSION = "1.0.2";
+window.GAME_VERSION = "1.0.3";

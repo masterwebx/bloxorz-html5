@@ -7,6 +7,7 @@ export type TouchPadHandlers = {
   up: (code: string) => void;
   pause: () => void;
   rotate: () => void;
+  confirm: () => void;
 };
 
 const DIR_CODE: Record<TouchDir, string> = {
@@ -77,6 +78,7 @@ export class TouchChrome {
     up: () => undefined,
     pause: () => undefined,
     rotate: () => undefined,
+    confirm: () => undefined,
   };
 
   mount(handlers: TouchPadHandlers): void {
@@ -150,7 +152,7 @@ export class TouchChrome {
       if (hint) {
         hint.hidden = false;
         hint.textContent = ios
-          ? "Share → Add to Home Screen. Portrait keeps the stage on top and the pad underneath."
+          ? "Share → Add to Home Screen. The pad overlays the stage."
           : "Use the browser menu → Install app / Add to Home Screen.";
       }
     });
@@ -173,12 +175,12 @@ export class TouchChrome {
         ev.stopPropagation();
         el.setPointerCapture?.(ev.pointerId);
         const act = el.dataset.act;
-        if (act === "pause") {
-          this.handlers.pause();
-          return;
-        }
-        if (act === "rotate") {
-          this.handlers.rotate();
+        if (act === "pause" || act === "rotate" || act === "confirm") {
+          el.classList.add("is-down");
+          window.setTimeout(() => el.classList.remove("is-down"), 140);
+          if (act === "pause") this.handlers.pause();
+          else if (act === "rotate") this.handlers.rotate();
+          else this.handlers.confirm();
           return;
         }
         const code = this.codeFor(el);
