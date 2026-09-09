@@ -70,8 +70,7 @@
 	gap: 6px;
 }
 
-#extra-shell button,
-#exit-legacy {
+#extra-shell button {
 	appearance: none;
 	background: none;
 	border: 0;
@@ -86,9 +85,7 @@
 }
 
 #extra-shell button:hover,
-#extra-shell button:focus-visible,
-#exit-legacy:hover,
-#exit-legacy:focus-visible {
+#extra-shell button:focus-visible {
 	color: #fff;
 	text-shadow: 0 0 14px #fff, 0 0 18px rgba(255, 180, 80, 0.9);
 	outline: none;
@@ -117,19 +114,6 @@
 	gap: 14px;
 	font: 500 12px/1.4 Orbitron, sans-serif;
 	color: rgba(255, 210, 160, 0.85);
-}
-
-#exit-legacy {
-	display: none;
-	position: absolute;
-	left: 38%;
-	top: 89%;
-	z-index: 6;
-	letter-spacing: 0.04em;
-}
-
-#exit-legacy.is-open {
-	display: block;
 }
 
 @media (max-width: 640px) {

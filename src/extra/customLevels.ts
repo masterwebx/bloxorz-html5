@@ -298,7 +298,7 @@ function readList(key: string): SavedStage[] {
 }
 
 function writeList(key: string, all: SavedStage[]): void {
-  localStorage.setItem(key, JSON.stringify(all.slice(0, 80)));
+  localStorage.setItem(key, JSON.stringify(all.slice(0, 200)));
 }
 
 export function listSaved(): SavedStage[] {

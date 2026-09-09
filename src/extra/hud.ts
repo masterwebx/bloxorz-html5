@@ -554,25 +554,56 @@ export class ExtraHud {
     }
   }
 
-  drawPuzzles(diff: string, count: number): void {
+  drawPuzzles(): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
     this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("Puzzles", 275, 28, 20, theme.ink, "center"));
-    this.add(text("Select Difficulty.", 40, 58, 13));
+    this.add(this.act("puzzle-daily", "Daily", 40, 90, 16, false, 200));
+    this.add(this.act("puzzles-seeded", "Seeded", 40, 124, 16, false, 200));
+    this.add(this.act("puzzles-gauntlet", "Gauntlet", 40, 158, 16, false, 200));
+    this.add(text("Same insane stage for everyone today, or share a seed.", 40, 214, 11, theme.muted));
+  }
+
+  drawSeeded(): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(this.act("puzzles", "Back", 24, 16, 12, false, 80));
+    this.add(text("Seeded Run", 275, 28, 20, theme.ink, "center"));
+    this.add(text("Play this seed, or type another.", 40, 80, 12, theme.muted));
+    this.add(fieldBox(40, 112, 280));
+    this.add(this.act("puzzle-seed-go", "Play", 40, 154, 14, false, 100));
+    this.add(text("Maps aim for 20+ moves with switches you have to use.", 40, 200, 11, theme.muted));
+  }
+
+  drawGauntlet(diff: string): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(this.act("puzzles", "Back", 24, 16, 12, false, 80));
+    this.add(text("Gauntlet", 275, 28, 20, theme.ink, "center"));
     (["easy", "medium", "hard", "insane"] as const).forEach((d, i) => {
       const mark = d === diff ? "> " : "  ";
-      this.add(this.act("diff:" + d, mark + d, 40 + i * 120, 86, 12, false, 100));
+      this.add(this.act("diff:" + d, mark + d, 40 + i * 120, 78, 13, false, 100));
     });
-    this.add(text(difficultyHint(diff as "easy" | "medium" | "hard" | "insane"), 40, 118, 11, theme.muted));
-    this.add(this.act("puzzle-daily", "Play Daily", 40, 146, 13, false, 140));
-    this.add(text("Stages", 40, 178, 12));
-    [1, 5, 10].forEach((n, i) => {
-      const mark = n === count ? "> " : "  ";
-      this.add(this.act("len:" + n, mark + String(n), 120 + i * 70, 178, 12, false, 50));
-    });
-    this.add(this.act("puzzle-run", "Start Seeded Run", 40, 220, 13, false, 180));
+    this.add(text(difficultyHint(diff as "easy" | "medium" | "hard" | "insane"), 40, 110, 11, theme.muted));
+    this.add(text("Seed — share this with friends.", 40, 138, 12, theme.muted));
+    this.add(fieldBox(40, 160, 280));
+    this.add(this.act("gauntlet-go", "Play Gauntlet", 40, 200, 14, false, 180));
+    this.add(text("Five stages. Same seed, same gauntlet.", 40, 236, 11, theme.muted));
+  }
+
+  drawTitleCard(title: string, subtitle = ""): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    const label = title.toUpperCase().slice(0, 18);
+    const pitch = Math.min(5.2, 500 / (Math.max(1, label.length) * 6));
+    const width = label.length * 6 * pitch;
+    drawBillboard(this.layer, label, 275 - width / 2, 108, 500);
+    if (subtitle) this.add(text(subtitle, 275, 168, 14, theme.muted, "center"));
   }
 
   drawHistory(opts: {
@@ -600,32 +631,51 @@ export class ExtraHud {
   drawCreatorHub(title: string, items: MenuItem[], cursor = 0): void {
     this.clear();
     this.hideMascot();
-    const theme = paint();
     this.add(text(title, 40, 70, 20));
     items.forEach((item, i) => {
       const mark = i === cursor ? "> " : "  ";
       this.add(hitRow(mark + item.label, 40, 118 + i * 28, 15, () => this.onAction(item.id), !!item.disabled, 220));
     });
-    this.add(text("Paint a stage, or play a share code.", 40, 220, 11, theme.muted));
   }
 
-  drawCreatorList(title: string, rows: { title: string; meta: string; play: () => void }[], empty: string, backId: string): void {
+  drawCreatorList(opts: {
+    title: string;
+    rows: { title: string; meta: string; openId: string; deleteId?: string }[];
+    empty: string;
+    backId: string;
+    scroll: number;
+    total: number;
+    pageSize: number;
+  }): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act(backId, "Back", 24, 16, 12, false, 80));
-    this.add(text(title, 275, 18, 18, theme.ink, "center"));
-    if (!rows.length) {
-      this.add(text(empty, 40, 80, 12, theme.muted));
+    this.add(this.act(opts.backId, "Back", 24, 16, 12, false, 80));
+    this.add(text(opts.title, 275, 18, 18, theme.ink, "center"));
+    if (!opts.rows.length) {
+      this.add(text(opts.empty, 40, 80, 12, theme.muted));
       return;
     }
-    rows.slice(0, 7).forEach((row, i) => {
-      const y = 54 + i * 30;
+    opts.rows.forEach((row, i) => {
+      const y = 50 + i * 36;
       this.add(text(row.title, 40, y, 12));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      const openId = backId === "creator-make" ? "manage:" + i : "offline:" + i;
-      this.add(this.act(openId, "Open", 430, y, 11, false, 70));
+      this.add(this.act(row.openId, "Open", row.deleteId ? 360 : 430, y, 11, false, 64));
+      if (row.deleteId) this.add(this.act(row.deleteId, "Delete", 434, y, 11, false, 70));
     });
+    if (opts.total > opts.pageSize) {
+      const trackH = 210;
+      const trackX = 528;
+      const trackY = 50;
+      const bar = new createjs.Shape();
+      bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
+      const thumbH = Math.max(18, trackH * (opts.pageSize / opts.total));
+      const max = Math.max(1, opts.total - opts.pageSize);
+      const thumbY = trackY + (trackH - thumbH) * (opts.scroll / max);
+      bar.graphics.beginFill(theme.fill).drawRect(trackX, thumbY, 6, thumbH);
+      bar.mouseEnabled = false;
+      this.add(bar);
+    }
   }
 
   drawCreator(opts: {
@@ -644,8 +694,9 @@ export class ExtraHud {
     this.hideMascot();
     const theme = paint();
     this.add(this.act("creator-make", "Back", 10, 6, 12, false, 56));
-    this.add(text("Stage Creator", 72, 8, 15));
-    this.add(text(opts.badge, 250, 10, 11, theme.green));
+    this.add(text("Name", 72, 8, 12));
+    this.add(fieldBox(118, 6, 200));
+    this.add(text(opts.badge, 330, 8, 11, theme.green));
     this.add(this.act("creator-test", "Test", 490, 6, 12, false, 50));
 
     this.board = new createjs.Container();
@@ -688,7 +739,6 @@ export class ExtraHud {
     this.add(this.act("creator-save", "Save", 216, 266, 11, !opts.canSave, 44));
     this.add(this.act("creator-copy", "Copy Seed", 268, 266, 11, false, 88));
     this.add(this.act("creator-load", "Enter Code", 364, 266, 11, false, 96));
-    this.add(this.act("online", "Online", 468, 266, 11, false, 64));
   }
 
   refreshCreatorBoard(opts: {

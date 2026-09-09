@@ -101,6 +101,7 @@ export function pollMenuPad(): MenuPadEvent[] {
     { btn: settings.pads.back, ev: "back" },
   ];
   for (const m of map) if (held.has(m.btn)) now[m.ev] = true;
+  if (held.has(settings.pads.pause)) now.confirm = true;
 
   const out: MenuPadEvent[] = [];
   for (const ev of Object.keys(now) as MenuPadEvent[]) {

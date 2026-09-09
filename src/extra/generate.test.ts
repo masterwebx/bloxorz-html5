@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { LEVELS, Stage } from "./engine";
-import { dailySeed, generatePuzzle, generateRun, hashSeed, difficultyHint } from "./generate";
+import {
+  dailySeed,
+  difficultyHint,
+  generatePuzzle,
+  generateRun,
+  hashSeed,
+  usedObstacleKeys,
+} from "./generate";
 import { applyCmd, playScript, solveLevel } from "./solve";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough } from "./walkthrough";
+import type { LevelDef } from "./types";
 
 describe("puzzle difficulty copy", () => {
-  it("describes difficulty by move count and obstacles", () => {
+  it("describes difficulty by move count and used obstacles", () => {
     expect(difficultyHint("easy")).toContain("moves");
     expect(difficultyHint("easy")).toContain("obstacles");
-    expect(difficultyHint("insane")).toMatch(/22/);
+    expect(difficultyHint("insane")).toMatch(/26/);
   });
 });
 
@@ -16,6 +24,36 @@ describe("campaign walkthrough", () => {
   it("expands the official stage 01 route", () => {
     const cmds = expandWalkthrough(CAMPAIGN_WALKTHROUGH[0]);
     expect(cmds).toEqual(["right", "right", "down", "right", "right", "right", "down"]);
+  });
+});
+
+describe("used obstacles", () => {
+  it("counts only obstacle cells the winning tape occupies", () => {
+    const def: LevelDef = {
+      id: "used-test",
+      code: "000001",
+      tiles: [
+        "               ",
+        "  bbbb bbbbe   ",
+        "  bbbblbbbb    ",
+        "  s            ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+      ],
+      spawn: [2, 1],
+      switches: [{ x: 2, y: 3, bridges: [{ x: 6, y: 2, mode: "on" }] }],
+      splits: [],
+    };
+    const solved = solveLevel(def, 80_000);
+    expect(solved.ok).toBe(true);
+    const used = usedObstacleKeys(def, solved.cmds);
+    expect(used).toContain("2,3");
+    expect(used).toContain("6,2");
+    expect(used.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -35,7 +73,7 @@ describe("seeded generator", () => {
   });
 
   it("produces a standing spawn on solid ground and a hole", () => {
-    const p = generatePuzzle("spawn-check", "medium");
+    const p = generatePuzzle("spawn-check", "easy");
     const [x, y] = p.def.spawn;
     expect(p.def.tiles[y][x]).not.toBe(" ");
     expect(p.def.tiles[y][x]).not.toBe("e");
@@ -50,9 +88,10 @@ describe("seeded generator", () => {
     expect(new Set(run.map((p) => p.def.tiles.join(""))).size).toBeGreaterThan(1);
   });
 
-  it("names a daily seed from the UTC date", () => {
-    expect(dailySeed(new Date("2026-09-09T12:00:00Z"), "hard")).toBe("daily:2026-09-09:hard");
-    expect(hashSeed("daily:2026-09-09:hard")).toBeGreaterThan(0);
+  it("names a daily seed from the UTC date only", () => {
+    expect(dailySeed(new Date("2026-09-09T12:00:00Z"))).toBe("daily:2026-09-09");
+    expect(dailySeed(new Date("2026-09-09T23:00:00Z"))).toBe("daily:2026-09-09");
+    expect(hashSeed("daily:2026-09-09")).toBeGreaterThan(0);
   });
 
   it("BFS-solves a generated puzzle and the tape wins", () => {

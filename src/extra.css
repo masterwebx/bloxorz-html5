@@ -23,7 +23,9 @@
 }
 
 body.no-theme-bg #animation_container,
-body.no-theme-bg #canvas {
+body.no-theme-bg #canvas,
+body.title-letterbox #animation_container,
+body.title-letterbox #canvas {
 	background-color: #000 !important;
 }
 
