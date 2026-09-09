@@ -7,7 +7,7 @@ Living doc. Update this when a slice lands or the plan changes.
 | Repo | Role |
 | --- | --- |
 | [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate) | Upstream. Tauri wrap of Coolmath’s Bloxorz HTML5 export, plus timer and themes. |
-| [masterwebx/bloxorz-html5](https://github.com/masterwebx/bloxorz-html5) | **This repo** (renamed fork of Cybernate so it does not share the upstream repo name). GitHub still lists it as a fork of Spencer’s project. Live test: https://masterwebx.github.io/bloxorz-html5/ |
+| [masterwebx/bloxorz-plus](https://github.com/masterwebx/bloxorz-plus) | **This repo** (renamed fork of Cybernate). GitHub still lists it as a fork of Spencer’s project. Live test: https://masterwebx.github.io/bloxorz-plus/ |
 | [masterwebx/web-bloxorz](https://github.com/masterwebx/web-bloxorz) | Earlier canvas remake, frozen at the last good commit before a failed sprite-port. Keep for reference. |
 
 Remote `upstream` should stay pointed at Spencer’s repo.

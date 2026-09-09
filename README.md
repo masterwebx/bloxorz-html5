@@ -1,8 +1,8 @@
-# Bloxorz HTML5
+# Bloxorz+
 
-This is a **fork** of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate), renamed to **bloxorz-html5** so it does not share the upstream repo name. Spencer still gets GitHub fork credit.
+This is a **fork** of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate), renamed to **bloxorz-plus**. Spencer still gets GitHub fork credit.
 
-**Play it:** https://masterwebx.github.io/bloxorz-html5/
+**Play it:** https://masterwebx.github.io/bloxorz-plus/
 
 Spencer’s repo is the Coolmath **Adobe Animate HTML5** Bloxorz client, plus:
 
@@ -36,7 +36,7 @@ npm run tauri dev
 
 ## Version
 
-The main menu shows **v1.0.5** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+The main menu shows **v1.0.6** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
 
 On a phone, turn on **Mobile pad** (the game asks if it thinks you are on a phone). The D-pad appears only while a stage is running. Installed app mode often stays portrait — use **Rotate screen** in Settings or the ROTATE button on the pad to flip the layout to landscape without fighting the phone.
 

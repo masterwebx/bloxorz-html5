@@ -22,6 +22,7 @@ import {
   type Difficulty,
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, pollGamepad, pollMenuPad, rumble } from "./gamepad";
+import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopMenuMusic, unlockAudio } from "./audio";
 import {
   loadFinishedStages,
@@ -104,13 +105,20 @@ type CustomPlayOpts = {
   author?: string;
 };
 
+type PauseBtn = {
+  dispatchEvent?: (ev: unknown) => void;
+  gotoAndStop?: (n: string | number) => void;
+  scaleX?: number;
+  scaleY?: number;
+};
+
 type PauseMenuClip = {
   play?: () => void;
   currentFrame?: number;
   buttons?: {
-    returnToGame?: { dispatchEvent?: (ev: unknown) => void };
-    toggleSound?: { dispatchEvent?: (ev: unknown) => void };
-    quitToMenu?: { dispatchEvent?: (ev: unknown) => void };
+    returnToGame?: PauseBtn;
+    toggleSound?: PauseBtn;
+    quitToMenu?: PauseBtn;
   };
 };
 
@@ -202,6 +210,7 @@ let menuParked = false;
 let rebindAction: Action | null = null;
 let overlayMode: "run" | "menu" | "" = "";
 let playLaunching = false;
+let pauseFocus = 0;
 let draftName = "Untitled";
 let listScroll = 0;
 let puzzleSeed = "";
@@ -590,8 +599,46 @@ function isPauseMenuOpen(): boolean {
   return frame > 0 && frame < 24;
 }
 
-function clickPauseButton(name: "returnToGame" | "toggleSound" | "quitToMenu"): void {
-  pauseMenuClip()?.buttons?.[name]?.dispatchEvent?.("click");
+function clickPauseButton(name: PauseAction): void {
+  const menu = pauseMenuClip();
+  if (!menu) return;
+  if (name === "toggleSound") {
+    window.stage?.toggleSound?.();
+    return;
+  }
+  if (name === "returnToGame") {
+    if ((menu.currentFrame ?? 0) >= 10) menu.play?.();
+    return;
+  }
+  if ((menu.currentFrame ?? 0) >= 10) menu.play?.();
+  window.stage?.bloxWorld?.transitionOutLevelQuit?.();
+}
+
+function paintPauseFocus(): void {
+  const buttons = pauseMenuClip()?.buttons;
+  if (!buttons) return;
+  PAUSE_ACTIONS.forEach((name, i) => {
+    const btn = buttons[name];
+    if (!btn) return;
+    const on = i === pauseFocus;
+    btn.gotoAndStop?.(on ? 1 : 0);
+    btn.scaleX = on ? 1.1 : 1;
+    btn.scaleY = on ? 1.1 : 1;
+  });
+}
+
+function handlePauseNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
+  const action = pauseNavFromPad(ev);
+  if (action === "prev") pauseFocus = stepPauseFocus(pauseFocus, -1);
+  else if (action === "next") pauseFocus = stepPauseFocus(pauseFocus, 1);
+  else if (action === "confirm") {
+    clickPauseButton(PAUSE_ACTIONS[pauseFocus]);
+    return;
+  } else {
+    clickPauseButton("returnToGame");
+    return;
+  }
+  paintPauseFocus();
 }
 
 function releaseSteerKeys(): void {
@@ -606,18 +653,19 @@ function togglePauseMenu(): void {
   if (!menu?.play) return;
   const frame = menu.currentFrame ?? 0;
   if (frame !== 0 && frame !== 12) return;
-  if (frame === 0) releaseSteerKeys();
+  if (frame === 0) {
+    releaseSteerKeys();
+    pauseFocus = 0;
+  }
   menu.play();
   absorbHeldMenuConfirm();
 }
 
 function pollPauseMenuPad(): void {
   pollGamepad(undefined, togglePauseMenu);
-  if (pauseMenuFrame() !== 12) return;
-  for (const ev of pollMenuPad({ pauseConfirms: false })) {
-    if (ev === "confirm") clickPauseButton("returnToGame");
-    else if (ev === "back") clickPauseButton("quitToMenu");
-  }
+  if (!isPauseMenuOpen()) return;
+  paintPauseFocus();
+  for (const ev of pollMenuPad({ pauseConfirms: false })) handlePauseNav(ev);
 }
 
 function hookWorldQuit(): void {
@@ -2056,7 +2104,12 @@ function handleTouchPadDown(code: string): void {
     return;
   }
   if (inStagePlay()) {
-    if (isPauseMenuOpen()) return;
+    if (isPauseMenuOpen()) {
+      if (code === "ArrowUp" || code === "ArrowLeft") handlePauseNav("up");
+      else if (code === "ArrowDown" || code === "ArrowRight") handlePauseNav("down");
+      else if (code === "Space") handlePauseNav("confirm");
+      return;
+    }
     const cmd = KEY_CMD[code];
     if (cmd) tape.push(cmd);
     window.stage?.triggerKeyDown?.({ code });
@@ -2224,7 +2277,11 @@ function bind(): void {
       }
       if (isPauseMenuOpen()) {
         ev.preventDefault();
-        if (act === "confirm" || ev.key === "Enter") clickPauseButton("returnToGame");
+        if (act === "confirm" || ev.key === "Enter") handlePauseNav("confirm");
+        else if (act === "up" || ev.key === "ArrowUp") handlePauseNav("up");
+        else if (act === "down" || ev.key === "ArrowDown") handlePauseNav("down");
+        else if (act === "left" || ev.key === "ArrowLeft") handlePauseNav("up");
+        else if (act === "right" || ev.key === "ArrowRight") handlePauseNav("down");
         return;
       }
       let code = ev.code;
@@ -2386,7 +2443,7 @@ function syncOverlay(): void {
       raiseHud();
     }
     hookWorldQuit();
-    touchChrome?.sync(playing);
+    touchChrome?.sync(playing && !isPauseMenuOpen());
     if (label === "instructions") pollInstructionsPad();
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
     applyPlayTint();

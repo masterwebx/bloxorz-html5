@@ -250,6 +250,8 @@ describe("DEV unlock", () => {
     expect(isDevName("dev")).toBe(true);
     expect(isDevName(" Dev ")).toBe(true);
     expect(isDevName("Wex")).toBe(false);
-    expect(brandName("DEV")).toBe("DEVORZ");
+    expect(brandName("DEV")).toBe("DEVORZ+");
+    expect(brandName("BLOX")).toBe("BLOXORZ+");
+    expect(brandName("")).toBe("BLOXORZ+");
   });
 });

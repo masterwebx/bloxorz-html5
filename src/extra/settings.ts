@@ -154,7 +154,7 @@ export function hueCss(hue: number, alpha = 1): string {
 
 export function brandName(name: string): string {
   const stem = name.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, NAME_MAX) || "BLOX";
-  return `${stem}ORZ`;
+  return `${stem}ORZ+`;
 }
 
 export function isDevName(name: string): boolean {
