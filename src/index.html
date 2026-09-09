@@ -238,34 +238,6 @@
 <body onload="init();">
 	<div id="app-shell">
 	<div id="screen-split">
-		<div id="side_panel">
-			<select id="image_select" onchange="change_image()">
-				<option value="">Select Theme</option>
-				<option value="original">Original</option>
-				<option value="gray">Gray</option>
-				<option value="holiday">Holiday</option>
-			</select>
-			<div id="table_container">
-				<table id="timeTable">
-					<thead>
-						<tr>
-							<th>Stage</th>
-							<th>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time</th>
-						</tr>
-					</thead>
-					<tbody id="timeRows">
-						<tr id='stage1'>
-							<td>1</td>
-							<td>-</td>
-						</tr>
-						<tr id='stage2'>
-							<td>2</td>
-							<td>-</td>
-						</tr>
-					</tbody>
-				</table>
-			</div>
-		</div>
 		<div id="animation_container">
 			<canvas id="canvas"></canvas>
 			<div id="dom_overlay_container">
@@ -279,6 +251,34 @@
 							<button type="button" id="hud-modal-ok">OK</button>
 							<button type="button" id="hud-modal-cancel">Cancel</button>
 						</div>
+					</div>
+				</div>
+				<div id="side_panel">
+					<select id="image_select" onchange="change_image()">
+						<option value="">Select Theme</option>
+						<option value="original">Original</option>
+						<option value="gray">Gray</option>
+						<option value="holiday">Holiday</option>
+					</select>
+					<div id="table_container">
+						<table id="timeTable">
+							<thead>
+								<tr>
+									<th>Stage</th>
+									<th>Time</th>
+								</tr>
+							</thead>
+							<tbody id="timeRows">
+								<tr id='stage1'>
+									<td>1</td>
+									<td>-</td>
+								</tr>
+								<tr id='stage2'>
+									<td>2</td>
+									<td>-</td>
+								</tr>
+							</tbody>
+						</table>
 					</div>
 				</div>
 			</div>
@@ -329,6 +329,10 @@
 			let e = document.getElementById("image_select");
 			var selectedTheme = normalizeTheme(e && e.value);
 			saveTheme(selectedTheme);
+			if (typeof window.applyLiveTheme === "function") {
+				window.applyLiveTheme(selectedTheme);
+				return;
+			}
 			window.location.href = buildThemeUrl(selectedTheme);
 		}
 	</script>

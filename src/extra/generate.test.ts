@@ -8,10 +8,12 @@ import {
   generatePuzzle,
   generateRun,
   hashSeed,
+  pruneOptionalSwitches,
+  pruneUnusedSwitches,
   usedObstacleKeys,
 } from "./generate";
 import { applyCmd, playScript, solveLevel } from "./solve";
-import { CAMPAIGN_WALKTHROUGH, expandWalkthrough } from "./walkthrough";
+import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
 import type { LevelDef } from "./types";
 
 describe("puzzle difficulty copy", () => {
@@ -26,6 +28,59 @@ describe("campaign walkthrough", () => {
   it("expands the official stage 01 route", () => {
     const cmds = expandWalkthrough(CAMPAIGN_WALKTHROUGH[0]);
     expect(cmds).toEqual(["right", "right", "down", "right", "right", "right", "down"]);
+  });
+});
+
+describe("switch pruning", () => {
+  it("turns switches the winning tape never stands on into stone", () => {
+    const def: LevelDef = {
+      id: "prune-unused",
+      code: "000001",
+      tiles: [
+        "bbbbbbe        ",
+        "               ",
+        "s              ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+      ],
+      spawn: [0, 0],
+      switches: [{ x: 0, y: 2, bridges: [{ x: 8, y: 0, mode: "on" }] }],
+      splits: [],
+    };
+    const cmds: WalkCmd[] = ["right", "right", "right"];
+    const pruned = pruneUnusedSwitches(def, cmds);
+    expect(pruned.tiles[2][0]).toBe("b");
+    expect(pruned.switches).toEqual([]);
+  });
+
+  it("drops a switch you can walk over but do not need", () => {
+    const def: LevelDef = {
+      id: "prune-optional",
+      code: "000002",
+      tiles: [
+        "bsbbbbe        ",
+        "               ",
+        "        l      ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+      ],
+      spawn: [0, 0],
+      switches: [{ x: 1, y: 0, bridges: [{ x: 8, y: 2, mode: "on" }] }],
+      splits: [],
+    };
+    const pruned = pruneOptionalSwitches(def, 20_000);
+    expect(pruned.switches).toEqual([]);
+    expect(pruned.tiles[0][1]).toBe("b");
   });
 });
 

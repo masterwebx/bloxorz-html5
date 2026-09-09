@@ -61,7 +61,11 @@ function collectHeld(): Set<number> {
 }
 
 /** In-game: map pad to CreateJS arrow/space codes. Pause opens the stage pause menu. */
-export function pollGamepad(stage: StageLike | undefined, onPause?: () => void): void {
+export function pollGamepad(
+  stage: StageLike | undefined,
+  onPause?: () => void,
+  onCmd?: (cmd: "up" | "down" | "left" | "right" | "swap") => void,
+): void {
   const settings = loadSettings();
   const held = collectHeld();
   const pressed: Record<string, boolean> = {};
@@ -75,7 +79,14 @@ export function pollGamepad(stage: StageLike | undefined, onPause?: () => void):
 
   if (stage?.triggerKeyDown) {
     for (const code of Object.keys(pressed)) {
-      if (!prevHeld[code]) stage.triggerKeyDown?.({ code });
+      if (!prevHeld[code]) {
+        stage.triggerKeyDown?.({ code });
+        if (code === "Space") onCmd?.("swap");
+        else if (code === "ArrowUp") onCmd?.("up");
+        else if (code === "ArrowDown") onCmd?.("down");
+        else if (code === "ArrowLeft") onCmd?.("left");
+        else if (code === "ArrowRight") onCmd?.("right");
+      }
     }
     for (const code of Object.keys(prevHeld)) {
       if (code === "pause") continue;

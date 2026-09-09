@@ -10,6 +10,20 @@ function countChar(def: ReturnType<typeof emptyDraft>, ch: string): number {
   return [...def.tiles.join("")].filter((c) => c === ch).length;
 }
 
+describe("stage creator switch tool", () => {
+  it("places a soft switch then arms the link tool", () => {
+    const def = emptyDraft();
+    const state = newPaintState("soft");
+    paintEditorCell(def, 3, 4, state);
+    expect(def.tiles[4][3]).toBe("s");
+    expect(state.tool).toBe("link");
+    expect(state.linkFrom).toEqual({ x: 3, y: 4 });
+    setTile(def, 6, 4, "l");
+    paintEditorCell(def, 6, 4, state);
+    expect(def.switches).toEqual([{ x: 3, y: 4, bridges: [{ x: 6, y: 4, mode: "onoff" }] }]);
+  });
+});
+
 describe("stage creator split paint", () => {
   it("records cube destinations instead of painting extra split pads", () => {
     const def = emptyDraft();

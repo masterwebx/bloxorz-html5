@@ -99,6 +99,78 @@ export function usedObstacleCount(def: LevelDef, cmds: WalkCmd[]): number {
   return usedObstacleKeys(def, cmds).length;
 }
 
+export function unusedSwitches(def: LevelDef, cmds: WalkCmd[]): SwitchDef[] {
+  const used = new Set(usedObstacleKeys(def, cmds));
+  return (def.switches ?? []).filter((sw) => !used.has(`${sw.x},${sw.y}`));
+}
+
+function clonePuzzleDef(def: LevelDef): LevelDef {
+  return {
+    ...def,
+    tiles: def.tiles.map((row) => row),
+    spawn: [def.spawn[0], def.spawn[1]],
+    switches: (def.switches ?? []).map((sw) => ({
+      x: sw.x,
+      y: sw.y,
+      bridges: sw.bridges.map((b) => ({ ...b })),
+    })),
+    splits: (def.splits ?? []).map((s) => ({ x: s.x, y: s.y, a: [s.a[0], s.a[1]] as [number, number], b: [s.b[0], s.b[1]] as [number, number] })),
+  };
+}
+
+export function withoutSwitch(def: LevelDef, sw: SwitchDef): LevelDef {
+  const next = clonePuzzleDef(def);
+  next.switches = (next.switches ?? []).filter((s) => s.x !== sw.x || s.y !== sw.y);
+  const row = (next.tiles[sw.y] ?? "").split("");
+  if (row[sw.x] === "s" || row[sw.x] === "h") row[sw.x] = "b";
+  next.tiles[sw.y] = row.join("").padEnd(W, " ").slice(0, W);
+  return next;
+}
+
+/** Turn switches the winning tape never stands on back into stone. */
+export function pruneUnusedSwitches(def: LevelDef, cmds: WalkCmd[]): LevelDef {
+  const unused = unusedSwitches(def, cmds);
+  if (!unused.length) return def;
+  let next = def;
+  for (const sw of unused) next = withoutSwitch(next, sw);
+  return next;
+}
+
+/** Drop switches the solver can ignore — standing on one is not the same as needing it. */
+export function pruneOptionalSwitches(def: LevelDef, bfs: number): LevelDef {
+  let cur = def;
+  for (let guard = 0; guard < 12; guard++) {
+    const switches = cur.switches ?? [];
+    if (!switches.length) break;
+    let dropped = false;
+    for (const sw of switches) {
+      const trial = withoutSwitch(cur, sw);
+      if (solveLevel(trial, bfs).ok) {
+        cur = trial;
+        dropped = true;
+        break;
+      }
+    }
+    if (!dropped) break;
+  }
+  return cur;
+}
+
+export function tightenPuzzle(p: Puzzle, bfs: number): Puzzle {
+  const first = solveLevel(p.def, bfs);
+  if (!first.ok || !first.cmds.length) return p;
+  let def = pruneUnusedSwitches(p.def, first.cmds);
+  def = pruneOptionalSwitches(def, bfs);
+  const again = solveLevel(def, bfs);
+  if (!again.ok || !again.cmds.length) return { ...p, def: pruneUnusedSwitches(p.def, first.cmds) };
+  return {
+    ...p,
+    def,
+    solutionLen: again.cmds.length,
+    usedObstacles: usedObstacleCount(def, again.cmds),
+  };
+}
+
 export function hashSeed(text: string): number {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -226,12 +298,13 @@ function finishPuzzle(
 ): Puzzle | null {
   const solved = solveLevel(def, bfs);
   if (!solved.ok || !solved.cmds.length) return null;
+  const pruned = pruneUnusedSwitches(def, solved.cmds);
   return {
-    def,
+    def: pruned,
     seed,
     difficulty,
     solutionLen: solved.cmds.length,
-    usedObstacles: usedObstacleCount(def, solved.cmds),
+    usedObstacles: usedObstacleCount(pruned, solved.cmds),
   };
 }
 
@@ -841,9 +914,9 @@ export function generateQualityPuzzle(seed: string, opts: QualityOpts, difficult
       best = p;
       bestScore = sc;
     }
-    if (p.solutionLen >= opts.minMoves && used >= opts.minUsed) return p;
+    if (p.solutionLen >= opts.minMoves && used >= opts.minUsed) return tightenPuzzle(p, opts.bfs);
   }
-  if (best) return best;
+  if (best) return tightenPuzzle(best, opts.bfs);
   const fallback = tryPlain(mulberry32(hashSeed(seed + ":qfb")), `${seed}:qfb`, "easy", false);
   if (fallback) return { ...fallback, seed, difficulty };
   const grid = emptyGrid();
@@ -890,17 +963,20 @@ export function generateDaily(date: Date): Puzzle {
   let best: Puzzle | null = null;
   let bestScore = -1;
   for (let i = 0; i < 8; i++) {
-    const p = tryFullBoard(rng, `${seed}:${i}`, "insane");
-    if (!p) continue;
+    const raw = tryFullBoard(rng, `${seed}:${i}`, "insane");
+    if (!raw) continue;
+    const p = tightenPuzzle(raw, 200_000);
     const sc = scorePuzzle(p.solutionLen, p.usedObstacles, DAILY_OPTS);
     if (sc > bestScore) {
       best = p;
       bestScore = sc;
     }
-    if (p.solutionLen >= 50 && p.usedObstacles >= 16) return { ...p, seed };
+    const needed = (p.def.switches ?? []).length;
+    if (needed >= 3 && p.solutionLen >= 50) return { ...p, seed };
+    if (needed >= 3 && p.solutionLen >= 40) return { ...p, seed };
   }
-  if (best) return { ...best, seed };
-  return generateQualityPuzzle(seed, DAILY_OPTS, "insane");
+  if (best && (best.def.switches ?? []).length >= 2) return { ...best, seed };
+  return tightenPuzzle(generateQualityPuzzle(seed, DAILY_OPTS, "insane"), 200_000);
 }
 
 export function generateSeeded(seed: string): Puzzle {

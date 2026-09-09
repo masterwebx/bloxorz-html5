@@ -1,6 +1,7 @@
 import { cmdToCode, createFeeder, tickFeeder, type SolveFeeder } from "./autoSolve";
-import { beatBadge, EDITOR_TOOLS, newPaintState, paintEditorCell, splitMarks, type EditorToolId } from "./editor";
+import { beatBadge, EDITOR_TOOLS, editorMarks, newPaintState, paintEditorCell, type EditorToolId } from "./editor";
 import {
+  decodeSeed,
   deleteStage,
   emptyDraft,
   encodeSeed,
@@ -12,6 +13,7 @@ import {
   saveStage,
   shareFromLocation,
   stageId,
+  tileChar,
 } from "./customLevels";
 import { createJsToDef, defToCreateJs } from "./convert";
 import {
@@ -27,16 +29,23 @@ import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, pollGamepad, pol
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopMenuMusic, unlockAudio } from "./audio";
 import {
+  ghostKey,
+  ghostsForStage,
+  GhostRunner,
   loadFinishedStages,
   loadSeeGhosts,
   pushGhost,
+  sameTape,
   saveFinishedStage,
   saveRun,
   saveSeeGhosts,
   winningTape,
+  type FinishedStage,
+  type HistoryKind,
   type RunRecord,
   type TapeCmd,
 } from "./history";
+import { ghostFootprints, ghostScreenPos } from "./ghosts";
 import {
   ACTIONS,
   ACTION_LABEL,
@@ -105,6 +114,7 @@ type CustomPlayOpts = {
   card?: PlayCard;
   seed?: string;
   author?: string;
+  record?: boolean;
 };
 
 type PauseBtn = {
@@ -131,6 +141,8 @@ type BloxWorld = {
   transitionOutLevelQuit?: () => void;
   pauseMenu?: PauseMenuClip;
   __bloxQuit?: boolean;
+  layerTiles?: { x?: number; y?: number; scaleX?: number; scaleY?: number };
+  layerBlocks?: unknown;
 };
 
 type StageLike = {
@@ -150,7 +162,15 @@ type StageLike = {
   levelAttempts?: number;
   touchMode?: boolean;
   localSave?: { get?: () => unknown; save?: (n: number) => void };
-  gameContainer?: { visible?: boolean };
+  gameContainer?: {
+    visible?: boolean;
+    addChild?: (c: unknown) => void;
+    addChildAt?: (c: unknown, i: number) => void;
+    removeChild?: (c: unknown) => void;
+    contains?: (c: unknown) => boolean;
+    setChildIndex?: (c: unknown, i: number) => void;
+    getChildIndex?: (c: unknown) => number;
+  };
   menuMusic?: { stop?: () => void } | null;
   bloxWorld?: BloxWorld | null;
 };
@@ -172,6 +192,12 @@ type LibCtor = {
 
 const NAME_KEY = "bloxorz-player-name";
 const LIST_PAGE = 6;
+const LIST_HISTORY = 5;
+const ATLAS_SRC: Record<ThemeId, string> = {
+  original: "images/bloxorz_atlas_original.png",
+  gray: "images/bloxorz_atlas_gray.png",
+  holiday: "images/bloxorz_atlas_holiday.png",
+};
 const VANILLA_BUTTONS = ["startNewGame", "resumeGame", "loadStage", "toggleSound", "credits"];
 const KEY_CMD: Record<string, TapeCmd> = {
   ArrowUp: "up",
@@ -230,6 +256,24 @@ let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
 let lastTintKey = "";
 let helpTextKey = "";
+let editCursor = { x: 2, y: 4 };
+let editorPaintHeld = false;
+let ghosts: GhostRunner[] = [];
+let ghostLayer: {
+  x?: number;
+  y?: number;
+  scaleX?: number;
+  scaleY?: number;
+  mouseEnabled?: boolean;
+  mouseChildren?: boolean;
+  removeAllChildren: () => void;
+  addChild: (c: unknown) => void;
+} | null = null;
+let lastGhostTick = 0;
+let ghostArmedFor = "";
+let replayExclude: TapeCmd[] = [];
+let prevCreatorPad = new Set<number>();
+const atlasImages: Partial<Record<ThemeId, HTMLImageElement>> = {};
 let lastFinished: RunRecord | null = null;
 let showStats = false;
 let beatBanner = "";
@@ -311,6 +355,7 @@ function savedLevel(): number {
 function adobeComp(): {
   getLibrary: () => LibCtor;
   getSpriteSheet?: () => Record<string, SpriteSheetLike>;
+  getImages?: () => Record<string, CanvasImageSource>;
 } | undefined {
   return window.AdobeAn?.getComposition("FE31B685947E79408F0C8768D6EC8517");
 }
@@ -478,13 +523,11 @@ function syncSidePanel(show: boolean): void {
   if (sidePanelOn === show) return;
   sidePanelOn = show;
   const panel = $("side_panel");
-  const split = $("screen-split");
   if (!panel) return;
   const sel = $("image_select");
   if (sel) sel.style.display = "none";
   panel.classList.toggle("is-open", show);
   panel.style.display = show ? "" : "none";
-  split?.classList.toggle("has-timer", show);
 }
 
 function hideVanillaMenu(): void {
@@ -784,13 +827,11 @@ function navItems(): NavItem[] {
     ];
   }
   if (extraView === "history") {
-    const rows = loadFinishedStages().slice(0, 5);
+    const rows = loadFinishedStages().slice(listScroll, listScroll + LIST_HISTORY);
     return [
       { id: "back" },
       { id: "toggle-ghosts" },
-      ...rows.flatMap((rec, i) =>
-        rec.cmds.length && (!rec.title || rec.title.startsWith("Stage")) ? [{ id: "replay:" + i }] : [],
-      ),
+      ...rows.filter((rec) => rec.cmds.length).map((_, i) => ({ id: "replay:" + (listScroll + i) })),
     ];
   }
   if (extraView === "finish") return [{ id: "toggle-stats" }, { id: "back" }];
@@ -839,6 +880,10 @@ function handleMenuNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"
     if (ev === "confirm" || ev === "back") dismissSplash();
     return;
   }
+  if (extraView === "creator-edit") {
+    handleCreatorNav(ev);
+    return;
+  }
   const items = navItems();
   if (ev === "up") {
     moveNav(-1);
@@ -871,7 +916,84 @@ function handleMenuNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"
   if (ev === "back" && extraView !== "name" && extraView !== "auto") goBack();
 }
 
+function cycleEditorTool(dir: 1 | -1): void {
+  const i = EDITOR_TOOLS.findIndex((t) => t.id === paint.tool);
+  const next = EDITOR_TOOLS[(i + dir + EDITOR_TOOLS.length) % EDITOR_TOOLS.length];
+  paint.tool = next.id;
+  paint.splitStep = 0;
+  paint.splitAt = null;
+  if (next.id !== "link") paint.linkFrom = null;
+  paint.hint = next.label;
+  markHudDirty();
+  paintHud();
+}
+
+function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
+  if (x < 0 || y < 0 || x >= 15 || y >= 10) return;
+  if (phase === "drag") {
+    if (paint.tool === "spawn") return;
+    if (paint.tool === "split" && paint.splitStep > 0) return;
+    if (paint.tool === "link") {
+      const ch = tileChar(draft, x, y);
+      if (ch !== "l" && ch !== "r" && ch !== "k" && ch !== "q") return;
+      const from = paint.linkFrom;
+      if (!from) return;
+      const sw = draft.switches.find((s) => s.x === from.x && s.y === from.y);
+      if (sw?.bridges.some((b) => b.x === x && b.y === y)) return;
+    }
+  }
+  const key = x + ":" + y;
+  if (key === lastPaintCell && phase === "drag") return;
+  if (phase === "start") {
+    pushUndo();
+    lastPaintCell = "";
+  }
+  lastPaintCell = key;
+  paintEditorCell(draft, x, y, paint);
+  beaten = false;
+  hud?.refreshCreatorBoard({ tiles: draft.tiles, spawn: draft.spawn, marks: editorMarks(draft), cursor: editCursor });
+}
+
+function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
+  if (ev === "back") {
+    goBack();
+    return;
+  }
+  if (ev === "left" || ev === "right" || ev === "up" || ev === "down") {
+    if (ev === "left") editCursor.x = Math.max(0, editCursor.x - 1);
+    if (ev === "right") editCursor.x = Math.min(14, editCursor.x + 1);
+    if (ev === "up") editCursor.y = Math.max(0, editCursor.y - 1);
+    if (ev === "down") editCursor.y = Math.min(9, editCursor.y + 1);
+    const held = editorPaintHeld || heldPadButtons().has(loadSettings().pads.confirm);
+    if (held) paintEditorAt(editCursor.x, editCursor.y, "drag");
+    markHudDirty();
+    paintHud();
+    return;
+  }
+  if (ev === "confirm") {
+    editorPaintHeld = true;
+    paintEditorAt(editCursor.x, editCursor.y, "start");
+    scheduleBeatCheck();
+    markHudDirty();
+    paintHud();
+  }
+}
+
 function moveNav(dir: 1 | -1): void {
+  if (extraView === "history") {
+    const total = loadFinishedStages().length;
+    const maxScroll = Math.max(0, total - LIST_HISTORY);
+    if (dir === 1 && menuCursor >= navItems().length - 1 && listScroll < maxScroll) {
+      listScroll += 1;
+      menuCursor = navItems().length - 1;
+      return;
+    }
+    if (dir === -1 && menuCursor <= 2 && listScroll > 0) {
+      listScroll -= 1;
+      menuCursor = 2;
+      return;
+    }
+  }
   if (extraView === "creator-manage" || extraView === "creator-saved") {
     const total = listSaved().length;
     const maxScroll = Math.max(0, total - LIST_PAGE);
@@ -923,6 +1045,7 @@ function hudKey(): string {
     gauntletSeed,
     draftName,
     String(listScroll),
+    `${editCursor.x},${editCursor.y}`,
     paint.tool,
     paint.hint,
     beatLabel,
@@ -1020,29 +1143,24 @@ function paintHud(): void {
     hud.drawGauntlet(puzzleDiff);
     placeHudInput(true, "7.3%", "53.5%", "51%", "SEED", gauntletSeed, 24);
   } else if (extraView === "history") {
+    const all = loadFinishedStages();
+    const maxScroll = Math.max(0, all.length - LIST_HISTORY);
+    if (listScroll > maxScroll) listScroll = maxScroll;
     hud.drawHistory({
       seeGhosts: loadSeeGhosts(),
-      rows: loadFinishedStages()
-        .slice(0, 5)
-        .map((rec) => {
-          const title = rec.title || `Stage ${String(rec.stage).padStart(2, "0")}`;
-          return {
-            title: `${title} · ${rec.player} · ${rec.moves} moves`,
-            meta: new Date(rec.at).toLocaleString(),
-            replay:
-              rec.cmds.length && (!rec.title || rec.title.startsWith("Stage"))
-                ? () => {
-                    const defs = rawCampaignDefs();
-                    const def = defs[(rec.stage || 1) - 1];
-                    if (def) {
-                      startCustom([def], "history", { card: "classic" });
-                      autoSolve = true;
-                      solveFeeder = createFeeder(rec.cmds);
-                    }
-                  }
-                : undefined,
-          };
-        }),
+      scroll: listScroll,
+      total: all.length,
+      pageSize: LIST_HISTORY,
+      rows: all.slice(listScroll, listScroll + LIST_HISTORY).map((rec, i) => {
+        const title = rec.title || `Stage ${String(rec.stage).padStart(2, "0")}`;
+        return {
+          title: `${title} · ${rec.player} · ${rec.moves} moves`,
+          meta: [rec.kind && rec.kind !== "campaign" ? rec.kind : "", new Date(rec.at).toLocaleString()]
+            .filter(Boolean)
+            .join(" · "),
+          replay: rec.cmds.length ? () => startHistoryReplay(all[listScroll + i]!) : undefined,
+        };
+      }),
     });
   } else if (extraView === "creator") {
     hud.drawCreatorHub("Stage Creator", [
@@ -1099,7 +1217,8 @@ function paintHud(): void {
       canSave: beaten && !issue,
       canUndo: undoStack.length > 0,
       canRedo: redoStack.length > 0,
-      marks: splitMarks(draft),
+      marks: editorMarks(draft),
+      cursor: editCursor,
     });
     placeHudInput(true, "21.5%", "2.1%", "36%", "STAGE NAME", draftName, 24);
   }
@@ -1112,7 +1231,11 @@ function openPanel(name: Screen): void {
   lastHudPaint = "";
   if (name === "home") animateHome = true;
   if (name === "load") loadError = "";
-  if (name === "creator-manage" || name === "creator-saved") listScroll = 0;
+  if (name === "creator-manage" || name === "creator-saved" || name === "history") listScroll = 0;
+  if (name === "creator-edit") {
+    editCursor = { x: draft.spawn[0], y: draft.spawn[1] };
+    editorPaintHeld = false;
+  }
   if (name === "puzzles-seeded") puzzleSeed = freshSeed();
   if (name === "puzzles-gauntlet") gauntletSeed = freshSeed();
   if (name === "creator-edit") scheduleBeatCheck();
@@ -1126,9 +1249,67 @@ function applyTheme(theme: ThemeId): void {
   } catch {
     /* ignore */
   }
-  const url = new URL(window.location.href);
-  url.searchParams.set("img", theme);
-  window.location.href = url.toString();
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("img", theme);
+    history.replaceState(null, "", url.toString());
+  } catch {
+    /* ignore */
+  }
+  const sel = $("image_select") as HTMLSelectElement | null;
+  if (sel) sel.value = theme;
+  void swapAtlasLive(theme);
+  applyLooks();
+  atlasFrames = null;
+  atlasCanvas = null;
+  bakedHue = -1;
+  applyBlockHue();
+  lastTintKey = "";
+  window.__bloxResetStoneStamp?.();
+  refreshPlayTilesAfterTheme();
+  markHudDirty();
+  lastHudPaint = "";
+  paintHud();
+}
+
+function loadAtlasImage(theme: ThemeId): Promise<HTMLImageElement> {
+  const hit = atlasImages[theme];
+  if (hit?.complete && hit.naturalWidth) return Promise.resolve(hit);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      atlasImages[theme] = img;
+      resolve(img);
+    };
+    img.onerror = () => reject(new Error("atlas"));
+    img.src = ATLAS_SRC[theme];
+  });
+}
+
+async function swapAtlasLive(theme: ThemeId): Promise<void> {
+  try {
+    const img = await loadAtlasImage(theme);
+    const sheet = atlasSheet();
+    if (sheet) adoptAtlasCanvas(sheet, img);
+    const images = adobeComp()?.getImages?.();
+    if (images) images.bloxorz_atlas_ = img;
+  } catch {
+    /* keep current atlas */
+  }
+}
+
+function refreshPlayTilesAfterTheme(): void {
+  const world = window.stage?.bloxWorld as
+    | { tiles?: { image?: unknown; type?: string; uncache?: () => void; cache?: (x: number, y: number, w: number, h: number) => void }[]; __bloxTileCache?: boolean }
+    | undefined;
+  if (!world?.tiles?.length) return;
+  world.__bloxTileCache = false;
+  const stamp = window.__bloxGetStoneStamp?.();
+  for (const tile of world.tiles) {
+    if (tile.image && stamp) tile.image = stamp;
+    else tile.uncache?.();
+  }
+  cacheStaticWorldTiles();
 }
 
 function rawCampaignDefs(): LevelDef[] {
@@ -1216,20 +1397,73 @@ function goBack(): void {
   openPanel("home");
 }
 
+function sessionKind(): HistoryKind {
+  if (playSession?.card === "daily") return "daily";
+  if (playSession?.card === "gauntlet") return "gauntlet";
+  if (playSession?.card === "seeded") return "seeded";
+  if (playSession?.kind === "custom") return "custom";
+  return "campaign";
+}
+
+function sessionSeed(stageNo: number): string {
+  const def = playSession?.defs[stageNo - 1] ?? playDef();
+  if (def && (playSession?.kind === "custom" || playSession?.card === "daily" || playSession?.card === "gauntlet" || playSession?.card === "seeded")) {
+    return encodeSeed(def);
+  }
+  return playSession?.seed || "";
+}
+
+function recordCmd(cmd: TapeCmd): void {
+  if (!playSession?.record || autoSolve) return;
+  tape.push(cmd);
+}
+
 function persistWonStage(stageNo: number): void {
-  if (!run || !playSession?.record) return;
-  const lv = run.levels.find((l) => l.stage === stageNo);
+  if (!playSession?.record) return;
+  const lv = run?.levels.find((l) => l.stage === stageNo);
   const cmds = lv ? winningTape(lv) : tape.length ? tape : null;
   if (!cmds?.length) return;
+  const kind = sessionKind();
+  const seed = sessionSeed(stageNo);
+  const title =
+    playSession.title && playSession.card !== "classic"
+      ? playSession.defs.length > 1
+        ? `${playSession.title} ${stageNo}/${playSession.defs.length}`
+        : playSession.title
+      : `Stage ${String(stageNo).padStart(2, "0")}`;
   saveFinishedStage({
-    id: `${run.id}-${stageNo}`,
+    id: `${run?.id || Date.now()}-${kind}-${stageNo}-${seed || title}`,
     at: Date.now(),
-    player: run.player,
+    player: run?.player || getName() || "BLOX",
     stage: stageNo,
     moves: cmds.length,
     cmds,
-    title: playSession.title || `Stage ${String(stageNo).padStart(2, "0")}`,
+    title,
+    kind,
+    seed: seed || undefined,
   });
+}
+
+function defForFinished(rec: FinishedStage): LevelDef | null {
+  if (rec.seed) return parseShare(rec.seed) ?? decodeSeed(rec.seed);
+  if ((rec.kind ?? "campaign") === "campaign") {
+    return rawCampaignDefs()[(rec.stage || 1) - 1] ?? null;
+  }
+  return null;
+}
+
+function startHistoryReplay(rec: FinishedStage): void {
+  const def = defForFinished(rec);
+  if (!def || !rec.cmds.length) return;
+  replayExclude = rec.cmds.slice();
+  startCustom([def], "history", {
+    card: rec.kind === "daily" ? "daily" : rec.kind === "campaign" ? "classic" : "custom",
+    title: rec.title || "REPLAY",
+    seed: rec.seed,
+    record: false,
+  });
+  autoSolve = true;
+  solveFeeder = createFeeder(rec.cmds);
 }
 
 function handleHudAction(act: string): void {
@@ -1409,17 +1643,7 @@ function handleHudAction(act: string): void {
     const parts = act.split(":");
     const x = Number(parts[1]);
     const y = Number(parts[2]);
-    const phase = parts[3] || "start";
-    const key = x + ":" + y;
-    if (phase === "start") {
-      pushUndo();
-      lastPaintCell = "";
-    }
-    if (key === lastPaintCell && phase === "drag") return;
-    lastPaintCell = key;
-    paintEditorCell(draft, x, y, paint);
-    beaten = false;
-    hud?.refreshCreatorBoard({ tiles: draft.tiles, spawn: draft.spawn, marks: splitMarks(draft) });
+    paintEditorAt(x, y, parts[3] === "drag" ? "drag" : "start");
   } else if (act === "paint-end") {
     lastPaintCell = "";
     scheduleBeatCheck();
@@ -1460,13 +1684,7 @@ function handleHudAction(act: string): void {
     paintHud();
   } else if (act.startsWith("replay:")) {
     const rec = loadFinishedStages()[Number(act.slice(7))];
-    if (!rec?.cmds.length) return;
-    const defs = rawCampaignDefs();
-    const def = defs[(rec.stage || 1) - 1];
-    if (!def) return;
-    startCustom([def], "history", { card: "classic" });
-    autoSolve = true;
-    solveFeeder = createFeeder(rec.cmds);
+    if (rec) startHistoryReplay(rec);
   }
 }
 
@@ -1677,6 +1895,124 @@ function hushPlayAudio(): void {
   stopMenuMusic();
 }
 
+type GhostLayer = {
+  x?: number;
+  y?: number;
+  scaleX?: number;
+  scaleY?: number;
+  mouseEnabled?: boolean;
+  mouseChildren?: boolean;
+  removeAllChildren: () => void;
+  addChild: (c: unknown) => void;
+};
+
+type GhostShape = {
+  graphics: { beginFill: (c: string) => { drawRect: (x: number, y: number, w: number, h: number) => void } };
+  x: number;
+  y: number;
+  alpha: number;
+  mouseEnabled: boolean;
+};
+
+function clearGhosts(): void {
+  ghosts = [];
+  ghostArmedFor = "";
+  lastGhostTick = 0;
+  const gc = window.stage?.gameContainer;
+  if (ghostLayer && gc?.contains?.(ghostLayer)) gc.removeChild?.(ghostLayer);
+  ghostLayer?.removeAllChildren();
+  ghostLayer = null;
+}
+
+function ensureGhostLayer(): GhostLayer | null {
+  const cjs = window.createjs as { Container?: new () => GhostLayer } | undefined;
+  const gc = window.stage?.gameContainer;
+  const world = window.stage?.bloxWorld;
+  if (!cjs?.Container || !gc?.addChild) return null;
+  if (!ghostLayer) {
+    ghostLayer = new cjs.Container();
+    ghostLayer.mouseEnabled = false;
+    ghostLayer.mouseChildren = false;
+  }
+  const tiles = world?.layerTiles;
+  if (tiles) {
+    ghostLayer.x = tiles.x ?? 0;
+    ghostLayer.y = tiles.y ?? 0;
+    ghostLayer.scaleX = tiles.scaleX ?? 1;
+    ghostLayer.scaleY = tiles.scaleY ?? 1;
+  }
+  if (!gc.contains?.(ghostLayer)) {
+    const idx = world?.layerBlocks != null && gc.getChildIndex ? gc.getChildIndex(world.layerBlocks) : -1;
+    if (idx >= 0 && gc.addChildAt) gc.addChildAt(ghostLayer, idx);
+    else gc.addChild(ghostLayer);
+  } else if (world?.layerBlocks && gc.setChildIndex && gc.getChildIndex) {
+    const idx = gc.getChildIndex(world.layerBlocks);
+    if (idx >= 0) gc.setChildIndex(ghostLayer, Math.max(0, idx));
+  }
+  return ghostLayer;
+}
+
+function armGhosts(): void {
+  const stageNo = window.stage?.levelNumber ?? 0;
+  const def = playDef();
+  const flag = [
+    stageNo,
+    sessionKind(),
+    sessionSeed(stageNo),
+    String(loadSeeGhosts()),
+    replayExclude.join(","),
+    def?.tiles.join("") ?? "",
+  ].join("|");
+  if (flag === ghostArmedFor) return;
+  ghostArmedFor = flag;
+  ghosts = [];
+  if (!loadSeeGhosts() || !def || !stageNo) {
+    ghostLayer?.removeAllChildren();
+    return;
+  }
+  const tapes: TapeCmd[][] = [];
+  for (const key of [ghostKey(sessionKind(), stageNo, sessionSeed(stageNo)), stageNo] as const) {
+    for (const t of ghostsForStage(key, replayExclude)) {
+      if (!tapes.some((s) => sameTape(s, t))) tapes.push(t);
+    }
+  }
+  ghosts = tapes.map((t) => new GhostRunner(def, t));
+}
+
+function tickGhosts(): void {
+  if (!playSession || currentLabel() !== "game") {
+    ghostLayer?.removeAllChildren();
+    return;
+  }
+  armGhosts();
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const dt = lastGhostTick ? Math.min(0.05, (now - lastGhostTick) / 1000) : 1 / 36;
+  lastGhostTick = now;
+  for (const ghost of ghosts) ghost.tick(dt);
+  drawGhosts();
+}
+
+function drawGhosts(): void {
+  const layer = ensureGhostLayer();
+  const cjs = window.createjs as { Shape?: new () => GhostShape } | undefined;
+  if (!layer || !cjs?.Shape) return;
+  layer.removeAllChildren();
+  if (!loadSeeGhosts()) return;
+  for (const ghost of ghosts) {
+    if (ghost.finished) continue;
+    for (const cell of ghostFootprints(ghost.stage)) {
+      const p = ghostScreenPos(cell);
+      const shape = new cjs.Shape();
+      shape.graphics.beginFill("rgba(255,196,96,0.55)").drawRect(-11, -20, 22, 26);
+      shape.x = p.x;
+      shape.y = p.y;
+      shape.alpha = 0.32;
+      shape.mouseEnabled = false;
+      layer.addChild(shape);
+    }
+  }
+}
+
 function showFinish(): void {
   overlayMode = "";
   menuParked = false;
@@ -1697,6 +2033,7 @@ function leavePlayTo(view: Screen): void {
   playSession = null;
   lastTintKey = "";
   helpTextKey = "";
+  clearGhosts();
   stopAutoSolve("");
   extraView = view;
   overlayMode = "";
@@ -1716,6 +2053,20 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   if (session.kind === "custom") {
     for (const def of session.defs) def.code = "000000";
   }
+  if (session.record && !run) {
+    run = {
+      id: `${Date.now()}`,
+      at: Date.now(),
+      player: getName() || "BLOX",
+      totalTimeMs: 0,
+      totalMoves: 0,
+      fails: 0,
+      complete: false,
+      levels: [],
+    };
+  }
+  clearGhosts();
+  replayExclude = session.record ? [] : replayExclude;
   playSession = session;
   extraView = "auto";
   tape = [];
@@ -1749,7 +2100,7 @@ function startCustom(defs: LevelDef[], returnTo: Screen, opts: CustomPlayOpts = 
     kind: "custom",
     defs,
     returnTo,
-    record: returnTo !== "creator-edit",
+    record: opts.record ?? returnTo !== "creator-edit",
     classicRun: false,
     title: opts.title,
     subtitle: opts.subtitle,
@@ -2022,22 +2373,25 @@ function applyPlayTint(): void {
 }
 
 function commitTape(won: boolean, stageNo: number): void {
-  if (!run || !playSession?.record) {
+  if (!playSession?.record) {
     tape = [];
     return;
   }
-  let lv = run.levels.find((l) => l.stage === stageNo);
-  if (!lv) {
-    lv = { stage: stageNo, timeMs: 0, moves: tape.length, attempts: 0, tapes: [] };
-    run.levels.push(lv);
+  if (run) {
+    let lv = run.levels.find((l) => l.stage === stageNo);
+    if (!lv) {
+      lv = { stage: stageNo, timeMs: 0, moves: tape.length, attempts: 0, tapes: [] };
+      run.levels.push(lv);
+    }
+    lv.attempts += 1;
+    lv.tapes.push({ cmds: tape.slice(), won });
+    if (won) lv.moves = tape.length;
+    else run.fails += 1;
   }
-  lv.attempts += 1;
-  lv.tapes.push({ cmds: tape.slice(), won });
-  if (won) {
-    lv.moves = tape.length;
+  if (won && tape.length) {
+    const key = ghostKey(sessionKind(), stageNo, sessionSeed(stageNo));
+    pushGhost(key, tape);
     pushGhost(stageNo, tape);
-  } else {
-    run.fails += 1;
   }
   tape = [];
 }
@@ -2195,7 +2549,7 @@ function handleTouchPadDown(code: string): void {
       return;
     }
     const cmd = KEY_CMD[code];
-    if (cmd) tape.push(cmd);
+    if (cmd) recordCmd(cmd);
     window.stage?.triggerKeyDown?.({ code });
     return;
   }
@@ -2207,6 +2561,7 @@ function handleTouchPadDown(code: string): void {
 }
 
 function handleTouchPadUp(code: string): void {
+  if (extraView === "creator-edit" && (code === "Space" || code === "Enter")) editorPaintHeld = false;
   if (inStagePlay()) window.stage?.triggerKeyUp?.({ code });
 }
 
@@ -2220,6 +2575,24 @@ function handleTouchPadPause(): void {
 }
 
 function bindMenuPad(): void {
+  if (extraView === "creator-edit") {
+    const held = heldPadButtons();
+    const pads = loadSettings().pads;
+    if (!held.has(pads.confirm)) editorPaintHeld = false;
+    const edges: { btn: number; fn: () => void }[] = [
+      { btn: pads.swap, fn: () => cycleEditorTool(1) },
+      { btn: 4, fn: () => cycleEditorTool(-1) },
+      { btn: 5, fn: () => cycleEditorTool(1) },
+      { btn: pads.pause, fn: () => handleHudAction("creator-test") },
+    ];
+    for (const edge of edges) {
+      if (held.has(edge.btn) && !prevCreatorPad.has(edge.btn)) edge.fn();
+    }
+    prevCreatorPad = held;
+    for (const ev of pollMenuPad({ pauseConfirms: false })) handleMenuNav(ev);
+    return;
+  }
+  prevCreatorPad = new Set();
   for (const ev of pollMenuPad()) handleMenuNav(ev);
 }
 
@@ -2294,6 +2667,15 @@ function bind(): void {
   window.addEventListener(
     "wheel",
     (ev) => {
+      if (extraView === "history") {
+        const max = Math.max(0, loadFinishedStages().length - LIST_HISTORY);
+        if (!max) return;
+        ev.preventDefault();
+        listScroll = Math.max(0, Math.min(max, listScroll + (ev.deltaY > 0 ? 1 : -1)));
+        markHudDirty();
+        paintHud();
+        return;
+      }
       if (extraView !== "creator-manage" && extraView !== "creator-saved") return;
       const max = Math.max(0, listSaved().length - LIST_PAGE);
       if (!max) return;
@@ -2306,6 +2688,9 @@ function bind(): void {
   );
 
   window.addEventListener("keyup", (ev) => {
+    if (extraView === "creator-edit" && (ev.code === "Space" || ev.key === "Enter")) {
+      editorPaintHeld = false;
+    }
     if (currentLabel() !== "game") return;
     const act = actionFromCode(ev.code);
     let code = ev.code;
@@ -2352,6 +2737,69 @@ function bind(): void {
       return;
     }
 
+    if (extraView === "creator-edit") {
+      const act = actionFromCode(ev.code);
+      if ((ev.key === "s" || ev.key === "S") && (ev.ctrlKey || ev.metaKey)) {
+        ev.preventDefault();
+        handleHudAction("creator-save");
+        return;
+      }
+      if (act === "up" || ev.key === "ArrowUp" || ev.code === "KeyW") {
+        ev.preventDefault();
+        handleCreatorNav("up");
+        return;
+      }
+      if (act === "down" || ev.key === "ArrowDown" || ev.code === "KeyS") {
+        ev.preventDefault();
+        handleCreatorNav("down");
+        return;
+      }
+      if (act === "left" || ev.key === "ArrowLeft" || ev.code === "KeyA") {
+        ev.preventDefault();
+        handleCreatorNav("left");
+        return;
+      }
+      if (act === "right" || ev.key === "ArrowRight" || ev.code === "KeyD") {
+        ev.preventDefault();
+        handleCreatorNav("right");
+        return;
+      }
+      if (act === "confirm" || ev.key === "Enter") {
+        ev.preventDefault();
+        handleCreatorNav("confirm");
+        return;
+      }
+      if (act === "swap" || ev.code === "Space") {
+        ev.preventDefault();
+        editorPaintHeld = true;
+        paintEditorAt(editCursor.x, editCursor.y, "start");
+        scheduleBeatCheck();
+        markHudDirty();
+        paintHud();
+        return;
+      }
+      if (ev.key === "q" || ev.key === "Q" || ev.key === "[") {
+        ev.preventDefault();
+        cycleEditorTool(-1);
+        return;
+      }
+      if (ev.key === "e" || ev.key === "E" || ev.key === "]") {
+        ev.preventDefault();
+        cycleEditorTool(1);
+        return;
+      }
+      if (ev.key === "t" || ev.key === "T") {
+        ev.preventDefault();
+        handleHudAction("creator-test");
+        return;
+      }
+      if (act === "back" || ev.key === "Escape") {
+        ev.preventDefault();
+        goBack();
+        return;
+      }
+    }
+
     if (currentLabel() === "game") {
       const act = actionFromCode(ev.code);
       if (act === "pause" || act === "back" || ev.key === "Escape") {
@@ -2375,7 +2823,7 @@ function bind(): void {
       else if (act === "right") code = "ArrowRight";
       else if (act === "swap") code = "Space";
       const cmd = KEY_CMD[code];
-      if (cmd) tape.push(cmd);
+      if (cmd) recordCmd(cmd);
       if (cmd) {
         ev.preventDefault();
         window.stage?.triggerKeyDown?.({ code });
@@ -2492,6 +2940,7 @@ function syncOverlay(): void {
       setExportRootMouse(false);
       setMouseOverRate(5);
       playSession = null;
+      clearGhosts();
       hud?.setVisible(true);
       raiseHud();
       openPanel(back);
@@ -2535,9 +2984,10 @@ function syncOverlay(): void {
     if (playing) {
       tickSolve();
       if (isPauseMenuOpen()) pollPauseMenuPad();
-      else pollGamepad(stage, togglePauseMenu);
+      else pollGamepad(stage, togglePauseMenu, recordCmd);
       if (!playSession) return;
       cacheStaticWorldTiles();
+      tickGhosts();
       syncHelpText();
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);
@@ -2641,10 +3091,14 @@ declare global {
     startBloxorzShell?: () => void;
     GAME_VERSION?: string;
     __bloxSetMouseOver?: (hz: number) => void;
+    __bloxResetStoneStamp?: () => void;
+    __bloxGetStoneStamp?: () => CanvasImageSource | null;
+    applyLiveTheme?: (theme: string) => void;
     AdobeAn?: {
       getComposition: (id: string) => {
         getLibrary: () => LibCtor;
         getSpriteSheet?: () => Record<string, SpriteSheetLike>;
+        getImages?: () => Record<string, CanvasImageSource>;
       };
     };
     createjs?: {
@@ -2717,6 +3171,7 @@ export function startBloxorzShell(): void {
   applyBlockHue();
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) sel.value = currentTheme();
+  window.applyLiveTheme = (theme: string) => applyTheme(normalizeTheme(theme));
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
   if (applyPendingShare()) {
     raiseHud();

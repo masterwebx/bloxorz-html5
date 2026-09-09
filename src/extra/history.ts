@@ -41,6 +41,8 @@ const MAX_FINISHED = 48;
 const MAX_GHOSTS_PER_STAGE = 32;
 export const MAX_GHOST_DRAW = 16;
 
+export type HistoryKind = "campaign" | "custom" | "daily" | "gauntlet" | "seeded";
+
 export interface FinishedStage {
   id: string;
   at: number;
@@ -49,6 +51,8 @@ export interface FinishedStage {
   moves: number;
   cmds: TapeCmd[];
   title?: string;
+  kind?: HistoryKind;
+  seed?: string;
 }
 
 let storageOverride: HistoryStorage | null = null;
@@ -134,7 +138,13 @@ export function loadGhostBank(): Record<string, TapeCmd[][]> {
   return bank && typeof bank === "object" ? bank : {};
 }
 
-export function pushGhost(stage: number, cmds: TapeCmd[]): void {
+export function ghostKey(kind: HistoryKind | string, stage: number, seed = ""): string {
+  if (kind === "campaign" || !kind) return `c:${stage}`;
+  if (seed) return `s:${seed}`;
+  return `${kind}:${stage}`;
+}
+
+export function pushGhost(stage: number | string, cmds: TapeCmd[]): void {
   if (!cmds.length) return;
   const bank = loadGhostBank();
   const key = String(stage);
@@ -145,10 +155,19 @@ export function pushGhost(stage: number, cmds: TapeCmd[]): void {
   store().setItem(GHOSTS_KEY, JSON.stringify(bank));
 }
 
-export function ghostsForStage(stage: number, exclude: TapeCmd[] = []): TapeCmd[][] {
-  const list = loadGhostBank()[String(stage)] ?? [];
-  const others = list.filter((t) => t.length && !sameTape(t, exclude));
-  return others.slice(-MAX_GHOST_DRAW);
+export function ghostsForStage(stage: number | string, exclude: TapeCmd[] = []): TapeCmd[][] {
+  const bank = loadGhostBank();
+  const keys = new Set<string>([String(stage)]);
+  if (typeof stage === "number") keys.add(`c:${stage}`);
+  const out: TapeCmd[][] = [];
+  for (const key of keys) {
+    for (const tape of bank[key] ?? []) {
+      if (!tape.length || sameTape(tape, exclude)) continue;
+      if (out.some((t) => sameTape(t, tape))) continue;
+      out.push(tape);
+    }
+  }
+  return out.slice(-MAX_GHOST_DRAW);
 }
 
 export function loadSeeGhosts(): boolean {

@@ -57,6 +57,18 @@ describe("gamepad pause and menu confirm", () => {
     hold([]);
   });
 
+  it("reports the pressed move once for recording", () => {
+    const stage = { triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() };
+    const onCmd = vi.fn();
+    hold([]);
+    pollGamepad(stage, undefined, onCmd);
+    hold([15]);
+    pollGamepad(stage, undefined, onCmd);
+    pollGamepad(stage, undefined, onCmd);
+    expect(onCmd).toHaveBeenCalledTimes(1);
+    expect(onCmd).toHaveBeenCalledWith("right");
+  });
+
   it("fires onPause once when Start is pressed during play", () => {
     const stage = { triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() };
     const onPause = vi.fn();

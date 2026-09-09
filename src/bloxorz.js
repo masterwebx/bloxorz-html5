@@ -12251,6 +12251,14 @@
         return tile;
       }
 
+      window.__bloxResetStoneStamp = function () {
+        stoneStamp = null;
+      };
+      window.__bloxGetStoneStamp = function () {
+        if (!stoneStamp) createStoneTile(0, 0);
+        return stoneStamp;
+      };
+
       function createTile(_, type, x, y) {
         var types = {
           b: "normalblock",

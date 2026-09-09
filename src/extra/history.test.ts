@@ -4,6 +4,7 @@ import type { LevelDef } from "./types";
 import { H, W } from "./engine";
 import {
   GhostRunner,
+  ghostKey,
   ghostsForStage,
   loadFinishedStages,
   loadRuns,
@@ -147,6 +148,34 @@ describe("run history", () => {
     expect(ghostsForStage(0)).toEqual([["right"], ["left"]]);
     expect(ghostsForStage(0, ["left"])).toEqual([["right"]]);
     expect(ghostsForStage(1)).toEqual([["up"]]);
+  });
+
+  it("stores ghosts under campaign and seed keys", () => {
+    setHistoryStorage(memoryStore());
+    pushGhost(ghostKey("campaign", 3), ["right"]);
+    pushGhost(ghostKey("daily", 1, "BXS.ABC"), ["left", "down"]);
+    expect(ghostsForStage("c:3")).toEqual([["right"]]);
+    expect(ghostsForStage(3)).toEqual([["right"]]);
+    expect(ghostsForStage("s:BXS.ABC")).toEqual([["left", "down"]]);
+  });
+
+  it("keeps custom and puzzle finishes with a seed", () => {
+    setHistoryStorage(memoryStore());
+    saveFinishedStage({
+      id: "d1",
+      at: 9,
+      player: "BLOX",
+      stage: 1,
+      moves: 4,
+      cmds: ["right", "right"],
+      title: "DAILY PUZZLE",
+      kind: "daily",
+      seed: "BXS.TEST",
+    });
+    const row = loadFinishedStages()[0];
+    expect(row.kind).toBe("daily");
+    expect(row.seed).toBe("BXS.TEST");
+    expect(row.title).toBe("DAILY PUZZLE");
   });
 
   it("defaults see-ghosts to on", () => {

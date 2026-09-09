@@ -62,12 +62,3 @@ export function createJsToDef(level: CreateJsLevel, index = 0): LevelDef {
   };
 }
 
-export function campaignDefs(): LevelDef[] {
-  const getLevels = (window as unknown as { getLevels?: () => CreateJsLevel[] }).getLevels;
-  if (typeof getLevels !== "function") return [];
-  try {
-    return getLevels().map((level, i) => createJsToDef(level, i));
-  } catch {
-    return [];
-  }
-}

@@ -2,7 +2,6 @@ import type { LevelDef, SwitchMode } from "./types";
 
 const STORE = "bloxorz-custom-stages-v1";
 const DOWNLOADED = "bloxorz-downloaded-stages-v1";
-const PACKS = "bloxorz-stage-packs-v1";
 const TILE_PACK = " befsvhklrq";
 const SEED_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
@@ -13,13 +12,6 @@ export interface SavedStage {
   seed: string;
   def: LevelDef;
   source?: "local" | "downloaded";
-}
-
-export interface StagePack {
-  id: string;
-  name: string;
-  author: string;
-  codes: string[];
 }
 
 export function padTiles(tiles: string[]): string[] {
@@ -373,35 +365,6 @@ export function saveStage(stage: SavedStage): void {
 export function deleteStage(code: string): void {
   writeList(STORE, listSaved().filter((s) => s.code !== code));
   writeList(DOWNLOADED, listDownloaded().filter((s) => s.code !== code));
-}
-
-export function findStage(code: string): SavedStage | undefined {
-  const want = code.trim();
-  return listAllStages().find((s) => s.code === want || (s.seed && s.seed.toUpperCase() === want.toUpperCase()));
-}
-
-export function listPacks(): StagePack[] {
-  try {
-    const raw = localStorage.getItem(PACKS);
-    if (!raw) return [];
-    return JSON.parse(raw) as StagePack[];
-  } catch {
-    return [];
-  }
-}
-
-export function savePack(pack: StagePack): void {
-  const all = listPacks().filter((p) => p.id !== pack.id);
-  all.unshift(pack);
-  localStorage.setItem(PACKS, JSON.stringify(all.slice(0, 40)));
-}
-
-export function deletePack(id: string): void {
-  localStorage.setItem(PACKS, JSON.stringify(listPacks().filter((p) => p.id !== id)));
-}
-
-export function packStages(pack: StagePack): SavedStage[] {
-  return pack.codes.map((c) => findStage(c)).filter((s): s is SavedStage => !!s);
 }
 
 export function isPlayable(def: LevelDef): string | null {

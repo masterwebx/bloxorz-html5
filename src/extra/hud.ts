@@ -456,9 +456,10 @@ export class ExtraHud {
     const theme = paint();
     this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("Credits", 275, 28, 20, theme.ink, "center"));
-    this.add(text("Bloxorz — Damien Clarke / DX Interactive, 2007.", 40, 80, 11, theme.muted));
-    this.add(text("Playfield: Coolmath Animate HTML5 export.", 40, 102, 11, theme.muted));
-    this.add(text("Timer & themes — Nathan Spencer.", 40, 124, 11, theme.muted));
+    this.add(text("Bloxorz — Damien Clarke / DX Interactive, 21 June 2007.", 40, 72, 11, theme.muted));
+    this.add(text("Playfield: Coolmath Adobe Animate / CreateJS export.", 40, 94, 11, theme.muted));
+    this.add(text("Timer, themes & desktop shell — Nathan Spencer.", 40, 116, 11, theme.muted));
+    this.add(text("Bloxorz+ — Stage Creator, puzzles, history, ghosts.", 40, 138, 11, theme.muted));
   }
 
   drawLoadPasscode(error: string): void {
@@ -656,23 +657,43 @@ export class ExtraHud {
   drawHistory(opts: {
     rows: { title: string; meta: string; replay?: () => void }[];
     seeGhosts: boolean;
+    scroll?: number;
+    total?: number;
+    pageSize?: number;
   }): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
+    const scroll = opts.scroll ?? 0;
+    const pageSize = opts.pageSize ?? 5;
+    const total = opts.total ?? opts.rows.length;
     this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("History", 275, 16, 18, theme.ink, "center"));
     this.add(this.act("toggle-ghosts", opts.seeGhosts ? "> See ghosts   On" : "  See ghosts   Off", 40, 48, 14, false, 280));
     if (!opts.rows.length) {
-      this.add(text("No finished stages yet. Clear a stage to record it here.", 40, 96, 12, theme.muted));
+      this.add(text("No finished stages yet. Clear a campaign, custom,", 40, 96, 12, theme.muted));
+      this.add(text("or puzzle stage to record it here.", 40, 114, 12, theme.muted));
       return;
     }
-    opts.rows.slice(0, 5).forEach((row, i) => {
+    opts.rows.slice(0, pageSize).forEach((row, i) => {
       const y = 86 + i * 38;
       this.add(text(row.title, 40, y, 11));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      if (row.replay) this.add(this.act("replay:" + i, "Replay", 420, y, 11, false, 80));
+      if (row.replay) this.add(this.act("replay:" + (scroll + i), "Replay", 420, y, 11, false, 80));
     });
+    if (total > pageSize) {
+      const trackH = 186;
+      const trackX = 528;
+      const trackY = 86;
+      const bar = new createjs.Shape();
+      bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
+      const thumbH = Math.max(18, trackH * (pageSize / total));
+      const max = Math.max(1, total - pageSize);
+      const thumbY = trackY + (trackH - thumbH) * (scroll / max);
+      bar.graphics.beginFill(theme.fill).drawRect(trackX, thumbY, 6, thumbH);
+      bar.mouseEnabled = false;
+      this.add(bar);
+    }
   }
 
   drawCreatorHub(title: string, items: MenuItem[], cursor = 0): void {
@@ -735,6 +756,7 @@ export class ExtraHud {
     canUndo: boolean;
     canRedo: boolean;
     marks: { x: number; y: number; label: string }[];
+    cursor?: { x: number; y: number };
   }): void {
     this.clear();
     this.hideMascot();
@@ -781,7 +803,8 @@ export class ExtraHud {
       this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, 11, false, col === 0 ? 104 : 88));
     });
 
-    if (opts.hint) this.add(text(opts.hint, 10, 248, 10, theme.muted));
+    if (opts.hint) this.add(text(opts.hint, 10, 236, 10, theme.muted));
+    this.add(text("Pad: move cursor · hold Confirm to paint · LB/RB tools · Start test", 10, 250, 9, theme.muted));
     this.add(this.act("creator-new", "New", 10, 266, 11, false, 40));
     this.add(this.act("creator-clear", "Clear", 56, 266, 11, false, 48));
     this.add(this.act("creator-undo", "Undo", 112, 266, 11, !opts.canUndo, 44));
@@ -795,6 +818,7 @@ export class ExtraHud {
     tiles: string[];
     spawn: [number, number];
     marks: { x: number; y: number; label: string }[];
+    cursor?: { x: number; y: number };
   }): void {
     if (!this.board) return;
     this.board.removeAllChildren();
@@ -835,6 +859,13 @@ export class ExtraHud {
       const p = isoCenter(mark.x, mark.y, DEFAULT_ISO);
       this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
     }
+    if (opts.cursor) {
+      const p = isoCenter(opts.cursor.x, opts.cursor.y, DEFAULT_ISO);
+      const ring = new createjs.Shape();
+      ring.graphics.beginStroke("#fff4c8").setStrokeStyle(2).beginFill("rgba(255,200,80,0.22)").drawCircle(p.x, p.y - 4, 9);
+      ring.mouseEnabled = false;
+      this.board.addChild(ring);
+    }
   }
 
   private tryAtlasClip(ch: string): HudNode | null {
@@ -865,21 +896,6 @@ export class ExtraHud {
     clip.scaleY = 0.28;
     clip.mouseEnabled = false;
     return clip;
-  }
-
-  drawOnline(rows: { title: string; meta: string; play: () => void }[], status: string): void {
-    this.clear();
-    this.hideMascot();
-    const theme = paint();
-    this.add(this.act("creator-play", "Back", 24, 16, 12, false, 80));
-    this.add(text("Online Stages", 275, 18, 18, theme.ink, "center"));
-    if (status) this.add(text(status, 40, 80, 12, theme.muted));
-    rows.slice(0, 7).forEach((row, i) => {
-      const y = 54 + i * 30;
-      this.add(text(row.title, 40, y, 12));
-      this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      this.add(this.act("online-play:" + i, "Play", 430, y, 11, false, 70));
-    });
   }
 
   drawInGameDev(banner = "", autoSolve = false): void {

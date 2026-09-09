@@ -17,8 +17,6 @@ export const EDITOR_TOOLS = [
 ] as const;
 
 export type EditorToolId = (typeof EDITOR_TOOLS)[number]["id"];
-export type BeatStatus = "wait" | "yes" | "no";
-
 export interface EditorPaintState {
   tool: EditorToolId;
   splitStep: 0 | 1 | 2;
@@ -38,6 +36,21 @@ export function splitMarks(def: LevelDef): { x: number; y: number; label: string
     marks.push({ x: s.b[0], y: s.b[1], label: "B" });
   }
   return marks;
+}
+
+export function linkMarks(def: LevelDef): { x: number; y: number; label: string }[] {
+  const marks: { x: number; y: number; label: string }[] = [];
+  for (const sw of def.switches ?? []) {
+    for (const b of sw.bridges) {
+      const label = b.mode === "on" ? "ON" : b.mode === "off" ? "OFF" : "T";
+      marks.push({ x: b.x, y: b.y, label });
+    }
+  }
+  return marks;
+}
+
+export function editorMarks(def: LevelDef): { x: number; y: number; label: string }[] {
+  return [...splitMarks(def), ...linkMarks(def)];
 }
 
 export function checkBeatable(def: LevelDef, limit = 80_000): boolean {
@@ -173,8 +186,11 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
     }
     setTile(def, x, y, tool.ch);
     if (tool.ch === " ") state.hint = "Erased.";
-    else if (tool.ch === "s" || tool.ch === "h") state.hint = "Switch placed. Use Link Switch to attach a bridge.";
-    else if (tool.ch === "l" || tool.ch === "r") state.hint = "Bridge starts OFF. Click again to start ON.";
+    else if (tool.ch === "s" || tool.ch === "h") {
+      state.tool = "link";
+      state.linkFrom = { x, y };
+      state.hint = "Switch placed. Click or drag bridges to link. Click a linked bridge again to cycle On / Off / Toggle.";
+    } else if (tool.ch === "l" || tool.ch === "r") state.hint = "Bridge starts OFF. Click again to start ON.";
     else state.hint = "";
   }
 }
