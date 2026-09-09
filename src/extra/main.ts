@@ -80,6 +80,25 @@ import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./h
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, canBillboard, type MenuItem } from "./hud";
+import {
+  ACH_COUNT,
+  ACH_PAGE,
+  achievementRows,
+  hasAchievementMenu,
+  hintTokens,
+  noteCopiedSeed,
+  noteFall,
+  noteGhostWatch,
+  notePlayMs,
+  noteSaved,
+  noteScreenshot,
+  noteSwap,
+  noteWin,
+  spendHint,
+  uniqueStageKey,
+  unlockedCount,
+  type WinNote,
+} from "./achievements";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
 import type { ClipName } from "./coolmathBoard";
 import { looksLikeMobile, registerServiceWorker, TouchChrome } from "./touchPad";
@@ -101,6 +120,7 @@ type Screen =
   | "puzzles-seeded"
   | "puzzles-gauntlet"
   | "history"
+  | "achievements"
   | "load"
   | "credits"
   | "finish"
@@ -120,6 +140,8 @@ type PlaySession = {
   card?: PlayCard;
   seed?: string;
   author?: string;
+  entry?: "start" | "resume" | "passcode" | "code" | "saved" | "creator-test" | "puzzle";
+  diff?: Difficulty;
 };
 
 type CustomPlayOpts = {
@@ -129,6 +151,8 @@ type CustomPlayOpts = {
   seed?: string;
   author?: string;
   record?: boolean;
+  entry?: PlaySession["entry"];
+  diff?: Difficulty;
 };
 
 type OverlayNode = BitmapMark & {
@@ -285,6 +309,8 @@ let run: RunRecord | null = null;
 let tape: TapeCmd[] = [];
 let lastLabel = "";
 let lastLevelNum = 0;
+let stageFailed = false;
+let playClock = 0;
 let origGetLevels: (() => unknown[]) | null = null;
 let hud: ExtraHud | null = null;
 let menuCursor = 0;
@@ -1438,16 +1464,17 @@ function placeHudInput(on: boolean, left: string, top: string, width: string, pl
 }
 
 function homeItems(): MenuItem[] {
-  return [
+  const items: MenuItem[] = [
     { id: "start", label: t("menu.start") },
     { id: "resume", label: t("menu.resume"), disabled: savedLevel() < 1 },
     { id: "load", label: t("menu.load") },
     { id: "creator", label: t("menu.creator") },
     { id: "puzzles", label: t("menu.puzzles") },
     { id: "history", label: t("menu.history") },
-    { id: "credits", label: t("menu.credits") },
-    { id: "settings", label: t("menu.settings") },
   ];
+  if (hasAchievementMenu()) items.push({ id: "achievements", label: t("menu.achievements") });
+  items.push({ id: "credits", label: t("menu.credits") }, { id: "settings", label: t("menu.settings") });
+  return items;
 }
 
 function freshSeed(): string {
@@ -1524,6 +1551,12 @@ function navItems(): NavItem[] {
       { id: "back" },
       { id: "toggle-ghosts" },
       ...rows.filter((rec) => rec.cmds.length).map((_, i) => ({ id: "replay:" + (listScroll + i) })),
+    ];
+  }
+  if (extraView === "achievements") {
+    return [
+      { id: "back" },
+      ...achievementRows(listScroll, ACH_PAGE).map((row) => ({ id: "ach:" + row.n })),
     ];
   }
   if (extraView === "finish") return [{ id: "toggle-stats" }, { id: "screenshot" }, { id: "back" }];
@@ -1686,6 +1719,19 @@ function moveNav(dir: 1 | -1): void {
       return;
     }
   }
+  if (extraView === "achievements") {
+    const maxScroll = Math.max(0, ACH_COUNT - ACH_PAGE);
+    if (dir === 1 && menuCursor >= navItems().length - 1 && listScroll < maxScroll) {
+      listScroll += 1;
+      menuCursor = navItems().length - 1;
+      return;
+    }
+    if (dir === -1 && menuCursor <= 1 && listScroll > 0) {
+      listScroll -= 1;
+      menuCursor = 1;
+      return;
+    }
+  }
   if (extraView === "creator-manage" || extraView === "creator-saved") {
     const total = listSaved().length;
     const maxScroll = Math.max(0, total - LIST_PAGE);
@@ -1749,6 +1795,8 @@ function hudKey(): string {
     draft.tiles.join(""),
     draft.spawn.join(","),
     String(loadFinishedStages().length),
+    String(unlockedCount()),
+    String(hintTokens()),
     String(loadSeeGhosts()),
     listSaved().map((row) => row.code).join(","),
     JSON.stringify(s.keys),
@@ -1862,6 +1910,17 @@ function paintHud(): void {
         };
       }),
     });
+  } else if (extraView === "achievements") {
+    const maxScroll = Math.max(0, ACH_COUNT - ACH_PAGE);
+    if (listScroll > maxScroll) listScroll = maxScroll;
+    hud.drawAchievements({
+      tokens: hintTokens(),
+      have: unlockedCount(),
+      total: ACH_COUNT,
+      rows: achievementRows(listScroll, ACH_PAGE),
+      scroll: listScroll,
+      pageSize: ACH_PAGE,
+    });
   } else if (extraView === "creator") {
     hud.drawCreatorHub(t("menu.creator"), [
       { id: "creator-make", label: t("creator.create") },
@@ -1928,7 +1987,7 @@ function openPanel(name: Screen): void {
   lastHudPaint = "";
   if (name === "home") animateHome = true;
   if (name === "load") loadError = "";
-  if (name === "creator-manage" || name === "creator-saved" || name === "history") listScroll = 0;
+  if (name === "creator-manage" || name === "creator-saved" || name === "history" || name === "achievements") listScroll = 0;
   if (name === "creator-edit") {
     editCursor = { x: draft.spawn[0], y: draft.spawn[1] };
     editorPaintHeld = false;
@@ -2129,6 +2188,7 @@ function sessionSeed(stageNo: number): string {
 function recordCmd(cmd: TapeCmd): void {
   if (!playSession?.record || autoSolve) return;
   tape.push(cmd);
+  if (cmd === "swap") noteSwap();
 }
 
 function persistWonStage(stageNo: number): void {
@@ -2157,6 +2217,63 @@ function persistWonStage(stageNo: number): void {
   });
 }
 
+function reportPlayWin(stageNo: number): void {
+  if (autoSolve) return;
+  const creatorTest = playSession?.returnTo === "creator-edit" || playSession?.entry === "creator-test";
+  if (!playSession?.record && !creatorTest) return;
+  if (playClock) {
+    notePlayMs(Date.now() - playClock);
+    playClock = Date.now();
+  }
+  const kind = sessionKind();
+  const seed = sessionSeed(stageNo);
+  const uniqueKey = uniqueStageKey(kind, stageNo, kind === "daily" ? playSession?.subtitle || seed : seed);
+  const lv = run?.levels.find((l) => l.stage === stageNo);
+  const cmds = (lv ? winningTape(lv) : null) || tape;
+  const failTapes = lv?.tapes.filter((row) => !row.won).length ?? (stageFailed ? 1 : 0);
+  const moves = cmds.length || window.stage?.bloxWorld?.moves || 0;
+  const def =
+    playSession?.defs[stageNo - 1] ??
+    (kind === "campaign" && !playSession?.defs.length ? rawCampaignDefs()[stageNo - 1] : playDef());
+  const ghosts = kind === "campaign" ? ghostsForStage(stageNo) : ghostsForStage(ghostKey(kind, stageNo, seed));
+  const improved = moves > 0 && ghosts.some((g) => g.length > moves);
+  const gauntletLen = playSession?.card === "gauntlet" ? playSession.defs.length || GAUNTLET_LEN : undefined;
+  const gauntletNoFallRun =
+    !!gauntletLen &&
+    stageNo >= gauntletLen &&
+    !!run &&
+    run.levels.filter((l) => l.stage <= gauntletLen).every((l) => !l.tapes.some((row) => !row.won)) &&
+    failTapes === 0;
+  const classicComplete = !!playSession?.classicRun && kind === "campaign" && stageNo === 33;
+  const note: WinNote = {
+    kind,
+    stageNo,
+    uniqueKey,
+    moves,
+    noFall: failTapes === 0 && !stageFailed,
+    cmds,
+    theme: currentTheme(),
+    timerOn: loadSettings().showTimer,
+    classicRun: !!playSession?.classicRun,
+    classicComplete,
+    classicFalls: classicComplete ? (run?.fails ?? window.stage?.totalFalls ?? 0) : undefined,
+    classicMoves: classicComplete ? (window.stage?.totalMoves ?? run?.totalMoves ?? moves) : undefined,
+    def,
+    via: playSession?.entry,
+    dailyDate: kind === "daily" ? playSession?.subtitle : undefined,
+    gauntletDiff: playSession?.diff,
+    gauntletLen,
+    gauntletNoFallRun,
+    improvedGhost: improved,
+    ghostStageKey: uniqueKey,
+    comeback: failTapes > 0 || stageFailed,
+    stubborn: failTapes >= 5,
+    day: utcDateLabel(),
+  };
+  noteWin(note);
+  stageFailed = false;
+}
+
 function defForFinished(rec: FinishedStage): LevelDef | null {
   if (rec.seed) return parseShare(rec.seed) ?? decodeSeed(rec.seed);
   if ((rec.kind ?? "campaign") === "campaign") {
@@ -2177,6 +2294,7 @@ function startHistoryReplay(rec: FinishedStage): void {
   });
   autoSolve = true;
   solveFeeder = createFeeder(rec.cmds);
+  noteGhostWatch();
 }
 
 function handleHudAction(act: string): void {
@@ -2195,10 +2313,10 @@ function handleHudAction(act: string): void {
       complete: false,
       levels: [],
     };
-    beginPlay(1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: true });
+    beginPlay(1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: true, entry: "start" });
   } else if (act === "resume") {
     const n = savedLevel();
-    if (n) beginPlay(n, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: true });
+    if (n) beginPlay(n, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: true, entry: "resume" });
   } else if (act === "load") openPanel("load");
   else if (act === "load-go") loadPasscode();
   else if (act === "credits") openPanel("credits");
@@ -2223,6 +2341,7 @@ function handleHudAction(act: string): void {
   else if (act === "puzzles-seeded") openPanel("puzzles-seeded");
   else if (act === "puzzles-gauntlet") openPanel("puzzles-gauntlet");
   else if (act === "history") openPanel("history");
+  else if (act === "achievements") openPanel("achievements");
   else if (act === "skip-name") {
     if (!getName()) setName("BLOX");
     afterIdentity();
@@ -2270,6 +2389,8 @@ function handleHudAction(act: string): void {
     paintHud();
   } else if (act === "screenshot") {
     void shareWinShot();
+    noteScreenshot();
+    markHudDirty();
   } else if (act === "toggle-ghosts") {
     saveSeeGhosts(!loadSeeGhosts());
     lastHudPaint = "";
@@ -2406,6 +2527,13 @@ function handleHudAction(act: string): void {
   } else if (act.startsWith("replay:")) {
     const rec = loadFinishedStages()[Number(act.slice(7))];
     if (rec) startHistoryReplay(rec);
+  } else if (act.startsWith("ach:")) {
+    const n = Number(act.slice(4));
+    const result = spendHint(n);
+    if (result === "tokens") paint.hint = t("achievements.need");
+    lastHudPaint = "";
+    markHudDirty();
+    paintHud();
   }
 }
 
@@ -2445,6 +2573,7 @@ function copySeed(): void {
   const seed = encodeSeed(draft);
   void navigator.clipboard?.writeText(seed).catch(() => undefined);
   paint.hint = "Copied reverse seed " + seed;
+  noteCopiedSeed();
   markHudDirty();
   paintHud();
 }
@@ -2485,6 +2614,8 @@ function playShareDef(def: ReturnType<typeof parseShare>, returnTo: Screen): voi
     title: saved?.name || t("play.custom"),
     subtitle: saved?.author || "",
     author: saved?.author,
+    entry: "code",
+    seed: encodeSeed(def),
   });
 }
 
@@ -2558,6 +2689,7 @@ function playDaily(): void {
     title: t("play.daily"),
     subtitle: day,
     seed: p.seed,
+    entry: "puzzle",
   });
 }
 
@@ -2570,6 +2702,7 @@ function playSeededRun(seed: string): void {
     title: t("play.seeded"),
     subtitle: clean,
     seed: clean,
+    entry: "puzzle",
   });
 }
 
@@ -2585,6 +2718,8 @@ function playGauntlet(seed: string, diff: Difficulty): void {
       title: t("play.gauntlet", { diff: t("diff." + diff) }),
       subtitle: clean,
       seed: clean,
+      entry: "puzzle",
+      diff,
     },
   );
 }
@@ -2595,6 +2730,8 @@ function playSavedStage(row: { name: string; author: string; def: LevelDef }, re
     title: row.name || t("play.custom"),
     subtitle: row.author,
     author: row.author,
+    entry: "saved",
+    seed: encodeSeed(row.def),
   });
 }
 
@@ -2821,6 +2958,10 @@ function showFinish(): void {
 }
 
 function leavePlayTo(view: Screen): void {
+  if (playClock) {
+    notePlayMs(Date.now() - playClock);
+    playClock = 0;
+  }
   window.stage?.bloxWorld?.destroy?.();
   const flags = window as unknown as { setStageLoaded?: (n: number) => void; setSplit?: (n: number) => void };
   flags.setStageLoaded?.(0);
@@ -2871,6 +3012,8 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   extraView = "auto";
   tape = [];
   lastLevelNum = levelNumber;
+  stageFailed = false;
+  playClock = Date.now();
   overlayMode = "run";
   playLaunching = true;
   lastTintKey = "";
@@ -2906,6 +3049,8 @@ function startCustom(defs: LevelDef[], returnTo: Screen, opts: CustomPlayOpts = 
     card: opts.card ?? "custom",
     seed: opts.seed,
     author: opts.author,
+    entry: opts.entry ?? (returnTo === "creator-edit" ? "creator-test" : "puzzle"),
+    diff: opts.diff,
   });
 }
 
@@ -3195,6 +3340,14 @@ function applyPlayTint(): void {
 }
 
 function commitTape(won: boolean, stageNo: number): void {
+  if (!won && !autoSolve) {
+    stageFailed = true;
+    if (playClock) {
+      notePlayMs(Date.now() - playClock);
+      playClock = Date.now();
+    }
+    noteFall();
+  }
   if (!playSession?.record) {
     tape = [];
     return;
@@ -3244,6 +3397,7 @@ function saveDraft(): void {
     source: "local" as const,
   };
   saveStage(saved);
+  noteSaved(draft);
   paint.hint = "Saved. Reverse seed: " + saved.code;
   markHudDirty();
   paintHud();
@@ -3284,7 +3438,7 @@ function loadPasscode(): void {
     return;
   }
   loadError = "";
-  beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: false });
+  beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: false, entry: "passcode" });
 }
 
 function capturePadRebind(): void {
@@ -3497,6 +3651,15 @@ function bind(): void {
     (ev) => {
       if (extraView === "history") {
         const max = Math.max(0, loadFinishedStages().length - LIST_HISTORY);
+        if (!max) return;
+        ev.preventDefault();
+        listScroll = Math.max(0, Math.min(max, listScroll + (ev.deltaY > 0 ? 1 : -1)));
+        markHudDirty();
+        paintHud();
+        return;
+      }
+      if (extraView === "achievements") {
+        const max = Math.max(0, ACH_COUNT - ACH_PAGE);
         if (!max) return;
         ev.preventDefault();
         listScroll = Math.max(0, Math.min(max, listScroll + (ev.deltaY > 0 ? 1 : -1)));
@@ -3724,8 +3887,10 @@ function syncOverlay(): void {
     if (lastLevelNum > 0 && stage.levelNumber > lastLevelNum) {
       commitTape(true, lastLevelNum);
       persistWonStage(lastLevelNum);
+      reportPlayWin(lastLevelNum);
       rumble(220, 0.45, 0.4);
       if (autoSolve) stopAutoSolve("");
+      stageFailed = false;
     }
     lastLevelNum = stage.levelNumber;
   }
@@ -3734,10 +3899,12 @@ function syncOverlay(): void {
     if (autoSolve) stopAutoSolve("");
     rumble(220, 0.45, 0.4);
     beaten = playSession?.returnTo === "creator-edit" ? true : beaten;
+    const finishStage = lastLevelNum || stage?.levelNumber || 1;
     if (tape.length) {
-      commitTape(true, lastLevelNum || stage?.levelNumber || 1);
-      persistWonStage(lastLevelNum || stage?.levelNumber || 1);
+      commitTape(true, finishStage);
+      persistWonStage(finishStage);
     }
+    reportPlayWin(finishStage);
     if (run && playSession?.record) {
       run.complete = true;
       run.totalTimeMs = Date.now() - run.at;

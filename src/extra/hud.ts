@@ -375,11 +375,12 @@ export class ExtraHud {
     const w = drawBillboard(this.layer, title, brandX, brandY, 300);
     this.placeMascot(w, brandX, brandY);
     const rows: HudNode[] = [];
+    const gap = items.length > 8 ? (wantsVirtualPad() ? 20 : 18) : wantsVirtualPad() ? 24 : 20;
     items.forEach((item, i) => {
       const prefix = i === cursor && !item.disabled ? "> " : "  ";
       const targetX = 40;
       const fromX = i % 2 === 0 ? -180 : 580;
-      const y = 70 + i * (wantsVirtualPad() ? 24 : 20);
+      const y = 70 + i * gap;
       const row = hitRow(prefix + item.label, animate ? fromX : targetX, y, wantsVirtualPad() ? 15 : 13, () => this.onAction(item.id), !!item.disabled, 260);
       this.add(row);
       rows.push(row);
@@ -420,6 +421,40 @@ export class ExtraHud {
     this.add(fieldBox(40, 128, 240));
     this.add(this.act("name-continue", t("name.continue"), 40, 168, 13, false, 120));
     this.add(this.act("skip-name", t("name.skip"), 160, 168, 13, false, 160));
+  }
+
+  drawAchievements(opts: {
+    tokens: number;
+    have: number;
+    total: number;
+    rows: { n: number; label: string; meta: string }[];
+    scroll: number;
+    pageSize: number;
+  }): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(this.act("back", t("common.back"), 24, 8, 12, false, 80));
+    this.add(text(t("achievements.title"), 275, 8, 16, theme.ink, "center"));
+    this.add(text(`${t("achievements.tokens", { n: opts.tokens })}   ${t("achievements.progress", { have: opts.have, total: opts.total })}`, 275, 28, 10, theme.muted, "center"));
+    opts.rows.forEach((row, i) => {
+      const y = 48 + i * 38;
+      this.add(this.act("ach:" + row.n, row.label, 24, y, 12, false, 400));
+      this.add(text(row.meta, 40, y + 16, 9, theme.muted));
+    });
+    if (opts.total > opts.pageSize) {
+      const trackH = 228;
+      const trackX = 528;
+      const trackY = 48;
+      const bar = new createjs.Shape();
+      bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
+      const thumbH = Math.max(18, trackH * (opts.pageSize / opts.total));
+      const max = Math.max(1, opts.total - opts.pageSize);
+      const thumbY = trackY + (trackH - thumbH) * (opts.scroll / max);
+      bar.graphics.beginFill(theme.fill).drawRect(trackX, thumbY, 6, thumbH);
+      bar.mouseEnabled = false;
+      this.add(bar);
+    }
   }
 
   drawCredits(): void {
