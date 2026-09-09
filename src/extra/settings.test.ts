@@ -35,6 +35,15 @@ describe("mobile settings", () => {
     expect(s.mobilePad).toBe(false);
     expect(s.mobilePadChoice).toBe("");
     expect(s.rotateScreen).toBe(false);
+    expect(s.showTimer).toBe(false);
+  });
+
+  it("keeps an explicit speedrun timer on", () => {
+    localStorage.setItem(
+      "bloxorz-settings-v1",
+      JSON.stringify({ showTimer: true }),
+    );
+    expect(loadSettings().showTimer).toBe(true);
   });
 
   it("records an explicit mobile-pad choice", () => {
