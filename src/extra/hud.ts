@@ -97,7 +97,7 @@ function fieldBox(x: number, y: number, w: number, h = 22): HudShape {
 }
 
 function versionLabel(): HudText {
-  return text("v" + ((window as unknown as { GAME_VERSION?: string }).GAME_VERSION || "2.4.0"), 540, 282, 10, MUTED, "right");
+  return text("v" + ((window as unknown as { GAME_VERSION?: string }).GAME_VERSION || "2.4.1"), 540, 282, 10, MUTED, "right");
 }
 
 export class ExtraHud {
