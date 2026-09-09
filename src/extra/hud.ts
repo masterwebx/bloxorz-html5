@@ -3,16 +3,23 @@ declare const createjs: {
   Text: new (text: string, font: string, color: string) => HudText;
   Shape: new () => HudShape;
   Shadow: new (color: string, x: number, y: number, blur: number) => unknown;
+  Graphics: new () => {
+    beginFill: (c: string) => unknown;
+    drawCircle: (x: number, y: number, r: number) => unknown;
+  };
 };
 
 type HudNode = {
   x: number;
   y: number;
+  scaleX?: number;
+  scaleY?: number;
   visible: boolean;
   mouseEnabled: boolean;
   mouseChildren?: boolean;
   cursor?: string;
   hitArea?: HudNode;
+  shadow?: unknown;
   addChild: (...c: HudNode[]) => void;
   removeAllChildren: () => void;
   addEventListener: (type: string, fn: (ev?: unknown) => void) => void;
@@ -31,6 +38,8 @@ type HudShape = HudNode & {
     beginStroke: (c: string) => HudShape["graphics"];
     setStrokeStyle: (n: number) => HudShape["graphics"];
     drawRect: (x: number, y: number, w: number, h: number, r?: number) => HudShape["graphics"];
+    drawCircle: (x: number, y: number, r: number) => HudShape["graphics"];
+    clear: () => HudShape["graphics"];
   };
 };
 
@@ -41,6 +50,48 @@ const INK = "#ffe6c4";
 const HOT = "#ffffff";
 const MUTED = "rgba(255,210,160,0.45)";
 const GREEN = "#9dffb0";
+
+const BILLBOARD: Record<string, string[]> = {
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01110", "10001", "10000", "10111", "10001", "10001", "01110"],
+  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  J: ["00111", "00001", "00001", "00001", "00001", "10001", "01110"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+  X: ["10001", "01010", "01010", "00100", "01010", "01010", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+  "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+  "3": ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
+  "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+  "5": ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+  "6": ["01110", "10000", "10000", "11110", "10001", "10001", "01110"],
+  "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  "9": ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+  "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+  ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
+};
 
 const TILE_FILL: Record<string, string> = {
   " ": "#14110f",
@@ -96,10 +147,45 @@ function fieldBox(x: number, y: number, w: number, h = 22): HudShape {
   return s;
 }
 
+/** Neon-dot billboard brand from the remake. Returns width. */
+export function drawBillboard(container: HudNode, label: string, x: number, y: number, maxWidth = 280): number {
+  const letters = label.toUpperCase();
+  const pitch = Math.min(5.2, maxWidth / (Math.max(1, letters.length) * 6));
+  const radius = 2.1;
+  letters.split("").forEach((ch, li) => {
+    const glyph = BILLBOARD[ch];
+    if (!glyph) return;
+    const ox = x + li * 6 * pitch;
+    for (let row = 0; row < 7; row++) {
+      for (let col = 0; col < 5; col++) {
+        if (glyph[row][col] !== "1") continue;
+        const bx = ox + col * pitch;
+        const by = y + row * pitch;
+        const glowDot = new createjs.Shape();
+        glowDot.graphics.beginFill("rgba(255,140,30,0.35)").drawCircle(0, 0, 5.5);
+        glowDot.x = bx;
+        glowDot.y = by;
+        glowDot.mouseEnabled = false;
+        container.addChild(glowDot);
+        const core = new createjs.Shape();
+        core.graphics.beginFill("#fff4dc").drawCircle(0, 0, radius);
+        core.x = bx;
+        core.y = by;
+        core.mouseEnabled = false;
+        core.shadow = new createjs.Shadow("rgba(255,150,40,0.95)", 0, 0, 10);
+        container.addChild(core);
+      }
+    }
+  });
+  return letters.length * 6 * pitch;
+}
+
 export class ExtraHud {
   readonly root: HudNode;
   private layer: HudNode;
+  private mascot: HudNode | null = null;
   onAction: (act: string) => void = () => undefined;
+  makeMascot: (() => HudNode | null) | null = null;
 
   constructor(stage: { addChild: (c: unknown) => void }) {
     this.root = new createjs.Container();
@@ -113,6 +199,7 @@ export class ExtraHud {
   setVisible(on: boolean): void {
     this.root.visible = on;
     this.root.mouseEnabled = on;
+    if (this.mascot) this.mascot.visible = on;
   }
 
   clear(): void {
@@ -123,9 +210,29 @@ export class ExtraHud {
     for (const n of nodes) this.layer.addChild(n);
   }
 
+  private placeMascot(brandWidth: number, brandX: number, brandY: number): void {
+    if (!this.mascot && this.makeMascot) this.mascot = this.makeMascot();
+    if (!this.mascot) return;
+    this.mascot.visible = true;
+    this.mascot.mouseEnabled = false;
+    this.mascot.scaleX = 0.55;
+    this.mascot.scaleY = 0.55;
+    this.mascot.x = brandX + brandWidth + 36;
+    this.mascot.y = brandY + 22;
+    this.mascot.shadow = new createjs.Shadow("rgba(255,102,0,1)", 0, 0, 16);
+    if ((this.mascot as { parent?: unknown }).parent !== this.root) this.root.addChild(this.mascot);
+  }
+
+  private hideMascot(): void {
+    if (this.mascot) this.mascot.visible = false;
+  }
+
   drawHome(title: string, items: MenuItem[], cursor: number): void {
     this.clear();
-    this.add(text(title, 275, 28, 26, INK, "center"));
+    const brandX = 36;
+    const brandY = 18;
+    const w = drawBillboard(this.layer, title, brandX, brandY, 300);
+    this.placeMascot(w, brandX, brandY);
     items.forEach((item, i) => {
       const prefix = i === cursor && !item.disabled ? "> " : "  ";
       const line = hit(
@@ -141,6 +248,7 @@ export class ExtraHud {
 
   drawName(): void {
     this.clear();
+    this.hideMascot();
     this.add(text("What should we call you?", 40, 70, 18));
     this.add(text("This is how you show up. Type DEV for extra tools.", 40, 100, 11, MUTED));
     this.add(fieldBox(40, 128, 240));
@@ -150,6 +258,7 @@ export class ExtraHud {
 
   drawCredits(): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Back", 24, 16, 12), () => this.onAction("back")));
     this.add(text("Credits", 275, 28, 20, INK, "center"));
     this.add(text("Bloxorz — Damien Clarke / DX Interactive, 2007.", 40, 80, 11, MUTED));
@@ -160,6 +269,7 @@ export class ExtraHud {
 
   drawLoad(error: string): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Back", 24, 16, 12), () => this.onAction("back")));
     this.add(text("Load Stage", 275, 28, 20, INK, "center"));
     this.add(text("Campaign passcode, six digits.", 40, 80, 11, MUTED));
@@ -170,6 +280,7 @@ export class ExtraHud {
 
   drawSettings(rumble: boolean): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Back", 24, 16, 12), () => this.onAction("back")));
     this.add(text("Settings", 275, 28, 20, INK, "center"));
     this.add(text("Name in the field. DEV unlocks tools.", 40, 80, 11, MUTED));
@@ -180,6 +291,7 @@ export class ExtraHud {
 
   drawFinish(moves: number, falls: number): void {
     this.clear();
+    this.hideMascot();
     this.add(text("Congratulations", 275, 40, 22, INK, "center"));
     this.add(text("You cleared the run.", 275, 80, 12, MUTED, "center"));
     this.add(text("Moves  " + moves, 275, 120, 13, INK, "center"));
@@ -189,6 +301,7 @@ export class ExtraHud {
 
   drawPuzzles(diff: string, count: number, dailyMeta: string): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Back", 24, 16, 12), () => this.onAction("back")));
     this.add(text("Puzzles", 275, 28, 20, INK, "center"));
     this.add(text("Generated here. Played in their engine.", 40, 58, 11, MUTED));
@@ -208,6 +321,7 @@ export class ExtraHud {
 
   drawHistory(rows: { title: string; meta: string; replay?: () => void }[]): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Back", 24, 16, 12), () => this.onAction("back")));
     this.add(text("History", 275, 28, 20, INK, "center"));
     if (!rows.length) {
@@ -224,6 +338,7 @@ export class ExtraHud {
 
   drawDev(): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Back", 24, 16, 12), () => this.onAction("back")));
     this.add(text("Dev tools", 275, 28, 20, INK, "center"));
     this.add(text("Jump to a campaign stage.", 40, 54, 11, MUTED));
@@ -246,6 +361,7 @@ export class ExtraHud {
     marks: { x: number; y: number; label: string }[];
   }): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Back", 16, 10, 12), () => this.onAction("back")));
     this.add(text("Stage Creator", 110, 10, 16));
     this.add(text(opts.badge, 330, 14, 11, GREEN));
@@ -308,6 +424,7 @@ export class ExtraHud {
 
   drawInGameDev(): void {
     this.clear();
+    this.hideMascot();
     this.add(hit(text("Beat stage for me", 12, 8, 11), () => this.onAction("dev-beat")));
     this.add(hit(text("Dev menu", 180, 8, 11), () => this.onAction("dev-menu")));
   }

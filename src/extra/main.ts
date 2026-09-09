@@ -48,12 +48,15 @@ type StageLike = {
   doneIntro?: boolean;
   addChild?: (c: unknown) => void;
   addChildAt?: (c: unknown, i: number) => void;
+  removeChild?: (c: unknown) => void;
+  contains?: (c: unknown) => boolean;
   setChildIndex?: (c: unknown, i: number) => void;
   numChildren?: number;
   toggleSound?: () => void;
   totalMoves?: number;
   totalFalls?: number;
   gameContainer?: { visible?: boolean };
+  menuMusic?: { stop?: () => void } | null;
 };
 
 type SkyClip = {
@@ -61,6 +64,11 @@ type SkyClip = {
   y: number;
   visible: boolean;
   mouseEnabled: boolean;
+};
+
+type LibCtor = {
+  bettersky_22?: new () => SkyClip;
+  spinna?: new () => { x: number; y: number; scaleX: number; scaleY: number; mouseEnabled: boolean; shadow?: unknown };
 };
 
 const MODE_KEY = "bloxorz-play-mode";
@@ -101,6 +109,9 @@ let loadError = "";
 let lastHud = "";
 let bound = false;
 let sky: SkyClip | null = null;
+let rootParked = false;
+let audioUnlocked = false;
+let origSoundPlay: ((...args: unknown[]) => unknown) | null = null;
 
 function $(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -150,9 +161,8 @@ function savedLevel(): number {
   }
 }
 
-function adobeLib(): { bettersky_22?: new () => SkyClip } | undefined {
-  const an = (window as unknown as { AdobeAn?: { getComposition: (id: string) => { getLibrary: () => { bettersky_22?: new () => SkyClip } } } }).AdobeAn;
-  return an?.getComposition("FE31B685947E79408F0C8768D6EC8517")?.getLibrary();
+function adobeLib(): LibCtor | undefined {
+  return window.AdobeAn?.getComposition("FE31B685947E79408F0C8768D6EC8517")?.getLibrary();
 }
 
 function ensureSky(): void {
@@ -168,11 +178,23 @@ function ensureSky(): void {
   sky = clip;
 }
 
+function parkExportRoot(park: boolean): void {
+  const st = window.stage;
+  const root = window.exportRoot;
+  if (!st || !root) return;
+  if (park) {
+    if (st.contains?.(root)) st.removeChild?.(root);
+    rootParked = true;
+  } else if (rootParked) {
+    if (!st.contains?.(root)) st.addChild?.(root);
+    rootParked = false;
+  }
+}
+
 function showGameSky(on: boolean): void {
   ensureSky();
-  const root = window.exportRoot as { visible?: boolean } | undefined;
   if (sky) sky.visible = on;
-  if (root) root.visible = !on;
+  parkExportRoot(on);
   const box = window.stage?.gameContainer;
   if (box) box.visible = !on;
 }
@@ -186,14 +208,35 @@ function parkCreateJsMenu(): void {
     root.splash.visible = false;
     root.splash.stop?.();
   }
+  if (st.menuMusic) {
+    st.menuMusic.stop?.();
+    st.menuMusic = null;
+  }
   setVanillaButtonsVisible(false);
   showGameSky(true);
 }
 
+function gateSoundPlay(): void {
+  const sound = window.createjs?.Sound as { play?: (...args: unknown[]) => unknown } | undefined;
+  if (!sound?.play || origSoundPlay) return;
+  origSoundPlay = sound.play.bind(sound);
+  sound.play = function gatedPlay(...args: unknown[]) {
+    if (!audioUnlocked && !isLegacy()) return null;
+    return origSoundPlay!(...args);
+  };
+}
+
 function unlockAudio(): void {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
   const cjs = window.createjs;
   const ctx = cjs?.WebAudioPlugin?.context || cjs?.Sound?.activePlugin?.context;
   void ctx?.resume?.();
+  const st = window.stage as StageLike | undefined;
+  if (!isLegacy() && st && !st.menuMusic && currentLabel() !== "game") {
+    const play = origSoundPlay || cjs?.Sound?.play;
+    if (play) st.menuMusic = play("Music", { loop: -1 }) as { stop?: () => void };
+  }
 }
 
 function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean }> | null {
@@ -506,6 +549,10 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   showGameSky(false);
   unlockAudio();
   const stage = window.stage;
+  if (stage?.menuMusic) {
+    stage.menuMusic.stop?.();
+    stage.menuMusic = null;
+  }
   if (stage) stage.levelNumber = levelNumber;
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
   window.exportRoot?.gotoAndPlay?.("game");
@@ -840,10 +887,11 @@ declare global {
     stage?: StageLike;
     startBloxorzShell?: () => void;
     GAME_VERSION?: string;
-    AdobeAn?: { getComposition: (id: string) => { getLibrary: () => { bettersky_22?: new () => SkyClip } } };
+    AdobeAn?: { getComposition: (id: string) => { getLibrary: () => LibCtor } };
     createjs?: {
       Sound?: {
         volume: number;
+        play?: (...args: unknown[]) => unknown;
         activePlugin?: { context?: { resume?: () => Promise<unknown> } };
       };
       WebAudioPlugin?: { context?: { resume?: () => Promise<unknown> } };
@@ -854,12 +902,18 @@ declare global {
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.4.2");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.4.3");
+  gateSoundPlay();
   wrapGetLevels();
   bind();
   if (window.stage && !hud) {
     hud = new ExtraHud(window.stage as { addChild: (c: unknown) => void });
     hud.onAction = handleHudAction;
+    hud.makeMascot = () => {
+      const Spin = adobeLib()?.spinna;
+      if (!Spin) return null;
+      return new Spin() as never;
+    };
   }
   if (!isLegacy()) parkCreateJsMenu();
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
@@ -867,6 +921,7 @@ export function startBloxorzShell(): void {
 }
 
 window.startBloxorzShell = startBloxorzShell;
+gateSoundPlay();
 
 (function patchHitCanvas(): void {
   if (typeof HTMLCanvasElement === "undefined") return;
