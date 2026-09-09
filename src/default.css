@@ -65,14 +65,22 @@
 
 #screen-split {
 	display: grid;
-	grid-template-columns: auto 1fr;
+	grid-template-columns: 1fr;
 	height: 100%;
+}
+
+#screen-split.has-timer {
+	grid-template-columns: auto 1fr;
 }
 
 #side_panel {
 	height: 100vh;
-	display: grid;
+	display: none;
 	grid-template-rows: auto 1fr;
+}
+
+#side_panel.is-open {
+	display: grid;
 }
 
 #table_container {

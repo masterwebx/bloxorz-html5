@@ -76,7 +76,7 @@
 			dom_overlay_container = document.getElementById("dom_overlay_container");
 			var versionEl = document.getElementById("build-version");
 			if (versionEl) {
-				versionEl.textContent = "v" + (window.GAME_VERSION || "2.4.3");
+				versionEl.textContent = "v" + (window.GAME_VERSION || "2.5.0");
 			}
 			var comp = AdobeAn.getComposition("FE31B685947E79408F0C8768D6EC8517");
 			var lib = comp.getLibrary();
@@ -247,7 +247,7 @@
 			<div id="dom_overlay_container">
 				<div id="build-version"></div>
 				<button type="button" id="exit-legacy">EXIT LEGACY MODE</button>
-				<input id="hud-input" type="text" maxlength="80" autocomplete="off" spellcheck="false" hidden>
+				<input id="hud-input" type="text" maxlength="10" autocomplete="off" spellcheck="false" hidden>
 			</div>
 		</div>
 	</div>

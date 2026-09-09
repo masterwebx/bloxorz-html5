@@ -1,6 +1,6 @@
 import { loadSettings, type Action } from "./settings";
 
-const CODE: Record<Exclude<Action, "confirm" | "back" | "pause" | "swap">, string> = {
+const DIR_CODE: Record<"up" | "down" | "left" | "right", string> = {
   up: "ArrowUp",
   down: "ArrowDown",
   left: "ArrowLeft",
@@ -32,31 +32,37 @@ function gActuator(pad: Gamepad | null): GamepadHapticActuator | undefined {
 }
 
 let prevHeld: Record<string, boolean> = {};
+let prevMenu: Record<string, boolean> = {};
+let menuCool = 0;
 
-export function pollGamepad(stage: StageLike | undefined, overlayOpen: boolean): void {
-  if (!stage?.triggerKeyDown || overlayOpen) return;
-  const settings = loadSettings();
-  const pads = navigator.getGamepads();
-  const pressed: Record<string, boolean> = {};
-  for (const g of pads) {
+function collectHeld(): Set<number> {
+  const held = new Set<number>();
+  for (const g of navigator.getGamepads()) {
     if (!g) continue;
-    const buttons = g.buttons;
-    const ax = g.axes[0] ?? 0;
-    const ay = g.axes[1] ?? 0;
-    const held = new Set<number>();
-    buttons.forEach((b, i) => {
+    g.buttons.forEach((b, i) => {
       if (b.pressed) held.add(i);
     });
+    const ax = g.axes[0] ?? 0;
+    const ay = g.axes[1] ?? 0;
     if (ay < -0.55) held.add(12);
     if (ay > 0.55) held.add(13);
     if (ax < -0.55) held.add(14);
     if (ax > 0.55) held.add(15);
-    for (const dir of ["up", "down", "left", "right"] as const) {
-      if (held.has(settings.pads[dir])) pressed[CODE[dir]] = true;
-    }
-    if (held.has(settings.pads.swap)) pressed.Space = true;
-    if (held.has(settings.pads.pause)) pressed.Escape = true;
   }
+  return held;
+}
+
+/** In-game: map pad to CreateJS arrow/space codes. */
+export function pollGamepad(stage: StageLike | undefined): void {
+  if (!stage?.triggerKeyDown) return;
+  const settings = loadSettings();
+  const held = collectHeld();
+  const pressed: Record<string, boolean> = {};
+  for (const dir of ["up", "down", "left", "right"] as const) {
+    if (held.has(settings.pads[dir])) pressed[DIR_CODE[dir]] = true;
+  }
+  if (held.has(settings.pads.swap)) pressed.Space = true;
+  if (held.has(settings.pads.pause)) pressed.Escape = true;
 
   for (const code of Object.keys(pressed)) {
     if (!prevHeld[code]) stage.triggerKeyDown?.({ code });
@@ -68,4 +74,41 @@ export function pollGamepad(stage: StageLike | undefined, overlayOpen: boolean):
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
   }
   prevHeld = pressed;
+}
+
+export type MenuPadEvent = "up" | "down" | "left" | "right" | "confirm" | "back";
+
+/** Extra menus: edge-triggered pad events with repeat delay. */
+export function pollMenuPad(): MenuPadEvent[] {
+  if (menuCool > 0) menuCool--;
+  const settings = loadSettings();
+  const held = collectHeld();
+  const now: Record<string, boolean> = {};
+  const map: { btn: number; ev: MenuPadEvent }[] = [
+    { btn: settings.pads.up, ev: "up" },
+    { btn: settings.pads.down, ev: "down" },
+    { btn: settings.pads.left, ev: "left" },
+    { btn: settings.pads.right, ev: "right" },
+    { btn: settings.pads.confirm, ev: "confirm" },
+    { btn: settings.pads.back, ev: "back" },
+  ];
+  for (const m of map) if (held.has(m.btn)) now[m.ev] = true;
+
+  const out: MenuPadEvent[] = [];
+  for (const ev of Object.keys(now) as MenuPadEvent[]) {
+    if (!prevMenu[ev] && menuCool === 0) {
+      out.push(ev);
+      menuCool = ev === "confirm" || ev === "back" ? 12 : 8;
+    }
+  }
+  prevMenu = now;
+  return out;
+}
+
+export function actionFromCode(code: string): Action | null {
+  const keys = loadSettings().keys;
+  for (const [act, bind] of Object.entries(keys) as [Action, string][]) {
+    if (bind === code || (bind === "Space" && (code === "Space" || code === " "))) return act;
+  }
+  return null;
 }

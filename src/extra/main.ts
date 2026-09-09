@@ -11,9 +11,23 @@ import {
 } from "./customLevels";
 import { campaignDefs, defToCreateJs } from "./convert";
 import { dailySeed, difficultyLabel, generatePuzzle, generateRun, type Difficulty } from "./generate";
-import { pollGamepad, rumble } from "./gamepad";
+import { actionFromCode, pollGamepad, pollMenuPad, rumble } from "./gamepad";
+import { applyVolumes, ensureMenuMusic, gateSoundPlay, stopMenuMusic, unlockAudio } from "./audio";
 import { loadRuns, pushGhost, saveRun, winningTape, type RunRecord, type TapeCmd } from "./history";
-import { brandName, isDevName, loadSettings, saveSettings } from "./settings";
+import {
+  ACTIONS,
+  ACTION_LABEL,
+  brandName,
+  currentTheme,
+  isDevName,
+  loadSettings,
+  NAME_MAX,
+  normalizeTheme,
+  prettyKey,
+  saveSettings,
+  type Action,
+  type ThemeId,
+} from "./settings";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, type MenuItem } from "./hud";
@@ -23,21 +37,21 @@ type Screen =
   | "name"
   | "home"
   | "settings"
+  | "remap"
   | "creator"
   | "puzzles"
   | "history"
-  | "dev"
   | "load"
   | "credits"
   | "finish"
   | "auto";
-type PlayKind = "campaign" | "custom";
 
 type PlaySession = {
-  kind: PlayKind;
+  kind: "campaign" | "custom";
   defs: LevelDef[];
   returnTo: Screen;
   record: boolean;
+  classicRun: boolean;
   title?: string;
 };
 
@@ -59,16 +73,10 @@ type StageLike = {
   menuMusic?: { stop?: () => void } | null;
 };
 
-type SkyClip = {
-  x: number;
-  y: number;
-  visible: boolean;
-  mouseEnabled: boolean;
-};
-
+type SkyClip = { x: number; y: number; visible: boolean; mouseEnabled: boolean };
 type LibCtor = {
   bettersky_22?: new () => SkyClip;
-  spinna?: new () => { x: number; y: number; scaleX: number; scaleY: number; mouseEnabled: boolean; shadow?: unknown };
+  spinna?: new () => { x: number; y: number; scaleX: number; scaleY: number; mouseEnabled: boolean; shadow?: unknown; parent?: unknown };
 };
 
 const MODE_KEY = "bloxorz-play-mode";
@@ -110,8 +118,7 @@ let lastHud = "";
 let bound = false;
 let sky: SkyClip | null = null;
 let rootParked = false;
-let audioUnlocked = false;
-let origSoundPlay: ((...args: unknown[]) => unknown) | null = null;
+let rebindAction: Action | null = null;
 
 function $(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -135,17 +142,18 @@ function setMode(mode: string): void {
 
 function getName(): string {
   try {
-    return (localStorage.getItem(NAME_KEY) || "").trim();
+    return (localStorage.getItem(NAME_KEY) || "").trim().slice(0, NAME_MAX);
   } catch {
     return "";
   }
 }
 
 function setName(name: string): void {
+  const next = name.trim().slice(0, NAME_MAX);
   try {
-    localStorage.setItem(NAME_KEY, name.trim());
+    localStorage.setItem(NAME_KEY, next);
     const s = loadSettings();
-    s.playerName = name.trim();
+    s.playerName = next;
     saveSettings(s);
   } catch {
     /* ignore */
@@ -199,6 +207,26 @@ function showGameSky(on: boolean): void {
   if (box) box.visible = !on;
 }
 
+function syncSidePanel(playing: boolean): void {
+  const panel = $("side_panel");
+  const split = $("screen-split");
+  if (!panel) return;
+  if (isLegacy()) {
+    panel.classList.add("is-open");
+    panel.style.display = "";
+    split?.classList.add("has-timer");
+    const sel = $("image_select");
+    if (sel) sel.style.display = "";
+    return;
+  }
+  const sel = $("image_select");
+  if (sel) sel.style.display = "none";
+  const show = playing && !!playSession?.classicRun && loadSettings().showTimer;
+  panel.classList.toggle("is-open", show);
+  panel.style.display = show ? "" : "none";
+  split?.classList.toggle("has-timer", show);
+}
+
 function parkCreateJsMenu(): void {
   const root = window.exportRoot;
   const st = window.stage;
@@ -212,31 +240,10 @@ function parkCreateJsMenu(): void {
     st.menuMusic.stop?.();
     st.menuMusic = null;
   }
+  stopMenuMusic();
   setVanillaButtonsVisible(false);
   showGameSky(true);
-}
-
-function gateSoundPlay(): void {
-  const sound = window.createjs?.Sound as { play?: (...args: unknown[]) => unknown } | undefined;
-  if (!sound?.play || origSoundPlay) return;
-  origSoundPlay = sound.play.bind(sound);
-  sound.play = function gatedPlay(...args: unknown[]) {
-    if (!audioUnlocked && !isLegacy()) return null;
-    return origSoundPlay!(...args);
-  };
-}
-
-function unlockAudio(): void {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  const cjs = window.createjs;
-  const ctx = cjs?.WebAudioPlugin?.context || cjs?.Sound?.activePlugin?.context;
-  void ctx?.resume?.();
-  const st = window.stage as StageLike | undefined;
-  if (!isLegacy() && st && !st.menuMusic && currentLabel() !== "game") {
-    const play = origSoundPlay || cjs?.Sound?.play;
-    if (play) st.menuMusic = play("Music", { loop: -1 }) as { stop?: () => void };
-  }
+  syncSidePanel(false);
 }
 
 function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean }> | null {
@@ -291,7 +298,7 @@ function hudInput(): HTMLInputElement | null {
   return $("hud-input") as HTMLInputElement | null;
 }
 
-function placeHudInput(on: boolean, left: string, top: string, width: string, placeholder: string, value: string): void {
+function placeHudInput(on: boolean, left: string, top: string, width: string, placeholder: string, value: string, maxLen = 80): void {
   const el = hudInput();
   if (!el) return;
   el.hidden = !on;
@@ -300,24 +307,22 @@ function placeHudInput(on: boolean, left: string, top: string, width: string, pl
   el.style.top = top;
   el.style.width = width;
   el.placeholder = placeholder;
-  if (document.activeElement !== el) el.value = value;
+  el.maxLength = maxLen;
+  if (document.activeElement !== el) el.value = value.slice(0, maxLen);
 }
 
 function homeItems(): MenuItem[] {
-  const items: MenuItem[] = [
+  return [
     { id: "start", label: "Start New Game" },
     { id: "resume", label: "Resume Game", disabled: savedLevel() < 1 },
     { id: "load", label: "Load Stage" },
     { id: "creator", label: "Stage Creator" },
     { id: "puzzles", label: "Puzzles" },
     { id: "history", label: "History" },
-    { id: "sound", label: (window.createjs?.Sound?.volume ?? 1) === 1 ? "Sound: On" : "Sound: Off" },
     { id: "credits", label: "Credits" },
     { id: "settings", label: "Settings" },
     { id: "legacy", label: "Legacy mode" },
   ];
-  if (isDevName(getName())) items.push({ id: "dev", label: "Dev tools" });
-  return items;
 }
 
 function moveHome(dir: 1 | -1): void {
@@ -334,13 +339,18 @@ function moveHome(dir: 1 | -1): void {
 }
 
 function hudKey(): string {
+  const s = loadSettings();
   return [
     extraView,
     homeCursor,
     savedLevel(),
-    String(window.createjs?.Sound?.volume ?? 1),
     getName(),
-    String(loadSettings().rumble),
+    String(s.rumble),
+    String(s.showTimer),
+    String(s.music),
+    String(s.sfx),
+    currentTheme(),
+    String(rebindAction),
     loadError,
     puzzleDiff,
     String(puzzleCount),
@@ -351,6 +361,7 @@ function hudKey(): string {
     draft.tiles.join(""),
     draft.spawn.join(","),
     String(loadRuns().length),
+    JSON.stringify(s.keys),
   ].join("|");
 }
 
@@ -366,17 +377,33 @@ function paintHud(): void {
   if (key === lastHud) return;
   lastHud = key;
   placeHudInput(false, "0", "0", "0", "", "");
+  const s = loadSettings();
   if (extraView === "home") hud.drawHome(brandName(getName()), homeItems(), homeCursor);
   else if (extraView === "name") {
     hud.drawName();
-    placeHudInput(true, "7.3%", "42.5%", "43%", "NAME", getName());
+    placeHudInput(true, "7.3%", "42.5%", "43%", "NAME", getName(), NAME_MAX);
   } else if (extraView === "credits") hud.drawCredits();
   else if (extraView === "load") {
-    hud.drawLoad(loadError);
-    placeHudInput(true, "7.3%", "38%", "29%", "000000", "");
+    if (isDevName(getName())) {
+      hud.drawLoadStages();
+    } else {
+      hud.drawLoadPasscode(loadError);
+      placeHudInput(true, "7.3%", "38%", "29%", "000000", "", 6);
+    }
   } else if (extraView === "settings") {
-    hud.drawSettings(loadSettings().rumble);
-    placeHudInput(true, "7.3%", "36%", "43%", "NAME", getName());
+    hud.drawSettings({
+      rumble: s.rumble,
+      showTimer: s.showTimer,
+      music: s.music,
+      sfx: s.sfx,
+      theme: currentTheme(),
+    });
+    placeHudInput(true, "7.3%", "19.5%", "40%", "NAME", getName(), NAME_MAX);
+  } else if (extraView === "remap") {
+    hud.drawRemap(
+      ACTIONS.map((id) => ({ id, label: ACTION_LABEL[id], bind: prettyKey(s.keys[id]) })),
+      rebindAction,
+    );
   } else if (extraView === "finish") {
     const st = window.stage;
     hud.drawFinish(st?.totalMoves ?? 0, st?.totalFalls ?? 0);
@@ -405,8 +432,7 @@ function paintHud(): void {
           };
         }),
     );
-  } else if (extraView === "dev") hud.drawDev();
-  else if (extraView === "creator") {
+  } else if (extraView === "creator") {
     const issue = isPlayable(draft);
     hud.drawCreator({
       tiles: draft.tiles,
@@ -427,7 +453,19 @@ function openPanel(name: Screen): void {
   lastHud = "";
   if (name === "load") loadError = "";
   if (name === "creator") scheduleBeatCheck();
+  if (name !== "remap") rebindAction = null;
   paintHud();
+}
+
+function applyTheme(theme: ThemeId): void {
+  try {
+    localStorage.setItem("theme", theme);
+  } catch {
+    /* ignore */
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set("img", theme);
+  window.location.href = url.toString();
 }
 
 function handleHudAction(act: string): void {
@@ -442,26 +480,22 @@ function handleHudAction(act: string): void {
       complete: false,
       levels: [],
     };
-    beginPlay(1, { kind: "campaign", defs: [], returnTo: "home", record: true });
+    beginPlay(1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: true });
   } else if (act === "resume") {
     const n = savedLevel();
-    if (n) beginPlay(n, { kind: "campaign", defs: [], returnTo: "home", record: true });
+    if (n) beginPlay(n, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: true });
   } else if (act === "load") openPanel("load");
   else if (act === "load-go") loadPasscode();
-  else if (act === "sound") {
-    window.stage?.toggleSound?.();
-    lastHud = "";
-    paintHud();
-  } else if (act === "credits") openPanel("credits");
+  else if (act === "credits") openPanel("credits");
   else if (act === "legacy") {
     setMode("legacy");
     window.location.reload();
   } else if (act === "settings") openPanel("settings");
+  else if (act === "remap") openPanel("remap");
   else if (act === "back") openPanel("home");
   else if (act === "creator") openPanel("creator");
   else if (act === "puzzles") openPanel("puzzles");
   else if (act === "history") openPanel("history");
-  else if (act === "dev") openPanel("dev");
   else if (act === "skip-name") {
     if (!getName()) setName("BLOX");
     openPanel("home");
@@ -471,7 +505,7 @@ function handleHudAction(act: string): void {
     setName(next);
     openPanel("home");
   } else if (act === "save-name") {
-    const next = hudInput()?.value.trim();
+    const next = (hudInput()?.value.trim() || getName()).slice(0, NAME_MAX);
     if (!next) return;
     setName(next);
     openPanel("home");
@@ -479,6 +513,33 @@ function handleHudAction(act: string): void {
     const s = loadSettings();
     s.rumble = !s.rumble;
     saveSettings(s);
+    lastHud = "";
+    paintHud();
+  } else if (act === "toggle-timer") {
+    const s = loadSettings();
+    s.showTimer = !s.showTimer;
+    saveSettings(s);
+    lastHud = "";
+    paintHud();
+  } else if (act.startsWith("music:")) {
+    const s = loadSettings();
+    s.music = Number(act.slice(6));
+    saveSettings(s);
+    applyVolumes();
+    ensureMenuMusic();
+    lastHud = "";
+    paintHud();
+  } else if (act.startsWith("sfx:")) {
+    const s = loadSettings();
+    s.sfx = Number(act.slice(4));
+    saveSettings(s);
+    applyVolumes();
+    lastHud = "";
+    paintHud();
+  } else if (act.startsWith("theme:")) {
+    applyTheme(normalizeTheme(act.slice(6)));
+  } else if (act.startsWith("rebind:")) {
+    rebindAction = act.slice(7) as Action;
     lastHud = "";
     paintHud();
   } else if (act === "creator-test") playDraft();
@@ -514,7 +575,7 @@ function handleHudAction(act: string): void {
     lastHud = "";
     paintHud();
   } else if (act.startsWith("dev:")) {
-    beginPlay(Number(act.slice(4)), { kind: "campaign", defs: [], returnTo: "dev", record: false });
+    beginPlay(Number(act.slice(4)), { kind: "campaign", defs: [], returnTo: "load", record: false, classicRun: false });
   } else if (act === "puzzle-daily") {
     const p = generatePuzzle(dailySeed(new Date(), puzzleDiff), puzzleDiff);
     startCustom([p.def], "puzzles", "Daily");
@@ -528,7 +589,7 @@ function handleHudAction(act: string): void {
   } else if (act === "dev-beat") beatCurrentStage();
   else if (act === "dev-menu") {
     returnToMenu();
-    openPanel("dev");
+    openPanel("load");
   }
 }
 
@@ -536,6 +597,7 @@ function returnToMenu(): void {
   const stage = window.stage;
   if (stage) stage.doneIntro = true;
   parkCreateJsMenu();
+  ensureMenuMusic();
 }
 
 function beginPlay(levelNumber: number, session: PlaySession): void {
@@ -548,6 +610,7 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   placeHudInput(false, "0", "0", "0", "", "");
   showGameSky(false);
   unlockAudio();
+  stopMenuMusic();
   const stage = window.stage;
   if (stage?.menuMusic) {
     stage.menuMusic.stop?.();
@@ -555,12 +618,13 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   }
   if (stage) stage.levelNumber = levelNumber;
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
+  syncSidePanel(true);
   window.exportRoot?.gotoAndPlay?.("game");
 }
 
 function startCustom(defs: LevelDef[], returnTo: Screen, title?: string): void {
   if (!defs.length) return;
-  beginPlay(1, { kind: "custom", defs, returnTo, record: returnTo !== "creator", title });
+  beginPlay(1, { kind: "custom", defs, returnTo, record: returnTo !== "creator", classicRun: false, title });
 }
 
 function cmdToCode(cmd: WalkCmd): string {
@@ -627,11 +691,8 @@ function scheduleBeatCheck(): void {
   beatLabel = "Checking…";
   beatTimer = window.setTimeout(() => {
     const issue = isPlayable(draft);
-    if (issue) {
-      beatLabel = issue;
-    } else {
-      beatLabel = checkBeatable(draft) ? "CAN BE BEAT" : "IMPOSSIBLE";
-    }
+    if (issue) beatLabel = issue;
+    else beatLabel = checkBeatable(draft) ? "CAN BE BEAT" : "IMPOSSIBLE";
     if (extraView === "creator") {
       lastHud = "";
       paintHud();
@@ -689,13 +750,14 @@ function loadPasscode(): void {
     return;
   }
   loadError = "";
-  beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true });
+  beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: false });
 }
 
 function showFinish(): void {
   parkCreateJsMenu();
   hud?.setVisible(true);
   openPanel("finish");
+  ensureMenuMusic();
 }
 
 function loadShare(): void {
@@ -716,13 +778,37 @@ function loadShare(): void {
   paintHud();
 }
 
+function bindMenuPad(): void {
+  for (const ev of pollMenuPad()) {
+    if (extraView === "home") {
+      if (ev === "up") {
+        moveHome(-1);
+        lastHud = "";
+        paintHud();
+      } else if (ev === "down") {
+        moveHome(1);
+        lastHud = "";
+        paintHud();
+      } else if (ev === "confirm") {
+        const item = homeItems()[homeCursor];
+        if (item && !item.disabled) handleHudAction(item.id);
+      }
+    } else if (ev === "back" && extraView !== "name" && extraView !== "auto") {
+      openPanel(extraView === "remap" ? "settings" : "home");
+    }
+  }
+}
+
 function bind(): void {
   if (bound) return;
   bound = true;
 
-  const unlock = (): void => unlockAudio();
-  window.addEventListener("pointerdown", unlock, { once: true, capture: true });
-  window.addEventListener("keydown", unlock, { once: true, capture: true });
+  const unlock = (): void => {
+    unlockAudio();
+    if (!isLegacy() && currentLabel() !== "game") ensureMenuMusic();
+  };
+  window.addEventListener("pointerdown", unlock, { capture: true });
+  window.addEventListener("keydown", unlock, { capture: true });
 
   $("exit-legacy")?.addEventListener("click", () => {
     setMode("extra");
@@ -746,13 +832,38 @@ function bind(): void {
   window.addEventListener("keydown", (ev) => {
     if (isLegacy()) return;
     if (document.activeElement === hudInput()) return;
-    if (currentLabel() === "game") {
-      const cmd = KEY_CMD[ev.code];
-      if (cmd) tape.push(cmd);
+
+    if (extraView === "remap" && rebindAction) {
+      ev.preventDefault();
+      const s = loadSettings();
+      s.keys[rebindAction] = ev.code === "Space" ? "Space" : ev.code;
+      saveSettings(s);
+      rebindAction = null;
+      lastHud = "";
+      paintHud();
       return;
     }
+
+    if (currentLabel() === "game") {
+      const act = actionFromCode(ev.code);
+      let code = ev.code;
+      if (act === "up") code = "ArrowUp";
+      else if (act === "down") code = "ArrowDown";
+      else if (act === "left") code = "ArrowLeft";
+      else if (act === "right") code = "ArrowRight";
+      else if (act === "swap") code = "Space";
+      else if (act === "pause" || act === "back") code = "Escape";
+      const cmd = KEY_CMD[code];
+      if (cmd) tape.push(cmd);
+      if (act && code !== ev.code) {
+        ev.preventDefault();
+        window.stage?.triggerKeyDown?.({ code });
+      }
+      return;
+    }
+
     if (ev.key === "Escape" && extraView !== "home" && extraView !== "name" && extraView !== "auto") {
-      openPanel("home");
+      openPanel(extraView === "remap" ? "settings" : "home");
       return;
     }
     if (extraView !== "home") return;
@@ -802,12 +913,13 @@ function syncOverlay(): void {
     }
     const back = playSession?.returnTo;
     lastLabel = label;
-    if (back === "creator" || back === "puzzles" || back === "history") {
+    if (back === "creator" || back === "puzzles" || back === "history" || back === "load") {
       parkCreateJsMenu();
       setExportRootMouse(false);
       playSession = null;
       hud?.setVisible(true);
       openPanel(back);
+      ensureMenuMusic();
       return;
     }
     playSession = null;
@@ -824,6 +936,7 @@ function syncOverlay(): void {
     setExportRootMouse(true);
     setVanillaButtonsVisible(true);
     show(exitBtn, onMainMenu());
+    syncSidePanel(true);
     return;
   }
 
@@ -834,7 +947,8 @@ function syncOverlay(): void {
     showGameSky(false);
     setExportRootMouse(true);
     tickSolve();
-    pollGamepad(stage, false);
+    pollGamepad(stage);
+    syncSidePanel(true);
     if (isDevName(getName())) {
       hud?.setVisible(true);
       if (lastHud !== "ingame") {
@@ -851,6 +965,7 @@ function syncOverlay(): void {
   parkCreateJsMenu();
   setExportRootMouse(false);
   hud?.setVisible(true);
+  bindMenuPad();
   if (extraView === "finish") {
     paintHud();
     return;
@@ -859,6 +974,7 @@ function syncOverlay(): void {
     const back = playSession.returnTo;
     playSession = null;
     openPanel(back);
+    ensureMenuMusic();
     return;
   }
   if (!getName()) {
@@ -866,6 +982,7 @@ function syncOverlay(): void {
     else paintHud();
   } else if (extraView === "auto" || extraView === "name") {
     openPanel("home");
+    ensureMenuMusic();
   } else {
     paintHud();
   }
@@ -902,7 +1019,7 @@ declare global {
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.4.3");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.5.0");
   gateSoundPlay();
   wrapGetLevels();
   bind();
@@ -915,13 +1032,16 @@ export function startBloxorzShell(): void {
       return new Spin() as never;
     };
   }
-  if (!isLegacy()) parkCreateJsMenu();
+  if (!isLegacy()) {
+    parkCreateJsMenu();
+    const sel = $("image_select") as HTMLSelectElement | null;
+    if (sel) sel.value = currentTheme();
+  }
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
   syncOverlay();
 }
 
 window.startBloxorzShell = startBloxorzShell;
-gateSoundPlay();
 
 (function patchHitCanvas(): void {
   if (typeof HTMLCanvasElement === "undefined") return;

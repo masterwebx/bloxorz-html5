@@ -36,6 +36,6 @@ npm run tauri dev
 
 ## Version
 
-The main menu shows **v2.4.3** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+The main menu shows **v2.5.0** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
 
 `npm test` runs the TypeScript extra-library tests. `npm run build` bundles `src/extra/` into `extra.bundle.js` and copies `src` to `dist`.

@@ -21,10 +21,13 @@ export const ACTION_LABEL: Record<Action, string> = {
   swap: "Swap Split Block",
 };
 
+export type ThemeId = "original" | "gray" | "holiday";
+
 export interface Settings {
   music: number;
   sfx: number;
   rumble: boolean;
+  showTimer: boolean;
   playerName: string;
   keys: Record<Action, string>;
   pads: Record<Action, number>;
@@ -34,6 +37,7 @@ const DEFAULTS: Settings = {
   music: 0.7,
   sfx: 0.9,
   rumble: true,
+  showTimer: true,
   playerName: "",
   keys: {
     up: "ArrowUp",
@@ -43,7 +47,7 @@ const DEFAULTS: Settings = {
     confirm: "Enter",
     back: "Escape",
     pause: "Escape",
-    swap: " ",
+    swap: "Space",
   },
   pads: {
     up: 12,
@@ -58,6 +62,7 @@ const DEFAULTS: Settings = {
 };
 
 const KEY = "bloxorz-settings-v1";
+export const NAME_MAX = 10;
 
 export function loadSettings(): Settings {
   try {
@@ -68,7 +73,8 @@ export function loadSettings(): Settings {
       music: clamp01(parsed.music ?? DEFAULTS.music),
       sfx: clamp01(parsed.sfx ?? DEFAULTS.sfx),
       rumble: parsed.rumble !== false,
-      playerName: typeof parsed.playerName === "string" ? parsed.playerName : "",
+      showTimer: parsed.showTimer !== false,
+      playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       keys: { ...DEFAULTS.keys, ...parsed.keys },
       pads: { ...DEFAULTS.pads, ...parsed.pads },
     };
@@ -86,10 +92,34 @@ function clamp01(n: number): number {
 }
 
 export function brandName(name: string): string {
-  const stem = name.trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || "BLOX";
+  const stem = name.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, NAME_MAX) || "BLOX";
   return `${stem}ORZ`;
 }
 
 export function isDevName(name: string): boolean {
   return name.trim().toUpperCase() === "DEV";
+}
+
+export function prettyKey(code: string): string {
+  if (code === " ") return "Space";
+  if (code === "Space") return "Space";
+  if (code.startsWith("Arrow")) return code.slice(5);
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  return code;
+}
+
+export function normalizeTheme(value: string | null | undefined): ThemeId {
+  if (value === "gray" || value === "holiday" || value === "original") return value;
+  return "original";
+}
+
+export function currentTheme(): ThemeId {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("img")) return normalizeTheme(params.get("img"));
+    return normalizeTheme(localStorage.getItem("theme"));
+  } catch {
+    return "original";
+  }
 }
