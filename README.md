@@ -32,7 +32,7 @@ npm install
 npm run dev
 ```
 
-Browser on port **4398**. `npm test` for the extras. `npm run tauri dev` if you want the desktop wrap. Menu version is **v1.2.2**.
+Browser on port **4398**. `npm test` for the extras. `npm run tauri dev` if you want the desktop wrap. Menu version is **v1.2.3**.
 
 Drop-in packs:
 
