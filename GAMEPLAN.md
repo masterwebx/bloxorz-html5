@@ -8,7 +8,7 @@ Living doc. Update this when a slice lands or the plan changes.
 | --- | --- |
 | [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate) | Upstream. Tauri wrap of Coolmath’s Bloxorz HTML5 export, plus timer and themes. |
 | [masterwebx/bloxorz-html5](https://github.com/masterwebx/bloxorz-html5) | **This repo** (renamed fork of Cybernate so it does not share the upstream repo name). GitHub still lists it as a fork of Spencer’s project. Live test: https://masterwebx.github.io/bloxorz-html5/ |
-| [masterwebx/web-bloxorz](https://github.com/masterwebx/web-bloxorz) | Earlier canvas remake, frozen at the last good commit before a failed sprite-port. Keep for reference until this fork covers the extras; then retire it. |
+| [masterwebx/web-bloxorz](https://github.com/masterwebx/web-bloxorz) | Earlier canvas remake, frozen at the last good commit before a failed sprite-port. Keep for reference. |
 
 Remote `upstream` should stay pointed at Spencer’s repo.
 
@@ -18,58 +18,36 @@ Remote `upstream` should stay pointed at Spencer’s repo.
 - **Coolmath** — Adobe Animate HTML5 / CreateJS export that is the actual game in `src/bloxorz.js`.
 - **Nathan Spencer** — Cybernate: Tauri desktop shell, in-game timer, themes, sound/theme retention.
 
-A GitHub fork credits Spencer in the network graph. README still has to name Clarke and Coolmath.
-
 ## Rules
 
 - **CreateJS is the playfield.** Do not reimplement rolls in another renderer.
 - **Do not edit** roll / fall / sink / land movieclips in `src/bloxorz.js`.
-- Talk to the game from the **outside**: HTML overlays, their tile alphabet (`b s h e v l r k q f`), injected keys on their 36fps ticker.
-- Campaign maps come from **their** `src/levels.js`.
-- TypeScript we bring over later is a **library** (solver, editor logic, seeds, tests). It does not draw the block.
+- Talk to the game from the **outside**: HTML overlays (`src/extra/`), their tile alphabet (`b s h e v l r k q f`), injected keys via `stage.triggerKeyDown`.
+- Campaign maps come from **their** `src/levels.js`. Custom / puzzle maps are converted and returned from a wrapped `getLevels()`.
+- TypeScript in `src/extra/` is the solver, editor, seeds, generator, history. It does not draw the block.
 - Music stays **menu-only**; in-game is clonks.
-- Stage size stays **550×300**. Extra UI sits around or over that canvas. Do not stretch the sky.
-- Version on the menu reads `window.GAME_VERSION` from `src/version.js`. Keep that in sync with `package.json` (currently **2.1.0**). The label sits on the **bottom-right** of the main menu.
+- Stage size stays **550×300**. Extra UI sits over that canvas.
+- Version on the menu reads `window.GAME_VERSION` from `src/version.js` (**2.2.0**), bottom-right.
 
 ## Play modes
 
-Stored in `localStorage` as `bloxorz-play-mode`.
+`localStorage` `bloxorz-play-mode`:
 
-- **Extra** (default) — HTML overlay on the CreateJS main menu (`menu` label, menu clip frame 133). Vanilla bitmap buttons are hidden and driven from the overlay. First visit asks for a player name; the title becomes `NAME` + `ORZ`. Settings can change it. **Legacy mode** on that menu reloads into vanilla.
-- **Legacy** — vanilla Cybernate as it is now (bitmap menu, side panel, themes, timer). **EXIT LEGACY MODE** sits at the bottom of the main menu and reloads back into extra.
+- **Extra** (default) — HTML overlay on the CreateJS main menu. Vanilla bitmap buttons are hidden and driven from the overlay. Name → `NAMEORZ`. **Legacy mode** reloads vanilla.
+- **Legacy** — vanilla Cybernate. **EXIT LEGACY MODE** at the bottom of the main menu reloads extra.
 
-Switching either way reloads the page so the CreateJS timeline starts clean.
+## What shipped
 
-## What we are adding (from web-bloxorz)
+1. Playable original in the browser (Vite) + version on the menu.
+2. Player chrome — extra overlay, name, settings, rumble, legacy mode.
+3. Stage Creator + `BXS-` / `BXS.` / `BX1.` share codes. Test play runs inside CreateJS. Save after a successful test. Beatability badge does not block Test.
+4. Puzzles — daily (UTC date + difficulty) and seeded runs (1 / 5 / 10). Generator + BFS in TS; maps play in CreateJS.
+5. History — campaign runs stored locally; replay feeds a key tape into CreateJS.
+6. DEV — name the player `DEV` to unlock Dev tools (stage list) and an in-game **Beat stage for me**.
+7. Gamepad — D-pad / left stick rolls, X swap, Start pause, rumble on fall (toggle in Settings).
 
-Port in this order:
+**Deferred:** See ghosts.
 
-1. **Playable original in the browser** (Vite) + version on the menu — *done*.
-2. **Player chrome** — extra overlay, name → `WEXORZ`-style title, settings, legacy mode. DEV as a name unhides a Dev tools row (behavior comes in item 6). *current*.
-3. **Stage Creator + share seeds** — grid editor, three-click split, beatability badge (does not block Test), `BXS-` / `BXS.` / `BX1.`. Playtest runs inside CreateJS.
-4. **Puzzles** — daily / seeded runs; generator + BFS in TS; maps play in their engine.
-5. **History, attempts, congrats stats** — replay by feeding a key tape into CreateJS.
-6. **DEV** — stage list, Dev Menu, Beat stage for me (including editor playtest).
-7. **Gamepad / rumble** — map pad to their keys.
+## Tests
 
-**Deferred:** See ghosts (that overlay was the old renderer). History replay first, ghosts later only if we can draw a second translucent block without touching clips.
-
-## Tests (later)
-
-Keep solver / editor / seed tests as a library. Smoke-test that this bundle still boots. Do not screenshot-test CreateJS frames.
-
-## Done
-
-- [x] Fork `nathan-spencer/bloxorz-cybernate` → renamed **`masterwebx/bloxorz-html5`** (still a GitHub fork)
-- [x] Park `web-bloxorz` at the pre-sprite-port commit
-- [x] Vite web wrap (`npm run dev` / `npm run build`) without changing `bloxorz.js`
-- [x] Version label on the main menu, bottom-right (`v2.1.0`)
-- [x] GitHub Pages at https://masterwebx.github.io/bloxorz-html5/
-- [x] Extra / legacy play modes (reload between them; EXIT LEGACY MODE on vanilla menu)
-- [x] Extra overlay: name gate, NAMEORZ title, settings, vanilla Start / Resume / Load / Sound / Credits
-- [x] This file
-
-## Next
-
-- Stage Creator + BXS seeds as a TS library, playtest in CreateJS
-- Puzzles, history / key-tape replay, DEV list, gamepad
+`npm test` runs the extra-library tests (editor / seeds). Do not screenshot-test CreateJS frames.

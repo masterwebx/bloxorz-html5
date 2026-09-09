@@ -12,7 +12,9 @@ Spencer’s repo is the Coolmath **Adobe Animate HTML5** Bloxorz client, plus:
 
 We are adding web extras (player name, Stage Creator, puzzles, history, DEV tools) **on top of that runtime**. The CreateJS game in `src/bloxorz.js` stays the playfield — we do not rewrite the rolling block. See [GAMEPLAN.md](GAMEPLAN.md).
 
-The default **extra** menu asks for a name (Wex becomes **WEXORZ**) and adds Settings plus **Legacy mode**. Legacy reloads the vanilla Cybernate menu for people who want that as-is; **EXIT LEGACY MODE** at the bottom of that menu comes back.
+The default **extra** menu asks for a name (Wex becomes **WEXORZ**) and adds Stage Creator, Puzzles, History, Settings, and **Legacy mode**. Legacy reloads the vanilla Cybernate menu; **EXIT LEGACY MODE** at the bottom of that menu comes back.
+
+Set the name to **DEV** to unlock Dev tools (jump to any campaign stage) and **Beat stage for me** while playing.
 
 Bloxorz was created by Damien Clarke / DX Interactive (21 June 2007). This is an unofficial fan project.
 
@@ -34,4 +36,6 @@ npm run tauri dev
 
 ## Version
 
-The main menu shows **v2.1.0** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+The main menu shows **v2.2.0** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+
+`npm test` runs the TypeScript extra-library tests. `npm run build` bundles `src/extra/` into `extra.bundle.js` and copies `src` to `dist`.
