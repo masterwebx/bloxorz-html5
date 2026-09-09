@@ -1,0 +1,151 @@
+#build-version {
+	position: absolute;
+	left: auto;
+	right: 10px;
+	bottom: 8px;
+	z-index: 8;
+	font: 11px/1.2 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	letter-spacing: 0.08em;
+	color: rgba(255, 248, 232, 0.92);
+	text-shadow: 0 1px 2px #000;
+	pointer-events: none;
+}
+
+#extra-shell {
+	display: none;
+	position: absolute;
+	inset: 0;
+	z-index: 4;
+	pointer-events: auto;
+}
+
+#extra-shell.is-open {
+	display: block;
+}
+
+#extra-shell .panel {
+	position: absolute;
+	inset: 0;
+}
+
+#extra-shell h1 {
+	margin: 0;
+	font: 700 28px/1 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	letter-spacing: 0.14em;
+	color: #fff8e8;
+	text-shadow: 0 0 12px rgba(255, 140, 40, 0.85), 0 1px 0 #000;
+}
+
+#extra-brand {
+	position: absolute;
+	left: 6%;
+	right: 6%;
+	top: 14%;
+	text-align: center;
+}
+
+#extra-shell p.hint {
+	margin: 0 0 12px;
+	max-width: 320px;
+	font: 13px/1.4 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	color: rgba(255, 248, 232, 0.86);
+	text-shadow: 0 1px 2px #000;
+}
+
+#extra-name,
+#extra-settings {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+	padding: 8% 10% 12%;
+	background: linear-gradient(90deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.18) 70%, transparent 100%);
+}
+
+#extra-name[hidden],
+#extra-settings[hidden],
+#extra-home[hidden] {
+	display: none !important;
+}
+
+#extra-shell .menu {
+	position: absolute;
+	left: 36%;
+	top: 57%;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 3px;
+}
+
+#extra-shell button,
+#exit-legacy {
+	appearance: none;
+	background: none;
+	border: 0;
+	padding: 0;
+	margin: 0;
+	cursor: pointer;
+	font: 700 13px/1.45 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	color: #fff8e8;
+	text-shadow: 0 0 10px rgba(255, 150, 40, 0.7), 0 1px 2px #000;
+	pointer-events: auto;
+}
+
+#extra-shell button:hover,
+#extra-shell button:focus-visible,
+#exit-legacy:hover,
+#exit-legacy:focus-visible {
+	color: #fff;
+	text-shadow: 0 0 14px #fff, 0 0 18px rgba(255, 180, 80, 0.9);
+	outline: none;
+}
+
+#extra-shell button:disabled {
+	opacity: 0.35;
+	cursor: default;
+	text-shadow: none;
+}
+
+#extra-shell input[type="text"] {
+	width: min(260px, 70%);
+	margin: 8px 0 14px;
+	padding: 8px 10px;
+	font: 16px/1.2 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	color: #fff8ee;
+	background: #28140c;
+	border: 1px solid rgba(255, 196, 120, 0.45);
+	pointer-events: auto;
+}
+
+#extra-shell .row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px;
+	font: 13px/1.4 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	color: rgba(255, 248, 232, 0.85);
+}
+
+#exit-legacy {
+	display: none;
+	position: absolute;
+	left: 38%;
+	top: 89%;
+	z-index: 6;
+	letter-spacing: 0.04em;
+}
+
+#exit-legacy.is-open {
+	display: block;
+}
+
+@media (max-width: 640px) {
+	#extra-shell h1 {
+		font-size: 22px;
+	}
+
+	#extra-shell .menu,
+	#exit-legacy {
+		left: 10%;
+	}
+}

@@ -7,7 +7,9 @@
 	<meta name="authoring-tool" content="Adobe_Animate_CC">
 	<title>bloxorz</title>
 	<link href="default.css" rel="stylesheet" type="text/css">
+	<link href="shell.css" rel="stylesheet" type="text/css">
 	<script src="version.js"></script>
+	<script src="shell.js"></script>
 	<script src="feedback.js"></script>
 	<script src="levels.js"></script>
 	<script src="timer.js"></script>
@@ -70,7 +72,7 @@
 			dom_overlay_container = document.getElementById("dom_overlay_container");
 			var versionEl = document.getElementById("build-version");
 			if (versionEl) {
-				versionEl.textContent = "v" + (window.GAME_VERSION || "2.0.0");
+				versionEl.textContent = "v" + (window.GAME_VERSION || "2.1.0");
 			}
 			var comp = AdobeAn.getComposition("FE31B685947E79408F0C8768D6EC8517");
 			var lib = comp.getLibrary();
@@ -152,6 +154,9 @@
 			makeResponsive();
 			AdobeAn.compositionLoaded(lib.properties.id);
 			fnStartAnimation();
+			if (typeof startBloxorzShell === "function") {
+				startBloxorzShell();
+			}
 		}
 
 		function playSound(id, loop) {
@@ -237,6 +242,43 @@
 			<canvas id="canvas"></canvas>
 			<div id="dom_overlay_container">
 				<div id="build-version"></div>
+				<button type="button" id="exit-legacy">EXIT LEGACY MODE</button>
+				<div id="extra-shell">
+					<section id="extra-name" class="panel" hidden>
+						<h1>What should we call you?</h1>
+						<p class="hint">This is how you show up in extra mode. Type DEV if you want developer tools later.</p>
+						<form>
+							<input id="player-name" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="NAME">
+							<div class="row">
+								<button type="submit">Continue</button>
+								<button type="button" data-act="skip-name">Stay anonymous</button>
+							</div>
+						</form>
+					</section>
+					<section id="extra-home" class="panel" hidden>
+						<h1 id="extra-brand">BLOXORZ</h1>
+						<nav class="menu">
+							<button type="button" data-act="start">Start New Game</button>
+							<button type="button" id="extra-resume" data-act="resume">Resume Game</button>
+							<button type="button" data-act="load">Load Stage</button>
+							<button type="button" id="extra-sound" data-act="sound">Sound: On</button>
+							<button type="button" data-act="credits">Credits</button>
+							<button type="button" data-act="settings">Settings</button>
+							<button type="button" data-act="legacy">Legacy mode</button>
+							<button type="button" id="extra-dev" data-act="dev" hidden>Dev tools</button>
+						</nav>
+					</section>
+					<section id="extra-settings" class="panel" hidden>
+						<h1>Settings</h1>
+						<p class="hint">Change your player name. DEV unlocks extra tools later.</p>
+						<label for="settings-name" class="hint">Player name</label>
+						<input id="settings-name" type="text" maxlength="24" autocomplete="off" spellcheck="false">
+						<div class="row">
+							<button type="button" data-act="save-name">Save</button>
+							<button type="button" data-act="back">Back</button>
+						</div>
+					</section>
+				</div>
 			</div>
 		</div>
 	</div>
