@@ -1,4 +1,5 @@
 # Bloxorz+
+<img width="1133" height="765" alt="image" src="https://github.com/user-attachments/assets/9ab02db6-e01f-4428-ae38-9eff7f474d19" />
 
 This is a **fork** of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate), renamed to **bloxorz-plus**. Spencer still gets GitHub fork credit.
 
