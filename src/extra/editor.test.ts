@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { occupiedCells } from "./coolmathBoard";
 import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, parseShare, setTile, stageId } from "./customLevels";
 import { checkBeatable, newPaintState, paintEditorCell } from "./editor";
 import { Stage } from "./engine";
@@ -40,6 +41,18 @@ describe("stage creator split paint", () => {
     setTile(def, 4, 4, "b");
     expect(def.splits).toEqual([]);
     expect(def.tiles[4][4]).toBe("b");
+  });
+});
+
+describe("new stage starter path", () => {
+  it("paints a full stone path plus an exit, not a single tile", () => {
+    const cells = occupiedCells(emptyDraft().tiles);
+    expect(cells.length).toBeGreaterThanOrEqual(7);
+    expect(cells.filter((c) => c.ch === "b").length).toBeGreaterThanOrEqual(6);
+    expect(cells.filter((c) => c.ch === "e")).toHaveLength(1);
+    expect(new Set(cells.map((c) => c.y)).size).toBe(1);
+    const xs = cells.map((c) => c.x).sort((a, b) => a - b);
+    expect(xs[xs.length - 1] - xs[0]).toBe(xs.length - 1);
   });
 });
 

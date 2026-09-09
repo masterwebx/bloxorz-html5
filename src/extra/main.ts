@@ -1808,7 +1808,7 @@ export function startBloxorzShell(): void {
       if (!Spin) return null;
       return new Spin() as never;
     };
-    hud.makeClip = (name: ClipName | "Tile") => {
+    hud.makeClip = (name: ClipName) => {
       if (name === "Block") return null;
       try {
         const lib = adobeLib() as unknown as Record<string, new () => unknown>;

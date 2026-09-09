@@ -1,14 +1,8 @@
 import { playHomeWhoosh, playUiClick, playUiLatch } from "./audio";
 import {
-  BOARD_OX,
-  BOARD_OY,
-  BOARD_SCALE,
   BOARD_VIEW,
   CLIP_OFFSET,
-  TILE_LABEL,
   clipForTile,
-  gamePos,
-  pickBoardCell,
   type ClipName,
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
@@ -300,6 +294,8 @@ export function drawBillboard(container: HudNode, label: string, x: number, y: n
   return letters.length * 6 * pitch;
 }
 
+const CLIP_ISO_SCALE = 0.3;
+
 export class ExtraHud {
   readonly root: HudNode;
   private layer: HudNode;
@@ -307,8 +303,7 @@ export class ExtraHud {
   private mascot: HudNode | null = null;
   onAction: (act: string) => void = () => undefined;
   makeMascot: (() => HudNode | null) | null = null;
-  makeClip: ((name: ClipName | "Tile") => HudNode | null) | null = null;
-  private useIsoBoard = true;
+  makeClip: ((name: ClipName) => HudNode | null) | null = null;
 
   constructor(stage: { addChild: (c: unknown) => void }) {
     this.root = new createjs.Container();
@@ -643,7 +638,7 @@ export class ExtraHud {
     const cellOf = (ev?: unknown): { x: number; y: number } | null => {
       const e = ev as { localX?: number; localY?: number };
       if (typeof e?.localX !== "number" || typeof e?.localY !== "number") return null;
-      return this.useIsoBoard ? pickIsoCell(e.localX, e.localY, DEFAULT_ISO) : pickBoardCell(e.localX, e.localY);
+      return pickIsoCell(e.localX, e.localY, DEFAULT_ISO);
     };
     hit.addEventListener("mousedown", (ev?: unknown) => {
       const c = cellOf(ev);
@@ -684,79 +679,45 @@ export class ExtraHud {
     this.board.removeAllChildren();
     const mesh = new createjs.Shape();
     mesh.mouseEnabled = false;
-    const world = new createjs.Container();
-    world.x = BOARD_OX;
-    world.y = BOARD_OY;
-    world.scaleX = BOARD_SCALE;
-    world.scaleY = BOARD_SCALE;
-    world.mouseEnabled = false;
     const cells: { x: number; y: number; ch: string }[] = [];
     for (let y = 0; y < 10; y++) {
       for (let x = 0; x < 15; x++) cells.push({ x, y, ch: opts.tiles[y]?.[x] ?? " " });
     }
     cells.sort((a, b) => a.y - a.x - (b.y - b.x));
-    let placed = 0;
-    let painted = 0;
+    const overlays: HudNode[] = [];
     for (const cell of cells) {
-      if (cell.ch !== " ") painted++;
-      const clip = this.tryTileClip(cell.ch);
-      if (clip) {
-        const [px, py] = gamePos(cell.x, cell.y);
-        const spec = clipForTile(cell.ch);
-        const [ox, oy] = spec ? CLIP_OFFSET[spec.name] : [0, 0];
-        clip.x = px + ox;
-        clip.y = py + oy;
-        clip.mouseEnabled = false;
-        if (spec && spec.dim < 1) (clip as HudNode & { alpha?: number }).alpha = spec.dim;
-        world.addChild(clip);
-        placed++;
-      } else {
-        drawIsoTile(mesh, cell.x, cell.y, cell.ch, DEFAULT_ISO);
-      }
+      drawIsoTile(mesh, cell.x, cell.y, cell.ch, DEFAULT_ISO);
+      if (cell.ch === " ") continue;
+      const clip = this.tryAtlasClip(cell.ch);
+      if (!clip) continue;
+      const spec = clipForTile(cell.ch);
+      const p = isoCenter(cell.x, cell.y, DEFAULT_ISO);
+      const [ox, oy] = spec ? CLIP_OFFSET[spec.name] : [0, 0];
+      clip.x = p.x + ox * CLIP_ISO_SCALE;
+      clip.y = p.y + oy * CLIP_ISO_SCALE;
+      clip.scaleX = CLIP_ISO_SCALE;
+      clip.scaleY = CLIP_ISO_SCALE;
+      clip.mouseEnabled = false;
+      if (spec && spec.dim < 1) (clip as HudNode & { alpha?: number }).alpha = spec.dim;
+      overlays.push(clip);
     }
-    this.useIsoBoard = placed < painted || painted === 0;
-    if (this.useIsoBoard) {
-      this.board.addChild(mesh);
-      const spawn = isoCenter(opts.spawn[0], opts.spawn[1], DEFAULT_ISO);
-      const block = new createjs.Shape();
-      block.graphics.beginFill("#ff7a18").drawRect(-5, -14, 10, 16);
-      block.x = spawn.x;
-      block.y = spawn.y;
-      block.mouseEnabled = false;
-      this.board.addChild(block);
-      for (const mark of opts.marks) {
-        const p = isoCenter(mark.x, mark.y, DEFAULT_ISO);
-        this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
-      }
-      return;
-    }
-    this.board.addChild(world);
-    const [sx, sy] = gamePos(opts.spawn[0], opts.spawn[1]);
+    this.board.addChild(mesh);
+    for (const clip of overlays) this.board.addChild(clip);
+    const spawn = isoCenter(opts.spawn[0], opts.spawn[1], DEFAULT_ISO);
     const block = new createjs.Shape();
-    block.graphics.beginFill("#ff7a18").drawRect(-6, -16, 12, 18);
-    block.x = sx;
-    block.y = sy;
+    block.graphics.beginFill("#ff7a18").drawRect(-5, -14, 10, 16);
+    block.x = spawn.x;
+    block.y = spawn.y;
     block.mouseEnabled = false;
-    world.addChild(block);
+    this.board.addChild(block);
     for (const mark of opts.marks) {
-      const [mx, my] = gamePos(mark.x, mark.y);
-      this.board.addChild(text(mark.label, BOARD_OX + mx * BOARD_SCALE, BOARD_OY + (my - 18) * BOARD_SCALE, 9, "#fff"));
+      const p = isoCenter(mark.x, mark.y, DEFAULT_ISO);
+      this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
     }
   }
 
-  private tryTileClip(ch: string): HudNode | null {
+  private tryAtlasClip(ch: string): HudNode | null {
     if (ch === " ") return null;
-    const label = TILE_LABEL[ch];
-    try {
-      const tile = this.makeClip?.("Tile") as (HudNode & { gotoAndStop?: (n: string | number) => void; stop?: () => void }) | null;
-      if (tile?.gotoAndStop && label) {
-        tile.gotoAndStop(label);
-        tile.stop?.();
-        return tile;
-      }
-    } catch {
-      /* fall through */
-    }
     const spec = clipForTile(ch);
     if (!spec) return null;
     try {

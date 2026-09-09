@@ -99,6 +99,17 @@ export function pickBoardCell(localX: number, localY: number): { x: number; y: n
   return { x, y };
 }
 
+export function occupiedCells(tiles: string[]): { x: number; y: number; ch: string }[] {
+  const out: { x: number; y: number; ch: string }[] = [];
+  for (let y = 0; y < GRID_H; y++) {
+    for (let x = 0; x < GRID_W; x++) {
+      const ch = tiles[y]?.[x] ?? " ";
+      if (ch !== " ") out.push({ x, y, ch });
+    }
+  }
+  return out;
+}
+
 export function obstacleCount(tiles: string[]): number {
   let n = 0;
   for (const row of tiles) {
