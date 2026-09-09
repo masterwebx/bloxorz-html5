@@ -96,10 +96,6 @@ function fieldBox(x: number, y: number, w: number, h = 22): HudShape {
   return s;
 }
 
-function versionLabel(): HudText {
-  return text("v" + ((window as unknown as { GAME_VERSION?: string }).GAME_VERSION || "2.4.1"), 540, 282, 10, MUTED, "right");
-}
-
 export class ExtraHud {
   readonly root: HudNode;
   private layer: HudNode;
@@ -141,7 +137,6 @@ export class ExtraHud {
       );
       this.add(line);
     });
-    this.add(versionLabel());
   }
 
   drawName(): void {
@@ -151,7 +146,6 @@ export class ExtraHud {
     this.add(fieldBox(40, 128, 240));
     this.add(hit(text("Continue", 40, 168, 13), () => this.onAction("name-continue")));
     this.add(hit(text("Stay anonymous", 160, 168, 13), () => this.onAction("skip-name")));
-    this.add(versionLabel());
   }
 
   drawCredits(): void {
@@ -162,7 +156,6 @@ export class ExtraHud {
     this.add(text("Playfield: Coolmath Animate HTML5 export.", 40, 102, 11, MUTED));
     this.add(text("Timer & themes — Nathan Spencer.", 40, 124, 11, MUTED));
     this.add(text("The block still rolls in their engine.", 40, 146, 11, MUTED));
-    this.add(versionLabel());
   }
 
   drawLoad(error: string): void {
@@ -173,7 +166,6 @@ export class ExtraHud {
     this.add(fieldBox(40, 114, 160));
     if (error) this.add(text(error, 40, 150, 11, "#ff8a8a"));
     this.add(hit(text("Load", 40, 180, 13), () => this.onAction("load-go")));
-    this.add(versionLabel());
   }
 
   drawSettings(rumble: boolean): void {
@@ -184,7 +176,6 @@ export class ExtraHud {
     this.add(fieldBox(40, 108, 240));
     this.add(hit(text(rumble ? "> Rumble  On" : "  Rumble  Off", 40, 148, 13), () => this.onAction("toggle-rumble")));
     this.add(hit(text("Save", 40, 180, 13), () => this.onAction("save-name")));
-    this.add(versionLabel());
   }
 
   drawFinish(moves: number, falls: number): void {
@@ -194,7 +185,6 @@ export class ExtraHud {
     this.add(text("Moves  " + moves, 275, 120, 13, INK, "center"));
     this.add(text("Falls  " + falls, 275, 142, 13, INK, "center"));
     this.add(hit(text("Menu", 275, 190, 14, INK, "center"), () => this.onAction("back")));
-    this.add(versionLabel());
   }
 
   drawPuzzles(diff: string, count: number, dailyMeta: string): void {
@@ -214,7 +204,6 @@ export class ExtraHud {
     });
     this.add(fieldBox(40, 198, 240));
     this.add(hit(text("Start Seeded Run", 40, 230, 13), () => this.onAction("puzzle-run")));
-    this.add(versionLabel());
   }
 
   drawHistory(rows: { title: string; meta: string; replay?: () => void }[]): void {
@@ -223,7 +212,6 @@ export class ExtraHud {
     this.add(text("History", 275, 28, 20, INK, "center"));
     if (!rows.length) {
       this.add(text("No runs yet.", 40, 80, 12, MUTED));
-      this.add(versionLabel());
       return;
     }
     rows.slice(0, 6).forEach((row, i) => {
@@ -232,7 +220,6 @@ export class ExtraHud {
       this.add(text(row.meta, 40, y + 14, 10, MUTED));
       if (row.replay) this.add(hit(text("Replay", 420, y, 11), row.replay));
     });
-    this.add(versionLabel());
   }
 
   drawDev(): void {
@@ -246,7 +233,6 @@ export class ExtraHud {
       const n = String(i).padStart(2, "0");
       this.add(hit(text(n, 40 + col * 42, 86 + row * 28, 13), () => this.onAction("dev:" + i)));
     }
-    this.add(versionLabel());
   }
 
   drawCreator(opts: {

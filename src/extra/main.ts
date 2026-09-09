@@ -182,11 +182,18 @@ function parkCreateJsMenu(): void {
   const st = window.stage;
   if (!root || !st) return;
   st.doneIntro = true;
-  if (root.splash) root.splash.visible = false;
-  if (root.currentLabel !== "menu") root.gotoAndStop?.("menu");
-  if (root.menu && root.menu.currentFrame !== 133) root.menu.gotoAndStop(133);
+  if (root.splash) {
+    root.splash.visible = false;
+    root.splash.stop?.();
+  }
   setVanillaButtonsVisible(false);
   showGameSky(true);
+}
+
+function unlockAudio(): void {
+  const cjs = window.createjs;
+  const ctx = cjs?.WebAudioPlugin?.context || cjs?.Sound?.activePlugin?.context;
+  void ctx?.resume?.();
 }
 
 function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean }> | null {
@@ -483,11 +490,9 @@ function handleHudAction(act: string): void {
 }
 
 function returnToMenu(): void {
-  const root = window.exportRoot;
   const stage = window.stage;
   if (stage) stage.doneIntro = true;
-  root?.gotoAndStop?.("menu");
-  root?.menu?.gotoAndStop(133);
+  parkCreateJsMenu();
 }
 
 function beginPlay(levelNumber: number, session: PlaySession): void {
@@ -499,6 +504,7 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   hud?.setVisible(false);
   placeHudInput(false, "0", "0", "0", "", "");
   showGameSky(false);
+  unlockAudio();
   const stage = window.stage;
   if (stage) stage.levelNumber = levelNumber;
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
@@ -667,6 +673,10 @@ function bind(): void {
   if (bound) return;
   bound = true;
 
+  const unlock = (): void => unlockAudio();
+  window.addEventListener("pointerdown", unlock, { once: true, capture: true });
+  window.addEventListener("keydown", unlock, { once: true, capture: true });
+
   $("exit-legacy")?.addEventListener("click", () => {
     setMode("extra");
     window.location.reload();
@@ -818,7 +828,7 @@ declare global {
   interface Window {
     exportRoot?: {
       currentLabel?: string;
-      splash?: { visible: boolean };
+      splash?: { visible: boolean; stop?: () => void };
       menu?: {
         currentFrame: number;
         gotoAndStop: (n: number) => void;
@@ -831,13 +841,20 @@ declare global {
     startBloxorzShell?: () => void;
     GAME_VERSION?: string;
     AdobeAn?: { getComposition: (id: string) => { getLibrary: () => { bettersky_22?: new () => SkyClip } } };
-    createjs?: { Sound?: { volume: number }; Ticker?: { addEventListener: (n: string, fn: () => void) => void } };
+    createjs?: {
+      Sound?: {
+        volume: number;
+        activePlugin?: { context?: { resume?: () => Promise<unknown> } };
+      };
+      WebAudioPlugin?: { context?: { resume?: () => Promise<unknown> } };
+      Ticker?: { addEventListener: (n: string, fn: () => void) => void };
+    };
   }
 }
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.4.1");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.4.2");
   wrapGetLevels();
   bind();
   if (window.stage && !hud) {
@@ -850,3 +867,17 @@ export function startBloxorzShell(): void {
 }
 
 window.startBloxorzShell = startBloxorzShell;
+
+(function patchHitCanvas(): void {
+  if (typeof HTMLCanvasElement === "undefined") return;
+  const proto = HTMLCanvasElement.prototype as typeof HTMLCanvasElement.prototype & { __bloxHit?: boolean };
+  if (proto.__bloxHit) return;
+  proto.__bloxHit = true;
+  const orig = proto.getContext;
+  proto.getContext = function (this: HTMLCanvasElement, type: string, attrs?: CanvasRenderingContext2DSettings) {
+    if (type === "2d") {
+      return orig.call(this, type, { willReadFrequently: true, ...(attrs || {}) });
+    }
+    return orig.call(this, type, attrs);
+  } as typeof orig;
+})();

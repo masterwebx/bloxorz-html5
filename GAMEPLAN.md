@@ -27,7 +27,7 @@ Remote `upstream` should stay pointed at Spencer’s repo.
 - TypeScript in `src/extra/` is the solver, editor, seeds, generator, history. It does not draw the block.
 - Music stays **menu-only**; in-game is clonks.
 - Stage size stays **550×300**. Extra UI is CreateJS text on that same stage. HTML is only for real text fields.
-- Version on the menu reads `window.GAME_VERSION` from `src/version.js` (**2.4.1**), bottom-right.
+- Version on the menu reads `window.GAME_VERSION` from `src/version.js` (**2.4.2**), bottom-right.
 
 ## Play modes
 
