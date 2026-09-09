@@ -7,7 +7,6 @@ export type TouchPadHandlers = {
   up: (code: string) => void;
   pause: () => void;
   rotate: () => void;
-  confirm: () => void;
 };
 
 const DIR_CODE: Record<TouchDir, string> = {
@@ -16,6 +15,22 @@ const DIR_CODE: Record<TouchDir, string> = {
   left: "ArrowLeft",
   right: "ArrowRight",
 };
+
+/** CSS rotate(90deg) is clockwise; undo that so pad dirs match the stage. */
+const ROTATED_DIR: Record<TouchDir, TouchDir> = {
+  up: "left",
+  left: "down",
+  down: "right",
+  right: "up",
+};
+
+export function padDirToCode(dir: TouchDir, rotated: boolean): string {
+  return DIR_CODE[rotated ? ROTATED_DIR[dir] : dir];
+}
+
+export function swapPadLabel(playing: boolean): string {
+  return playing ? "SPLIT" : "OK";
+}
 
 const INSTALL_KEY = "bloxorz-install-hint";
 
@@ -78,7 +93,6 @@ export class TouchChrome {
     up: () => undefined,
     pause: () => undefined,
     rotate: () => undefined,
-    confirm: () => undefined,
   };
 
   mount(handlers: TouchPadHandlers): void {
@@ -124,8 +138,15 @@ export class TouchChrome {
     const rotate = enabled && loadSettings().rotateScreen && portrait;
     const wasRotated = document.body.classList.contains("is-rotated");
     document.body.classList.toggle("is-rotated", rotate);
+    if (wasRotated !== rotate) this.releaseAll();
     if (wasRotated !== rotate && !this.settling) window.dispatchEvent(new Event("resize"));
-    if (this.pad) this.pad.hidden = !showVirtualPad(enabled);
+    if (this.pad) {
+      this.pad.hidden = !showVirtualPad(enabled);
+      const swap = this.pad.querySelector(".tp-swap");
+      if (swap) swap.textContent = swapPadLabel(this.playing);
+      const menu = this.pad.querySelector(".tp-menu");
+      if (menu) menu.textContent = "PAUSE";
+    }
     if (this.landscape) this.landscape.hidden = true;
     if (this.install) {
       this.install.hidden = !device || enabled || this.installDismissed();
@@ -175,12 +196,11 @@ export class TouchChrome {
         ev.stopPropagation();
         el.setPointerCapture?.(ev.pointerId);
         const act = el.dataset.act;
-        if (act === "pause" || act === "rotate" || act === "confirm") {
+        if (act === "pause" || act === "rotate") {
           el.classList.add("is-down");
           window.setTimeout(() => el.classList.remove("is-down"), 140);
           if (act === "pause") this.handlers.pause();
-          else if (act === "rotate") this.handlers.rotate();
-          else this.handlers.confirm();
+          else this.handlers.rotate();
           return;
         }
         const code = this.codeFor(el);
@@ -199,7 +219,9 @@ export class TouchChrome {
 
   private codeFor(el: HTMLElement): string {
     const dir = el.dataset.dir as TouchDir | undefined;
-    if (dir && DIR_CODE[dir]) return DIR_CODE[dir];
+    if (dir && DIR_CODE[dir]) {
+      return padDirToCode(dir, document.body.classList.contains("is-rotated"));
+    }
     if (el.dataset.act === "swap") return "Space";
     return "";
   }
@@ -210,6 +232,10 @@ export class TouchChrome {
     this.held.delete(id);
     held.el.classList.remove("is-down");
     this.handlers.up(held.code);
+  }
+
+  private releaseAll(): void {
+    for (const id of [...this.held.keys()]) this.release(id);
   }
 }
 
