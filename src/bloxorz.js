@@ -13096,7 +13096,14 @@
 
   function get_image() {
     const search_params = new URLSearchParams(window.location.search);
-    const img_key = search_params.get("img") ?? "original";
+    let img_key = search_params.get("img");
+    if (!img_key) {
+      try {
+        img_key = window.localStorage && window.localStorage.getItem("theme");
+      } catch (e) {
+        img_key = null;
+      }
+    }
     switch (img_key) {
       case "holiday":
         return "/themes/holiday/atlas.png";
@@ -13157,7 +13164,7 @@
       { src: "sounds/mech5wav.mp3", id: "mech5wav" },
       { src: "sounds/unsplitwav.mp3", id: "unsplitwav" },
       {
-        src: "https://code.jquery.com/jquery-2.2.4.min.js",
+        src: "code.jquery.com/jquery-2.2.4.min.js",
         id: "lib/jquery-2.2.4.min.js",
       },
       { src: "components/sdk/anwidget.js", id: "sdk/anwidget.js" },

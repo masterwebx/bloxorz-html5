@@ -1,9 +1,35 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+
+const RAW_JS = new Set([
+  "/extra.bundle.js",
+  "/bloxorz.js",
+  "/levels.js",
+  "/timer.js",
+  "/feedback.js",
+  "/version.js",
+  "/sw.js",
+]);
+
+const MIME: Record<string, string> = {
+  ".js": "application/javascript",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".md": "text/markdown",
+  ".css": "text/css",
+};
 
 async function bundleExtra(): Promise<void> {
   const esbuild = await import("esbuild");
@@ -14,6 +40,8 @@ async function bundleExtra(): Promise<void> {
     format: "iife",
     outfile: "src/extra.bundle.js",
     target: "es2020",
+    minify: true,
+    legalComments: "none",
     logLevel: "silent",
   });
 }
@@ -34,47 +62,72 @@ function listLocaleIds(): string[] {
     .map((name) => name.replace(/\.json$/, ""));
 }
 
+function sendFile(res: ServerResponse, file: string, type: string): void {
+  const st = statSync(file);
+  res.setHeader("Content-Type", type);
+  res.setHeader("Content-Length", String(st.size));
+  createReadStream(file).pipe(res);
+}
+
+function safeJoin(base: string, rel: string): string | null {
+  if (!rel || rel.includes("\0") || rel.includes("..")) return null;
+  const file = path.join(base, rel);
+  if (!file.startsWith(base)) return null;
+  return file;
+}
+
+function serveDisk(req: IncomingMessage, res: ServerResponse, next: () => void, urlPrefix: string, diskDir: string): void {
+  const url = req.url?.split("?")[0] ?? "";
+  if (url === `${urlPrefix}/index.json`) {
+    const ids = urlPrefix === "/themes" ? listThemeIds() : listLocaleIds();
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(ids));
+    return;
+  }
+  if (!url.startsWith(`${urlPrefix}/`)) {
+    next();
+    return;
+  }
+  const rel = decodeURIComponent(url.slice(urlPrefix.length + 1));
+  const file = safeJoin(path.join(rootDir, diskDir), rel);
+  if (!file || !existsSync(file) || statSync(file).isDirectory()) {
+    next();
+    return;
+  }
+  sendFile(res, file, MIME[path.extname(file)] || "application/octet-stream");
+}
+
+function rawGameAssetsPlugin(): Plugin {
+  return {
+    name: "bloxorz-raw-assets",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url?.split("?")[0] ?? "";
+        const raw =
+          RAW_JS.has(url) ||
+          url.startsWith("/code.createjs.com/") ||
+          url.startsWith("/code.jquery.com/") ||
+          url.startsWith("/components/");
+        if (!raw) {
+          next();
+          return;
+        }
+        const file = safeJoin(path.join(rootDir, "src"), decodeURIComponent(url.slice(1)));
+        if (!file || !existsSync(file) || statSync(file).isDirectory()) {
+          next();
+          return;
+        }
+        sendFile(res, file, MIME[path.extname(file)] || "application/javascript");
+      });
+    },
+  };
+}
+
 function serveFolder(urlPrefix: string, diskDir: string): Plugin {
   return {
     name: `serve-${urlPrefix.slice(1)}`,
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const url = req.url?.split("?")[0] ?? "";
-        if (url === `${urlPrefix}/index.json`) {
-          const ids = urlPrefix === "/themes" ? listThemeIds() : listLocaleIds();
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify(ids));
-          return;
-        }
-        if (!url.startsWith(`${urlPrefix}/`)) {
-          next();
-          return;
-        }
-        const rel = decodeURIComponent(url.slice(urlPrefix.length + 1));
-        if (rel.includes("..")) {
-          next();
-          return;
-        }
-        const file = path.join(rootDir, diskDir, rel);
-        if (!existsSync(file)) {
-          next();
-          return;
-        }
-        const ext = path.extname(file);
-        const types: Record<string, string> = {
-          ".json": "application/json",
-          ".png": "image/png",
-          ".gif": "image/gif",
-          ".webp": "image/webp",
-          ".jpg": "image/jpeg",
-          ".mp4": "video/mp4",
-          ".webm": "video/webm",
-          ".mp3": "audio/mpeg",
-          ".md": "text/markdown",
-        };
-        res.setHeader("Content-Type", types[ext] || "application/octet-stream");
-        res.end(readFileSync(file));
-      });
+      server.middlewares.use((req, res, next) => serveDisk(req, res, next, urlPrefix, diskDir));
     },
   };
 }
@@ -100,11 +153,14 @@ function extraBundlePlugin(): Plugin {
 export default defineConfig({
   root: "src",
   publicDir: false,
-  plugins: [extraBundlePlugin(), serveFolder("/themes", "themes"), serveFolder("/translations", "translations")],
+  plugins: [rawGameAssetsPlugin(), extraBundlePlugin(), serveFolder("/themes", "themes"), serveFolder("/translations", "translations")],
   server: {
     host: true,
     port: 4398,
     strictPort: true,
+    watch: {
+      ignored: ["**/extra.bundle.js"],
+    },
   },
   preview: {
     host: true,

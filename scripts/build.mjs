@@ -12,6 +12,8 @@ await esbuild.build({
   format: "iife",
   outfile: "src/extra.bundle.js",
   target: "es2020",
+  minify: true,
+  legalComments: "none",
 });
 
 rmSync(path.join(root, "dist"), { recursive: true, force: true });

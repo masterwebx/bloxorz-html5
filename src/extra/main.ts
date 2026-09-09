@@ -4207,6 +4207,7 @@ export function startBloxorzShell(): void {
     applyDomCopy();
     setHdRendering(isHdTheme(theme));
     applyThemeMedia();
+    void swapAtlasLive(theme);
     lastHudPaint = "";
     markHudDirty();
     paintHud();
@@ -4258,7 +4259,7 @@ export function startBloxorzShell(): void {
   applyBlockHue();
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) sel.value = currentTheme();
-  window.applyLiveTheme = (theme: string) => applyTheme(normalizeTheme(theme), true);
+  window.applyLiveTheme = (theme: string) => applyTheme(normalizeTheme(theme), false);
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
   if (applyPendingShare()) {
     raiseHud();
