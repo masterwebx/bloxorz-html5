@@ -177,7 +177,12 @@ const BILLBOARD: Record<string, string[]> = {
   " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
   "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
   ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
+  "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
 };
+
+export function billboardSupports(ch: string): boolean {
+  return Object.prototype.hasOwnProperty.call(BILLBOARD, ch);
+}
 
 function glow(node: HudText, hot: boolean, theme: ThemePaint): void {
   node.shadow = new createjs.Shadow(hot ? "rgba(255,255,255,0.85)" : theme.shadow, 0, 0, hot ? 12 : 8);
