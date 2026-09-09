@@ -622,9 +622,73 @@ function setHdRendering(on: boolean): void {
   if (ctx) ctx.imageSmoothingEnabled = on;
 }
 
+function themePackLabel(id: string, fallback: string): string {
+  const key = "theme." + id;
+  const label = t(key);
+  return label === key ? fallback : label;
+}
+
+function closeSettingsDropdowns(): void {
+  for (const id of ["hud-theme-select", "hud-locale-select"]) {
+    const wrap = $(id);
+    wrap?.classList.remove("is-open");
+    const menu = wrap?.querySelector(".hud-dd-menu") as HTMLElement | null;
+    const btn = wrap?.querySelector(".hud-dd-btn") as HTMLButtonElement | null;
+    if (menu) menu.hidden = true;
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+  $("dom_overlay_container")?.classList.remove("is-dd-open");
+  $("animation_container")?.classList.remove("is-dd-open");
+}
+
+function toggleSettingsDropdown(wrap: HTMLElement): void {
+  const willOpen = !wrap.classList.contains("is-open");
+  closeSettingsDropdowns();
+  if (!willOpen) return;
+  wrap.classList.add("is-open");
+  const menu = wrap.querySelector(".hud-dd-menu") as HTMLElement | null;
+  const btn = wrap.querySelector(".hud-dd-btn") as HTMLButtonElement | null;
+  if (menu) menu.hidden = false;
+  if (btn) btn.setAttribute("aria-expanded", "true");
+  $("dom_overlay_container")?.classList.add("is-dd-open");
+  $("animation_container")?.classList.add("is-dd-open");
+}
+
+function fillSettingsDropdown(
+  wrap: HTMLElement | null,
+  opts: { id: string; name: string }[],
+  current: string,
+): void {
+  if (!wrap) return;
+  const btn = wrap.querySelector(".hud-dd-btn") as HTMLButtonElement | null;
+  const menu = wrap.querySelector(".hud-dd-menu") as HTMLElement | null;
+  if (!btn || !menu) return;
+  const key = localeId() + ":" + opts.map((o) => o.id).join(",");
+  if (wrap.dataset.ids !== key) {
+    menu.innerHTML = "";
+    for (const opt of opts) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "hud-dd-opt";
+      item.dataset.id = opt.id;
+      item.role = "option";
+      item.textContent = opt.name;
+      menu.appendChild(item);
+    }
+    wrap.dataset.ids = key;
+  }
+  const cur = opts.find((o) => o.id === current);
+  btn.textContent = cur?.name || current;
+  for (const el of menu.querySelectorAll<HTMLElement>(".hud-dd-opt")) {
+    const on = el.dataset.id === current;
+    el.classList.toggle("is-current", on);
+    el.setAttribute("aria-selected", on ? "true" : "false");
+  }
+}
+
 function placeSettingsChrome(on: boolean): void {
-  const themeSel = $("hud-theme-select") as HTMLSelectElement | null;
-  const localeSel = $("hud-locale-select") as HTMLSelectElement | null;
+  const themeSel = $("hud-theme-select");
+  const localeSel = $("hud-locale-select");
   const upload = $("hud-theme-upload") as HTMLInputElement | null;
   const uploadBtn = $("hud-theme-upload-btn");
   for (const el of [themeSel, localeSel, uploadBtn]) {
@@ -632,51 +696,60 @@ function placeSettingsChrome(on: boolean): void {
     el.hidden = !on;
   }
   if (upload) upload.hidden = true;
-  if (!on) return;
-  if (themeSel) {
-    const themes = listThemes();
-    const cur = currentTheme();
-    if (themeSel.dataset.ids !== themes.map((p) => p.id).join(",")) {
-      themeSel.innerHTML = "";
-      for (const pack of themes) {
-        const opt = document.createElement("option");
-        opt.value = pack.id;
-        opt.textContent = t("theme." + pack.id) === "theme." + pack.id ? pack.name : t("theme." + pack.id);
-        themeSel.appendChild(opt);
-      }
-      themeSel.dataset.ids = themes.map((p) => p.id).join(",");
-    }
-    themeSel.value = cur;
+  if (!on) {
+    closeSettingsDropdowns();
+    return;
   }
-  if (localeSel) {
-    const locales = listLocales();
-    if (localeSel.dataset.ids !== locales.map((p) => p.id).join(",")) {
-      localeSel.innerHTML = "";
-      for (const loc of locales) {
-        const opt = document.createElement("option");
-        opt.value = loc.id;
-        opt.textContent = loc.name;
-        localeSel.appendChild(opt);
-      }
-      localeSel.dataset.ids = locales.map((p) => p.id).join(",");
-    }
-    localeSel.value = localeId();
-  }
+  fillSettingsDropdown(
+    themeSel,
+    listThemes().map((pack) => ({ id: pack.id, name: themePackLabel(pack.id, pack.name) })),
+    currentTheme(),
+  );
+  fillSettingsDropdown(
+    localeSel,
+    listLocales().map((loc) => ({ id: loc.id, name: loc.name })),
+    localeId(),
+  );
 }
 
 function bindSettingsChrome(): void {
   if (settingsChromeBound) return;
   settingsChromeBound = true;
-  const themeSel = $("hud-theme-select") as HTMLSelectElement | null;
-  const localeSel = $("hud-locale-select") as HTMLSelectElement | null;
+  const themeSel = $("hud-theme-select");
+  const localeSel = $("hud-locale-select");
   const upload = $("hud-theme-upload") as HTMLInputElement | null;
   const uploadBtn = $("hud-theme-upload-btn");
-  themeSel?.addEventListener("change", () => {
-    if (themeSel.value) applyTheme(normalizeTheme(themeSel.value));
+  themeSel?.querySelector(".hud-dd-btn")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (themeSel) toggleSettingsDropdown(themeSel);
   });
-  localeSel?.addEventListener("change", () => {
-    if (localeSel.value) applyLanguage(localeSel.value);
+  localeSel?.querySelector(".hud-dd-btn")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (localeSel) toggleSettingsDropdown(localeSel);
   });
+  themeSel?.querySelector(".hud-dd-menu")?.addEventListener("click", (ev) => {
+    const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".hud-dd-opt")?.dataset.id;
+    if (!id) return;
+    ev.stopPropagation();
+    closeSettingsDropdowns();
+    applyTheme(normalizeTheme(id));
+  });
+  localeSel?.querySelector(".hud-dd-menu")?.addEventListener("click", (ev) => {
+    const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".hud-dd-opt")?.dataset.id;
+    if (!id) return;
+    ev.stopPropagation();
+    closeSettingsDropdowns();
+    applyLanguage(id);
+  });
+  document.addEventListener(
+    "pointerdown",
+    (ev) => {
+      const node = ev.target as Node | null;
+      if (themeSel?.contains(node) || localeSel?.contains(node)) return;
+      closeSettingsDropdowns();
+    },
+    true,
+  );
   uploadBtn?.addEventListener("click", () => upload?.click());
   upload?.addEventListener("change", () => {
     const file = upload.files?.[0];
@@ -724,10 +797,10 @@ function applyDomCopy(): void {
   if (rotate) rotate.textContent = t("boot.rotate");
   const uploadBtn = $("hud-theme-upload-btn");
   if (uploadBtn) uploadBtn.textContent = t("settings.upload");
-  const themeSel = $("hud-theme-select");
-  if (themeSel) themeSel.setAttribute("aria-label", t("settings.theme"));
-  const localeSel = $("hud-locale-select");
-  if (localeSel) localeSel.setAttribute("aria-label", t("settings.language"));
+  const themeBtn = $("hud-theme-btn");
+  if (themeBtn) themeBtn.setAttribute("aria-label", t("settings.theme"));
+  const localeBtn = $("hud-locale-btn");
+  if (localeBtn) localeBtn.setAttribute("aria-label", t("settings.language"));
 }
 
 function hideBitmapPlayText(): void {
@@ -1413,8 +1486,6 @@ function paintHud(): void {
       themeBg: s.themeBg,
       music: s.music,
       sfx: s.sfx,
-      theme: currentTheme(),
-      locale: localeId(),
       bgTint: s.bgTint,
       bgHue: s.bgHue,
       blockHue: s.blockHue,

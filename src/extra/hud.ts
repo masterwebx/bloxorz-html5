@@ -469,8 +469,6 @@ export class ExtraHud {
     themeBg: boolean;
     music: number;
     sfx: number;
-    theme: string;
-    locale: string;
     bgTint: number;
     bgHue: number;
     blockHue: number;
@@ -496,9 +494,7 @@ export class ExtraHud {
       this.add(this.act("toggle-rotate", `${this.focusId === "toggle-rotate" ? "> " : "  "}${t("settings.rotate")}  ${onOff(opts.rotateScreen)}`, 300, 110, 12, false, 220));
     }
     this.add(text(t("settings.theme"), 40, 132, 12, this.focusId === "theme-cycle" ? theme.hot : theme.ink));
-    this.add(text(opts.theme, 118, 132, 11, theme.muted));
     this.add(text(t("settings.language"), 40, 156, 12, this.focusId === "locale-cycle" ? theme.hot : theme.ink));
-    this.add(text(opts.locale, 118, 156, 11, theme.muted));
     this.add(this.act("toggle-theme-bg", `${this.focusId === "toggle-theme-bg" ? "> " : "  "}${t("settings.themeBg")}  ${onOff(opts.themeBg)}`, 40, 180, 12, false, 280));
     this.add(text(t("settings.tint"), 40, 202, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
     this.add(slider(160, 202, 120, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));

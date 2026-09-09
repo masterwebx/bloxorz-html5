@@ -249,8 +249,14 @@
 			<div id="dom_overlay_container">
 				<div id="build-version"></div>
 				<input id="hud-input" type="text" maxlength="10" autocomplete="off" spellcheck="false" hidden>
-				<select id="hud-theme-select" hidden aria-label="Theme"></select>
-				<select id="hud-locale-select" hidden aria-label="Language"></select>
+				<div id="hud-theme-select" class="hud-dd" hidden>
+					<button type="button" class="hud-dd-btn" id="hud-theme-btn" aria-haspopup="listbox" aria-expanded="false"></button>
+					<div class="hud-dd-menu" id="hud-theme-menu" role="listbox" hidden></div>
+				</div>
+				<div id="hud-locale-select" class="hud-dd" hidden>
+					<button type="button" class="hud-dd-btn" id="hud-locale-btn" aria-haspopup="listbox" aria-expanded="false"></button>
+					<div class="hud-dd-menu" id="hud-locale-menu" role="listbox" hidden></div>
+				</div>
 				<button type="button" id="hud-theme-upload-btn" hidden>Upload theme</button>
 				<input id="hud-theme-upload" type="file" accept=".zip,application/zip" hidden>
 				<div id="play-chrome" hidden>

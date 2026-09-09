@@ -63,14 +63,78 @@ body.has-theme-media #canvas {
 
 #hud-theme-select,
 #hud-locale-select,
-#hud-theme-upload-btn {
+#hud-theme-upload-btn,
+.hud-dd-btn,
+.hud-dd-menu,
+.hud-dd-opt {
+	pointer-events: auto;
+}
+
+.hud-dd {
 	position: absolute;
-	z-index: 22;
+	z-index: 30;
+}
+
+.hud-dd-btn,
+#hud-theme-upload-btn {
+	box-sizing: border-box;
 	height: 20px;
+	padding: 0 18px 0 6px;
 	font: 700 11px Orbitron, sans-serif;
 	color: #ffe6c4;
 	background: #1a120c;
 	border: 1px solid #c45a18;
+	cursor: pointer;
+}
+
+.hud-dd-btn {
+	width: 100%;
+	text-align: left;
+	background-image: linear-gradient(45deg, transparent 50%, #ffe6c4 50%),
+		linear-gradient(135deg, #ffe6c4 50%, transparent 50%);
+	background-position: calc(100% - 10px) 8px, calc(100% - 6px) 8px;
+	background-size: 4px 4px, 4px 4px;
+	background-repeat: no-repeat;
+}
+
+.hud-dd-menu {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 100%;
+	z-index: 40;
+	max-height: 118px;
+	margin: 0;
+	padding: 2px 0;
+	overflow-x: hidden;
+	overflow-y: auto;
+	background: #1a120c;
+	border: 1px solid #c45a18;
+}
+
+.hud-dd-opt {
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: 4px 6px;
+	border: 0;
+	background: transparent;
+	color: #ffe6c4;
+	font: 700 11px Orbitron, sans-serif;
+	text-align: left;
+	cursor: pointer;
+}
+
+.hud-dd-opt.is-current,
+.hud-dd-opt:hover,
+.hud-dd-opt:focus {
+	background: #c45a18;
+	color: #fff;
+}
+
+#dom_overlay_container.is-dd-open,
+#animation_container.is-dd-open {
+	overflow: visible;
 }
 
 #hud-theme-select {
