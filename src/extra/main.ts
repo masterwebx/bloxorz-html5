@@ -21,7 +21,7 @@ import {
   utcDateLabel,
   type Difficulty,
 } from "./generate";
-import { actionFromCode, heldPadButtons, pollGamepad, pollMenuPad, rumble } from "./gamepad";
+import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, pollGamepad, pollMenuPad, rumble } from "./gamepad";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopMenuMusic, unlockAudio } from "./audio";
 import {
   loadFinishedStages,
@@ -104,11 +104,22 @@ type CustomPlayOpts = {
   author?: string;
 };
 
+type PauseMenuClip = {
+  play?: () => void;
+  currentFrame?: number;
+  buttons?: {
+    returnToGame?: { dispatchEvent?: (ev: unknown) => void };
+    toggleSound?: { dispatchEvent?: (ev: unknown) => void };
+    quitToMenu?: { dispatchEvent?: (ev: unknown) => void };
+  };
+};
+
 type BloxWorld = {
   destroy?: () => void;
   blocks?: { roll?: { idle?: boolean } }[];
   keys?: { code?: string };
   transitionOutLevelQuit?: () => void;
+  pauseMenu?: PauseMenuClip;
   __bloxQuit?: boolean;
 };
 
@@ -564,6 +575,49 @@ function resetStageTotals(): void {
 function quitPlay(): void {
   const back = playSession?.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
   leavePlayTo(back);
+}
+
+function pauseMenuClip(): PauseMenuClip | undefined {
+  return window.stage?.bloxWorld?.pauseMenu;
+}
+
+function pauseMenuFrame(): number {
+  return pauseMenuClip()?.currentFrame ?? 0;
+}
+
+function isPauseMenuOpen(): boolean {
+  const frame = pauseMenuFrame();
+  return frame > 0 && frame < 24;
+}
+
+function clickPauseButton(name: "returnToGame" | "toggleSound" | "quitToMenu"): void {
+  pauseMenuClip()?.buttons?.[name]?.dispatchEvent?.("click");
+}
+
+function releaseSteerKeys(): void {
+  const stage = window.stage;
+  for (const code of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]) {
+    stage?.triggerKeyUp?.({ code });
+  }
+}
+
+function togglePauseMenu(): void {
+  const menu = pauseMenuClip();
+  if (!menu?.play) return;
+  const frame = menu.currentFrame ?? 0;
+  if (frame !== 0 && frame !== 12) return;
+  if (frame === 0) releaseSteerKeys();
+  menu.play();
+  absorbHeldMenuConfirm();
+}
+
+function pollPauseMenuPad(): void {
+  pollGamepad(undefined, togglePauseMenu);
+  if (pauseMenuFrame() !== 12) return;
+  for (const ev of pollMenuPad({ pauseConfirms: false })) {
+    if (ev === "confirm") clickPauseButton("returnToGame");
+    else if (ev === "back") clickPauseButton("quitToMenu");
+  }
 }
 
 function hookWorldQuit(): void {
@@ -1580,6 +1634,7 @@ function leavePlayTo(view: Screen): void {
   startMenuAudio();
   overlayMode = "menu";
   openPanel(view);
+  absorbHeldMenuConfirm();
 }
 
 function beginPlay(levelNumber: number, session: PlaySession): void {
@@ -2001,6 +2056,7 @@ function handleTouchPadDown(code: string): void {
     return;
   }
   if (inStagePlay()) {
+    if (isPauseMenuOpen()) return;
     const cmd = KEY_CMD[code];
     if (cmd) tape.push(cmd);
     window.stage?.triggerKeyDown?.({ code });
@@ -2022,7 +2078,11 @@ function handleTouchPadPause(): void {
     advanceInstructions(0);
     return;
   }
-  if (inStagePlay() || playSession) {
+  if (inStagePlay()) {
+    togglePauseMenu();
+    return;
+  }
+  if (playSession) {
     quitPlay();
     return;
   }
@@ -2166,7 +2226,12 @@ function bind(): void {
       const act = actionFromCode(ev.code);
       if (act === "pause" || act === "back" || ev.key === "Escape") {
         ev.preventDefault();
-        quitPlay();
+        togglePauseMenu();
+        return;
+      }
+      if (isPauseMenuOpen()) {
+        ev.preventDefault();
+        if (act === "confirm" || ev.key === "Enter") clickPauseButton("returnToGame");
         return;
       }
       let code = ev.code;
@@ -2335,7 +2400,8 @@ function syncOverlay(): void {
     applyBlockHue();
     if (playing) {
       tickSolve();
-      pollGamepad(stage, quitPlay);
+      if (isPauseMenuOpen()) pollPauseMenuPad();
+      else pollGamepad(stage, togglePauseMenu);
       syncHelpText();
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);

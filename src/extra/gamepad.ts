@@ -60,24 +60,27 @@ function collectHeld(): Set<number> {
   return held;
 }
 
-/** In-game: map pad to CreateJS arrow/space codes. Pause leaves the extra shell. */
+/** In-game: map pad to CreateJS arrow/space codes. Pause opens the stage pause menu. */
 export function pollGamepad(stage: StageLike | undefined, onPause?: () => void): void {
-  if (!stage?.triggerKeyDown) return;
   const settings = loadSettings();
   const held = collectHeld();
   const pressed: Record<string, boolean> = {};
-  for (const dir of ["up", "down", "left", "right"] as const) {
-    if (held.has(settings.pads[dir])) pressed[DIR_CODE[dir]] = true;
+  if (stage?.triggerKeyDown) {
+    for (const dir of ["up", "down", "left", "right"] as const) {
+      if (held.has(settings.pads[dir])) pressed[DIR_CODE[dir]] = true;
+    }
+    if (held.has(settings.pads.swap)) pressed.Space = true;
   }
-  if (held.has(settings.pads.swap)) pressed.Space = true;
   const pause = held.has(settings.pads.pause);
 
-  for (const code of Object.keys(pressed)) {
-    if (!prevHeld[code]) stage.triggerKeyDown?.({ code });
-  }
-  for (const code of Object.keys(prevHeld)) {
-    if (code === "pause") continue;
-    if (!pressed[code]) stage.triggerKeyUp?.({ code });
+  if (stage?.triggerKeyDown) {
+    for (const code of Object.keys(pressed)) {
+      if (!prevHeld[code]) stage.triggerKeyDown?.({ code });
+    }
+    for (const code of Object.keys(prevHeld)) {
+      if (code === "pause") continue;
+      if (!pressed[code]) stage.triggerKeyUp?.({ code });
+    }
   }
   if (pause && !prevHeld.pause) onPause?.();
   prevHeld = pause ? { ...pressed, pause: true } : pressed;
@@ -86,7 +89,7 @@ export function pollGamepad(stage: StageLike | undefined, onPause?: () => void):
 export type MenuPadEvent = "up" | "down" | "left" | "right" | "confirm" | "back";
 
 /** Extra menus: edge-triggered pad events with repeat delay. */
-export function pollMenuPad(): MenuPadEvent[] {
+export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] {
   if (menuCool > 0) menuCool--;
   const settings = loadSettings();
   const held = collectHeld();
@@ -100,7 +103,7 @@ export function pollMenuPad(): MenuPadEvent[] {
     { btn: settings.pads.back, ev: "back" },
   ];
   for (const m of map) if (held.has(m.btn)) now[m.ev] = true;
-  if (held.has(settings.pads.pause)) now.confirm = true;
+  if ((opts?.pauseConfirms ?? true) && held.has(settings.pads.pause)) now.confirm = true;
 
   const out: MenuPadEvent[] = [];
   for (const ev of Object.keys(now) as MenuPadEvent[]) {
@@ -111,6 +114,19 @@ export function pollMenuPad(): MenuPadEvent[] {
   }
   prevMenu = now;
   return out;
+}
+
+/** Ignore a Start/confirm that is still held after leaving a screen. */
+export function absorbHeldMenuConfirm(): void {
+  prevMenu = { ...prevMenu, confirm: true };
+  prevHeld = { ...prevHeld, pause: true };
+  menuCool = 16;
+}
+
+export function resetPadState(): void {
+  prevHeld = {};
+  prevMenu = {};
+  menuCool = 0;
 }
 
 export function actionFromCode(code: string): Action | null {
