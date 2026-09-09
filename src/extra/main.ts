@@ -610,8 +610,7 @@ function clickPauseButton(name: PauseAction): void {
     if ((menu.currentFrame ?? 0) >= 10) menu.play?.();
     return;
   }
-  if ((menu.currentFrame ?? 0) >= 10) menu.play?.();
-  window.stage?.bloxWorld?.transitionOutLevelQuit?.();
+  quitPlay();
 }
 
 function paintPauseFocus(): void {
@@ -672,10 +671,8 @@ function hookWorldQuit(): void {
   const world = window.stage?.bloxWorld;
   if (!world || world.__bloxQuit) return;
   world.__bloxQuit = true;
-  const orig = world.transitionOutLevelQuit?.bind(world);
   world.transitionOutLevelQuit = () => {
     const back = playSession?.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
-    orig?.();
     leavePlayTo(back);
   };
 }
@@ -1669,6 +1666,9 @@ function showFinish(): void {
 
 function leavePlayTo(view: Screen): void {
   window.stage?.bloxWorld?.destroy?.();
+  const flags = window as unknown as { setStageLoaded?: (n: number) => void; setSplit?: (n: number) => void };
+  flags.setStageLoaded?.(0);
+  flags.setSplit?.(0);
   playSession = null;
   stopAutoSolve("");
   extraView = view;
@@ -2452,6 +2452,7 @@ function syncOverlay(): void {
       tickSolve();
       if (isPauseMenuOpen()) pollPauseMenuPad();
       else pollGamepad(stage, togglePauseMenu);
+      if (!playSession) return;
       syncHelpText();
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);
