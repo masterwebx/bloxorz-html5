@@ -22,24 +22,24 @@ Remote `upstream` should stay pointed at Spencer’s repo.
 
 - **CreateJS is the playfield.** Do not reimplement rolls in another renderer.
 - **Do not edit** roll / fall / sink / land movieclips in `src/bloxorz.js`.
-- Talk to the game from the **outside**: HTML overlays (`src/extra/`), their tile alphabet (`b s h e v l r k q f`), injected keys via `stage.triggerKeyDown`.
+- Talk to the game from the **outside**: CreateJS HUD on `stage` (`src/extra/hud.ts`), HTML only for text fields, their tile alphabet (`b s h e v l r k q f`), injected keys via `stage.triggerKeyDown`.
 - Campaign maps come from **their** `src/levels.js`. Custom / puzzle maps are converted and returned from a wrapped `getLevels()`.
 - TypeScript in `src/extra/` is the solver, editor, seeds, generator, history. It does not draw the block.
 - Music stays **menu-only**; in-game is clonks.
-- Stage size stays **550×300**. Extra UI sits over that canvas.
-- Version on the menu reads `window.GAME_VERSION` from `src/version.js` (**2.3.0**), bottom-right.
+- Stage size stays **550×300**. Extra UI is CreateJS text on that same stage. HTML is only for real text fields.
+- Version on the menu reads `window.GAME_VERSION` from `src/version.js` (**2.4.0**), bottom-right.
 
 ## Play modes
 
 `localStorage` `bloxorz-play-mode`:
 
-- **Extra** (default) — the app chrome. Opaque Orbitron UI owns the screen. Coolmath splash, bitmap menu, instructions, credits clip, and stage-title cards are skipped. CreateJS only runs while a stage is in play. **Legacy mode** reloads vanilla.
+- **Extra** (default) — CreateJS HUD on the same stage as the block. Bitmap menu buttons are hidden; their menu sky is the backdrop. HTML is only for name / passcode / share-code fields. Splash, instructions, and stage-title cards are skipped. **Start** still plays authentic CreateJS. **Legacy mode** reloads vanilla.
 - **Legacy** — vanilla Cybernate including Coolmath chrome. **EXIT LEGACY MODE** at the bottom of that menu reloads extra.
 
 ## What shipped
 
 1. Playable original in the browser (Vite) + version on the menu.
-2. Player chrome — extra overlay, name, settings, rumble, legacy mode.
+2. Player chrome — in-engine CreateJS HUD (Orbitron on their menu sky), name, settings, rumble, legacy mode.
 3. Stage Creator + `BXS-` / `BXS.` / `BX1.` share codes. Test play runs inside CreateJS. Save after a successful test. Beatability badge does not block Test.
 4. Puzzles — daily (UTC date + difficulty) and seeded runs (1 / 5 / 10). Generator + BFS in TS; maps play in CreateJS.
 5. History — campaign runs stored locally; replay feeds a key tape into CreateJS.

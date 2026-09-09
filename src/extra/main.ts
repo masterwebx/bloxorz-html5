@@ -1,11 +1,4 @@
-import {
-  checkBeatable,
-  EDITOR_TOOLS,
-  newPaintState,
-  paintEditorCell,
-  splitMarks,
-  type EditorToolId,
-} from "./editor";
+import { checkBeatable, newPaintState, paintEditorCell, splitMarks, type EditorToolId } from "./editor";
 import {
   emptyDraft,
   encodeLevel,
@@ -15,18 +8,29 @@ import {
   parseShare,
   saveStage,
   stageId,
-  tileChar,
 } from "./customLevels";
 import { campaignDefs, defToCreateJs } from "./convert";
 import { dailySeed, difficultyLabel, generatePuzzle, generateRun, type Difficulty } from "./generate";
 import { pollGamepad, rumble } from "./gamepad";
-import { loadRuns, saveRun, winningTape, type RunRecord, type TapeCmd } from "./history";
+import { loadRuns, pushGhost, saveRun, winningTape, type RunRecord, type TapeCmd } from "./history";
 import { brandName, isDevName, loadSettings, saveSettings } from "./settings";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
+import { ExtraHud, type MenuItem } from "./hud";
 import type { WalkCmd } from "./walkthrough";
 
-type Screen = "name" | "home" | "settings" | "creator" | "puzzles" | "history" | "dev" | "load" | "credits" | "finish" | "auto";
+type Screen =
+  | "name"
+  | "home"
+  | "settings"
+  | "creator"
+  | "puzzles"
+  | "history"
+  | "dev"
+  | "load"
+  | "credits"
+  | "finish"
+  | "auto";
 type PlayKind = "campaign" | "custom";
 
 type PlaySession = {
@@ -42,12 +46,17 @@ type StageLike = {
   triggerKeyDown?: (evt: { code: string }) => void;
   triggerKeyUp?: (evt: { code: string }) => void;
   doneIntro?: boolean;
+  addChild?: (c: unknown) => void;
+  setChildIndex?: (c: unknown, i: number) => void;
+  numChildren?: number;
+  toggleSound?: () => void;
+  totalMoves?: number;
+  totalFalls?: number;
 };
 
 const MODE_KEY = "bloxorz-play-mode";
 const NAME_KEY = "bloxorz-player-name";
 const VANILLA_BUTTONS = ["startNewGame", "resumeGame", "loadStage", "toggleSound", "credits"];
-const PANELS: Screen[] = ["name", "home", "settings", "creator", "puzzles", "history", "dev", "load", "credits", "finish"];
 const KEY_CMD: Record<string, TapeCmd> = {
   ArrowUp: "up",
   ArrowDown: "down",
@@ -75,7 +84,13 @@ let solveCode = "";
 let run: RunRecord | null = null;
 let tape: TapeCmd[] = [];
 let lastLabel = "";
+let lastLevelNum = 0;
 let origGetLevels: (() => unknown[]) | null = null;
+let hud: ExtraHud | null = null;
+let homeCursor = 0;
+let loadError = "";
+let lastHud = "";
+let bound = false;
 
 function $(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -125,19 +140,9 @@ function savedLevel(): number {
   }
 }
 
-function setPlayfieldVisible(on: boolean): void {
-  const canvas = document.getElementById("canvas");
-  if (canvas) canvas.style.visibility = on ? "visible" : "hidden";
-}
-
 function parkCreateJsMenu(): void {
-  const root = window.exportRoot as {
-    currentLabel?: string;
-    splash?: { visible: boolean };
-    gotoAndStop?: (l: string) => void;
-    menu?: { currentFrame: number; gotoAndStop: (n: number) => void };
-  } | undefined;
-  const st = window.stage as StageLike | undefined;
+  const root = window.exportRoot;
+  const st = window.stage;
   if (!root || !st) return;
   st.doneIntro = true;
   if (root.splash) root.splash.visible = false;
@@ -146,20 +151,19 @@ function parkCreateJsMenu(): void {
   setVanillaButtonsVisible(false);
 }
 
-function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean; dispatchEvent: (e: string) => void }> | null {
-  const root = window.exportRoot as { menu?: Record<string, { visible?: boolean; mouseEnabled?: boolean; dispatchEvent: (e: string) => void }> } | undefined;
-  return root?.menu ?? null;
+function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean }> | null {
+  return (window.exportRoot?.menu ?? null) as Record<string, { visible?: boolean; mouseEnabled?: boolean }> | null;
 }
 
 function onMainMenu(): boolean {
-  const root = window.exportRoot as { currentLabel?: string; menu?: { currentFrame: number } } | undefined;
+  const root = window.exportRoot;
   if (!root?.menu) return false;
   if (root.currentLabel !== "menu") return false;
   return root.menu.currentFrame === 133;
 }
 
 function currentLabel(): string {
-  return (window.exportRoot as { currentLabel?: string } | undefined)?.currentLabel || "";
+  return window.exportRoot?.currentLabel || "";
 }
 
 function show(el: HTMLElement | null, on: boolean): void {
@@ -167,12 +171,21 @@ function show(el: HTMLElement | null, on: boolean): void {
   el.classList.toggle("is-open", on);
 }
 
+function setExportRootMouse(on: boolean): void {
+  const root = window.exportRoot as { mouseEnabled?: boolean; mouseChildren?: boolean } | undefined;
+  if (!root) return;
+  root.mouseEnabled = on;
+  root.mouseChildren = on;
+}
+
 function setVanillaButtonsVisible(visible: boolean): void {
   const menu = findMenu();
   if (!menu) return;
   for (const name of VANILLA_BUTTONS) {
-    const btn = menu[name] as { visible?: boolean } | undefined;
-    if (btn) btn.visible = visible;
+    const btn = menu[name];
+    if (!btn) continue;
+    btn.visible = visible;
+    btn.mouseEnabled = visible;
   }
 }
 
@@ -186,43 +199,254 @@ function wrapGetLevels(): void {
   };
 }
 
-function openPanel(name: Screen): void {
-  extraView = name;
-  for (const id of PANELS) {
-    const el = $("extra-" + id);
-    if (el) el.hidden = id !== name;
-  }
-  if (name === "settings") {
-    const field = $("settings-name") as HTMLInputElement | null;
-    if (field) field.value = getName();
-    const rumbleBox = $("settings-rumble") as HTMLInputElement | null;
-    if (rumbleBox) rumbleBox.checked = loadSettings().rumble;
-  }
-  if (name === "name") {
-    const field = $("player-name") as HTMLInputElement | null;
-    if (field && !field.value) field.value = getName();
-  }
-  if (name === "creator") renderEditor();
-  if (name === "puzzles") renderPuzzles();
-  if (name === "history") renderHistory();
-  if (name === "dev") renderDev();
+function hudInput(): HTMLInputElement | null {
+  return $("hud-input") as HTMLInputElement | null;
 }
 
-function paintExtraMenu(): void {
-  const name = getName();
-  const title = $("extra-brand");
-  if (title) title.textContent = brandName(name);
-  const resume = $("extra-resume") as HTMLButtonElement | null;
-  if (resume) resume.disabled = savedLevel() < 1;
-  const sound = $("extra-sound");
-  if (sound) sound.textContent = (window.createjs?.Sound?.volume ?? 1) === 1 ? "Sound: On" : "Sound: Off";
-  const dev = $("extra-dev-btn");
-  if (dev) (dev as HTMLElement).hidden = !isDevName(name);
+function placeHudInput(on: boolean, left: string, top: string, width: string, placeholder: string, value: string): void {
+  const el = hudInput();
+  if (!el) return;
+  el.hidden = !on;
+  if (!on) return;
+  el.style.left = left;
+  el.style.top = top;
+  el.style.width = width;
+  el.placeholder = placeholder;
+  if (document.activeElement !== el) el.value = value;
+}
+
+function homeItems(): MenuItem[] {
+  const items: MenuItem[] = [
+    { id: "start", label: "Start New Game" },
+    { id: "resume", label: "Resume Game", disabled: savedLevel() < 1 },
+    { id: "load", label: "Load Stage" },
+    { id: "creator", label: "Stage Creator" },
+    { id: "puzzles", label: "Puzzles" },
+    { id: "history", label: "History" },
+    { id: "sound", label: (window.createjs?.Sound?.volume ?? 1) === 1 ? "Sound: On" : "Sound: Off" },
+    { id: "credits", label: "Credits" },
+    { id: "settings", label: "Settings" },
+    { id: "legacy", label: "Legacy mode" },
+  ];
+  if (isDevName(getName())) items.push({ id: "dev", label: "Dev tools" });
+  return items;
+}
+
+function moveHome(dir: 1 | -1): void {
+  const items = homeItems();
+  if (!items.length) return;
+  let i = homeCursor;
+  for (let n = 0; n < items.length; n++) {
+    i = (i + dir + items.length) % items.length;
+    if (!items[i].disabled) {
+      homeCursor = i;
+      return;
+    }
+  }
+}
+
+function hudKey(): string {
+  return [
+    extraView,
+    homeCursor,
+    savedLevel(),
+    String(window.createjs?.Sound?.volume ?? 1),
+    getName(),
+    String(loadSettings().rumble),
+    loadError,
+    puzzleDiff,
+    String(puzzleCount),
+    paint.tool,
+    paint.hint,
+    beatLabel,
+    String(beaten),
+    draft.tiles.join(""),
+    draft.spawn.join(","),
+    String(loadRuns().length),
+  ].join("|");
+}
+
+function raiseHud(): void {
+  const st = window.stage;
+  if (!hud || !st?.setChildIndex || st.numChildren == null) return;
+  st.setChildIndex(hud.root, st.numChildren - 1);
+}
+
+function paintHud(): void {
+  if (!hud) return;
+  const key = hudKey();
+  if (key === lastHud) return;
+  lastHud = key;
+  placeHudInput(false, "0", "0", "0", "", "");
+  if (extraView === "home") hud.drawHome(brandName(getName()), homeItems(), homeCursor);
+  else if (extraView === "name") {
+    hud.drawName();
+    placeHudInput(true, "7.3%", "42.5%", "43%", "NAME", getName());
+  } else if (extraView === "credits") hud.drawCredits();
+  else if (extraView === "load") {
+    hud.drawLoad(loadError);
+    placeHudInput(true, "7.3%", "38%", "29%", "000000", "");
+  } else if (extraView === "settings") {
+    hud.drawSettings(loadSettings().rumble);
+    placeHudInput(true, "7.3%", "36%", "43%", "NAME", getName());
+  } else if (extraView === "finish") {
+    const st = window.stage;
+    hud.drawFinish(st?.totalMoves ?? 0, st?.totalFalls ?? 0);
+  } else if (extraView === "puzzles") {
+    hud.drawPuzzles(puzzleDiff, puzzleCount, dailySeed(new Date(), puzzleDiff) + " · " + difficultyLabel(puzzleDiff));
+    placeHudInput(true, "7.3%", "66%", "43%", "Seed (optional)", "");
+  } else if (extraView === "history") {
+    hud.drawHistory(
+      loadRuns()
+        .slice(0, 6)
+        .map((rec) => {
+          const lv = rec.levels.find((l) => winningTape(l));
+          return {
+            title: `${rec.player} · ${rec.complete ? "Finished" : "Stopped"} · ${rec.levels.length} stages`,
+            meta: new Date(rec.at).toLocaleString(),
+            replay: lv
+              ? () => {
+                  const cmds = winningTape(lv);
+                  const def = campaignDefs()[(lv.stage || 1) - 1];
+                  if (def && cmds) {
+                    startCustom([def], "history");
+                    enqueueSolve(cmds);
+                  }
+                }
+              : undefined,
+          };
+        }),
+    );
+  } else if (extraView === "dev") hud.drawDev();
+  else if (extraView === "creator") {
+    const issue = isPlayable(draft);
+    hud.drawCreator({
+      tiles: draft.tiles,
+      spawn: draft.spawn,
+      tool: paint.tool,
+      badge: beatLabel,
+      hint: paint.hint || "Paint a 15x10 stage. Split is pad, then cube A, then cube B.",
+      seed: stageId(draft),
+      canSave: beaten && !issue,
+      marks: splitMarks(draft),
+    });
+    placeHudInput(true, "3.3%", "85.5%", "45%", "BXS- / BXS. / BX1. / name", hudInput()?.value || "");
+  }
+}
+
+function openPanel(name: Screen): void {
+  extraView = name;
+  lastHud = "";
+  if (name === "load") loadError = "";
+  if (name === "creator") scheduleBeatCheck();
+  paintHud();
+}
+
+function handleHudAction(act: string): void {
+  if (act === "start") {
+    run = {
+      id: `${Date.now()}`,
+      at: Date.now(),
+      player: getName() || "BLOX",
+      totalTimeMs: 0,
+      totalMoves: 0,
+      fails: 0,
+      complete: false,
+      levels: [],
+    };
+    beginPlay(1, { kind: "campaign", defs: [], returnTo: "home", record: true });
+  } else if (act === "resume") {
+    const n = savedLevel();
+    if (n) beginPlay(n, { kind: "campaign", defs: [], returnTo: "home", record: true });
+  } else if (act === "load") openPanel("load");
+  else if (act === "load-go") loadPasscode();
+  else if (act === "sound") {
+    window.stage?.toggleSound?.();
+    lastHud = "";
+    paintHud();
+  } else if (act === "credits") openPanel("credits");
+  else if (act === "legacy") {
+    setMode("legacy");
+    window.location.reload();
+  } else if (act === "settings") openPanel("settings");
+  else if (act === "back") openPanel("home");
+  else if (act === "creator") openPanel("creator");
+  else if (act === "puzzles") openPanel("puzzles");
+  else if (act === "history") openPanel("history");
+  else if (act === "dev") openPanel("dev");
+  else if (act === "skip-name") {
+    if (!getName()) setName("BLOX");
+    openPanel("home");
+  } else if (act === "name-continue") {
+    const next = hudInput()?.value.trim();
+    if (!next) return;
+    setName(next);
+    openPanel("home");
+  } else if (act === "save-name") {
+    const next = hudInput()?.value.trim();
+    if (!next) return;
+    setName(next);
+    openPanel("home");
+  } else if (act === "toggle-rumble") {
+    const s = loadSettings();
+    s.rumble = !s.rumble;
+    saveSettings(s);
+    lastHud = "";
+    paintHud();
+  } else if (act === "creator-test") playDraft();
+  else if (act === "creator-save") saveDraft();
+  else if (act === "creator-new") {
+    draft = emptyDraft();
+    beaten = false;
+    paint = newPaintState();
+    scheduleBeatCheck();
+    lastHud = "";
+    paintHud();
+  } else if (act === "creator-load") loadShare();
+  else if (act.startsWith("tool:")) {
+    paint.tool = act.slice(5) as EditorToolId;
+    paint.splitStep = 0;
+    paint.splitAt = null;
+    paint.linkFrom = null;
+    lastHud = "";
+    paintHud();
+  } else if (act.startsWith("paint:")) {
+    const parts = act.split(":");
+    paintEditorCell(draft, Number(parts[1]), Number(parts[2]), paint);
+    beaten = false;
+    scheduleBeatCheck();
+    lastHud = "";
+    paintHud();
+  } else if (act.startsWith("diff:")) {
+    puzzleDiff = act.slice(5) as Difficulty;
+    lastHud = "";
+    paintHud();
+  } else if (act.startsWith("len:")) {
+    puzzleCount = Number(act.slice(4));
+    lastHud = "";
+    paintHud();
+  } else if (act.startsWith("dev:")) {
+    beginPlay(Number(act.slice(4)), { kind: "campaign", defs: [], returnTo: "dev", record: false });
+  } else if (act === "puzzle-daily") {
+    const p = generatePuzzle(dailySeed(new Date(), puzzleDiff), puzzleDiff);
+    startCustom([p.def], "puzzles", "Daily");
+  } else if (act === "puzzle-run") {
+    const seed = hudInput()?.value.trim() || `seed-${Date.now()}`;
+    startCustom(
+      generateRun(seed, puzzleDiff, puzzleCount).map((p) => p.def),
+      "puzzles",
+      seed,
+    );
+  } else if (act === "dev-beat") beatCurrentStage();
+  else if (act === "dev-menu") {
+    returnToMenu();
+    openPanel("dev");
+  }
 }
 
 function returnToMenu(): void {
-  const root = window.exportRoot as { gotoAndStop?: (l: string) => void; menu?: { gotoAndStop: (n: number) => void } } | undefined;
-  const stage = window.stage as StageLike | undefined;
+  const root = window.exportRoot;
+  const stage = window.stage;
   if (stage) stage.doneIntro = true;
   root?.gotoAndStop?.("menu");
   root?.menu?.gotoAndStop(133);
@@ -231,11 +455,14 @@ function returnToMenu(): void {
 function beginPlay(levelNumber: number, session: PlaySession): void {
   playSession = session;
   extraView = "auto";
-  const stage = window.stage as StageLike | undefined;
+  tape = [];
+  lastLevelNum = levelNumber;
+  lastHud = "";
+  hud?.setVisible(false);
+  placeHudInput(false, "0", "0", "0", "", "");
+  const stage = window.stage;
   if (stage) stage.levelNumber = levelNumber;
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
-  show($("extra-shell"), false);
-  setPlayfieldVisible(true);
   window.exportRoot?.gotoAndPlay?.("game");
 }
 
@@ -258,7 +485,7 @@ function enqueueSolve(cmds: WalkCmd[]): void {
 }
 
 function tickSolve(): void {
-  const stage = window.stage as StageLike | undefined;
+  const stage = window.stage;
   if (!stage?.triggerKeyDown || currentLabel() !== "game") return;
   if (solveHold > 0) {
     solveHold--;
@@ -273,58 +500,34 @@ function tickSolve(): void {
 }
 
 function beatCurrentStage(): void {
-  const stage = window.stage as StageLike | undefined;
+  const stage = window.stage;
   const n = stage?.levelNumber ?? 1;
-  const def = playSession?.defs.length ? playSession.defs[stage!.levelNumber - 1] : campaignDefs()[n - 1];
+  const def = playSession?.defs.length ? playSession.defs[n - 1] : campaignDefs()[n - 1];
   if (!def) return;
   const result = solveLevel(def, 200_000);
-  if (!result.ok) {
-    beatLabel = "No solution found.";
-    return;
-  }
+  if (!result.ok) return;
   enqueueSolve(result.cmds);
 }
 
-function renderEditor(): void {
-  const grid = $("creator-grid");
-  if (!grid) return;
-  const marks = splitMarks(draft);
-  grid.replaceChildren();
-  for (let y = 0; y < 10; y++) {
-    for (let x = 0; x < 15; x++) {
-      const cell = document.createElement("button");
-      cell.type = "button";
-      const ch = tileChar(draft, x, y);
-      cell.className = "tile tile-" + (ch === " " ? "empty" : ch);
-      cell.dataset.x = String(x);
-      cell.dataset.y = String(y);
-      if (draft.spawn[0] === x && draft.spawn[1] === y) cell.classList.add("is-spawn");
-      const mark = marks.find((m) => m.x === x && m.y === y);
-      cell.textContent = mark ? mark.label : ch === " " ? "" : ch.toUpperCase();
-      grid.appendChild(cell);
-    }
+function commitTape(won: boolean, stageNo: number): void {
+  if (!run || !playSession?.record) {
+    tape = [];
+    return;
   }
-  const tools = $("creator-tools");
-  if (tools && !tools.dataset.ready) {
-    tools.dataset.ready = "1";
-    for (const tool of EDITOR_TOOLS) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.dataset.tool = tool.id;
-      btn.textContent = tool.label;
-      tools.appendChild(btn);
-    }
+  let lv = run.levels.find((l) => l.stage === stageNo);
+  if (!lv) {
+    lv = { stage: stageNo, timeMs: 0, moves: tape.length, attempts: 0, tapes: [] };
+    run.levels.push(lv);
   }
-  tools?.querySelectorAll("button").forEach((btn) => {
-    btn.classList.toggle("is-on", (btn as HTMLButtonElement).dataset.tool === paint.tool);
-  });
-  const issue = isPlayable(draft);
-  const badge = $("creator-badge");
-  if (badge) badge.textContent = issue || beatLabel;
-  const hint = $("creator-hint");
-  if (hint) hint.textContent = paint.hint || "Paint a 15×10 stage. Split is pad, then cube A, then cube B.";
-  const saveBtn = $("creator-save") as HTMLButtonElement | null;
-  if (saveBtn) saveBtn.disabled = !beaten || !!issue;
+  lv.attempts += 1;
+  lv.tapes.push({ cmds: tape.slice(), won });
+  if (won) {
+    lv.moves = tape.length;
+    pushGhost(stageNo, tape);
+  } else {
+    run.fails += 1;
+  }
+  tape = [];
 }
 
 function scheduleBeatCheck(): void {
@@ -337,86 +540,19 @@ function scheduleBeatCheck(): void {
     } else {
       beatLabel = checkBeatable(draft) ? "CAN BE BEAT" : "IMPOSSIBLE";
     }
-    if (extraView === "creator") renderEditor();
+    if (extraView === "creator") {
+      lastHud = "";
+      paintHud();
+    }
   }, 200);
-}
-
-function renderPuzzles(): void {
-  const daily = $("puzzle-daily-meta");
-  if (daily) {
-    const seed = dailySeed(new Date(), puzzleDiff);
-    daily.textContent = seed + " · " + difficultyLabel(puzzleDiff);
-  }
-  $("puzzle-diff")?.querySelectorAll("button").forEach((btn) => {
-    btn.classList.toggle("is-on", (btn as HTMLButtonElement).dataset.diff === puzzleDiff);
-  });
-  $("puzzle-len")?.querySelectorAll("button").forEach((btn) => {
-    btn.classList.toggle("is-on", Number((btn as HTMLButtonElement).dataset.n) === puzzleCount);
-  });
-}
-
-function renderHistory(): void {
-  const list = $("history-list");
-  if (!list) return;
-  const runs = loadRuns();
-  list.replaceChildren();
-  if (!runs.length) {
-    const p = document.createElement("p");
-    p.className = "hint";
-    p.textContent = "No runs yet. Clear stages in extra mode and they show up here.";
-    list.appendChild(p);
-    return;
-  }
-  for (const rec of runs) {
-    const row = document.createElement("div");
-    row.className = "history-row";
-    const when = new Date(rec.at).toLocaleString();
-    const title = document.createElement("p");
-    title.textContent = `${rec.player} · ${rec.complete ? "Finished" : "Stopped"} · ${rec.levels.length} stages · ${rec.fails} falls`;
-    const meta = document.createElement("p");
-    meta.className = "hint";
-    meta.textContent = when;
-    row.appendChild(title);
-    row.appendChild(meta);
-    rec.levels.forEach((lv, i) => {
-      const tape = winningTape(lv);
-      if (!tape) return;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = `Replay stage ${lv.stage || i + 1}`;
-      btn.addEventListener("click", () => {
-        const defs = campaignDefs();
-        const def = defs[(lv.stage || i + 1) - 1];
-        if (!def) return;
-        startCustom([def], "history", `Replay ${lv.stage}`);
-        enqueueSolve(tape);
-      });
-      row.appendChild(btn);
-    });
-    list.appendChild(row);
-  }
-}
-
-function renderDev(): void {
-  const list = $("dev-stages");
-  if (!list || list.dataset.ready) return;
-  list.dataset.ready = "1";
-  for (let i = 1; i <= 33; i++) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = String(i).padStart(2, "0");
-    btn.addEventListener("click", () => {
-      beginPlay(i, { kind: "campaign", defs: [], returnTo: "dev", record: false });
-    });
-    list.appendChild(btn);
-  }
 }
 
 function saveDraft(): void {
   if (!beaten) return;
   const issue = isPlayable(draft);
   if (issue) return;
-  const name = ( $("creator-name") as HTMLInputElement | null )?.value.trim() || "Untitled";
+  const raw = hudInput()?.value.trim() || "";
+  const name = /^(BXS[-.]|BX1\.)/i.test(raw) ? "Untitled" : raw || "Untitled";
   const saved = {
     name,
     author: getName() || "Unknown",
@@ -427,62 +563,56 @@ function saveDraft(): void {
   };
   saveStage(saved);
   paint.hint = `Saved ${saved.seed}. ${encodeSeed(draft)}`;
-  renderEditor();
+  lastHud = "";
+  paintHud();
 }
 
 function playDraft(): void {
   const issue = isPlayable(draft);
   if (issue) {
     paint.hint = issue;
-    renderEditor();
+    lastHud = "";
+    paintHud();
     return;
   }
   startCustom([structuredClone(draft)], "creator");
 }
 
 function loadPasscode(): void {
-  const field = $("load-code") as HTMLInputElement | null;
-  const err = $("load-error");
+  const field = hudInput();
   const value = ((field?.value || "") + "").replace(/\D/g, "").slice(0, 6);
   if (field) field.value = value;
   if (value.length !== 6) {
-    if (err) {
-      err.hidden = false;
-      err.textContent = "Enter a 6-digit passcode.";
-    }
+    loadError = "Enter a 6-digit passcode.";
+    lastHud = "";
+    paintHud();
     return;
   }
   const codes = (window as unknown as { getLevelCodes?: () => string[] }).getLevelCodes?.() || [];
   const index = codes.indexOf(value);
   if (index === -1) {
-    if (err) {
-      err.hidden = false;
-      err.textContent = "That passcode is not a campaign stage.";
-    }
+    loadError = "That passcode is not a campaign stage.";
+    lastHud = "";
+    paintHud();
     return;
   }
-  if (err) err.hidden = true;
+  loadError = "";
   beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true });
 }
 
 function showFinish(): void {
-  const moves = $("finish-moves");
-  const fails = $("finish-fails");
-  const st = window.stage as StageLike & { totalMoves?: number; totalFalls?: number } | undefined;
-  if (moves) moves.textContent = String(st?.totalMoves ?? 0);
-  if (fails) fails.textContent = String(st?.totalFalls ?? 0);
   parkCreateJsMenu();
-  setPlayfieldVisible(false);
-  show($("extra-shell"), true);
+  hud?.setVisible(true);
   openPanel("finish");
 }
 
 function loadShare(): void {
-  const field = $("creator-code") as HTMLInputElement | null;
+  const field = hudInput();
   const def = parseShare(field?.value || "", listSaved());
   if (!def) {
     paint.hint = "Could not read that code. Use BXS- / BXS. / BX1.";
-    renderEditor();
+    lastHud = "";
+    paintHud();
     return;
   }
   draft = def;
@@ -490,94 +620,143 @@ function loadShare(): void {
   paint = newPaintState();
   paint.hint = "Loaded share code.";
   scheduleBeatCheck();
-  renderEditor();
+  lastHud = "";
+  paintHud();
 }
 
-function bindCreator(): void {
-  $("creator-grid")?.addEventListener("click", (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button") as HTMLButtonElement | null;
-    if (!btn?.dataset.x) return;
-    paintEditorCell(draft, Number(btn.dataset.x), Number(btn.dataset.y), paint);
-    beaten = false;
-    scheduleBeatCheck();
-    renderEditor();
+function bind(): void {
+  if (bound) return;
+  bound = true;
+
+  $("exit-legacy")?.addEventListener("click", () => {
+    setMode("extra");
+    window.location.reload();
   });
-  $("creator-tools")?.addEventListener("click", (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button") as HTMLButtonElement | null;
-    if (!btn?.dataset.tool) return;
-    paint.tool = btn.dataset.tool as EditorToolId;
-    paint.splitStep = 0;
-    paint.splitAt = null;
-    paint.linkFrom = null;
-    paint.hint = "";
-    renderEditor();
+
+  const input = hudInput();
+  input?.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    if (extraView === "name") handleHudAction("name-continue");
+    else if (extraView === "load") handleHudAction("load-go");
+    else if (extraView === "settings") handleHudAction("save-name");
+    else if (extraView === "creator") handleHudAction("creator-load");
+    else if (extraView === "puzzles") handleHudAction("puzzle-run");
+  });
+  input?.addEventListener("keyup", (ev) => ev.stopPropagation());
+  input?.addEventListener("keypress", (ev) => ev.stopPropagation());
+
+  window.addEventListener("keydown", (ev) => {
+    if (isLegacy()) return;
+    if (document.activeElement === hudInput()) return;
+    if (currentLabel() === "game") {
+      const cmd = KEY_CMD[ev.code];
+      if (cmd) tape.push(cmd);
+      return;
+    }
+    if (ev.key === "Escape" && extraView !== "home" && extraView !== "name" && extraView !== "auto") {
+      openPanel("home");
+      return;
+    }
+    if (extraView !== "home") return;
+    if (ev.key === "ArrowDown") {
+      moveHome(1);
+      lastHud = "";
+      paintHud();
+    } else if (ev.key === "ArrowUp") {
+      moveHome(-1);
+      lastHud = "";
+      paintHud();
+    } else if (ev.key === "Enter") {
+      const item = homeItems()[homeCursor];
+      if (item && !item.disabled) handleHudAction(item.id);
+    }
   });
 }
 
 function syncOverlay(): void {
-  const extra = $("extra-shell");
   const exitBtn = $("exit-legacy");
   const version = $("build-version");
-  const ingame = $("extra-ingame");
   const label = currentLabel();
   const playing = label === "game" || label === "restart";
+  const stage = window.stage;
 
-  if (version) version.style.display = isLegacy() ? (onMainMenu() ? "block" : "none") : playing ? "none" : "block";
+  if (version) version.style.display = isLegacy() && onMainMenu() ? "block" : "none";
 
-  if (label === "restart" && lastLabel === "game") rumble(180, 0.6, 0.4);
+  if (label === "restart" && lastLabel === "game") {
+    rumble(180, 0.6, 0.4);
+    commitTape(false, stage?.levelNumber ?? lastLevelNum);
+  }
+
+  if (playing && stage) {
+    if (lastLevelNum > 0 && stage.levelNumber > lastLevelNum) commitTape(true, lastLevelNum);
+    lastLevelNum = stage.levelNumber;
+  }
 
   if (label === "finish" && !isLegacy() && lastLabel !== "finish") {
     beaten = playSession?.returnTo === "creator" ? true : beaten;
+    if (tape.length) commitTape(true, lastLevelNum || stage?.levelNumber || 1);
     if (run && playSession?.record) {
       run.complete = true;
       run.totalTimeMs = Date.now() - run.at;
+      run.totalMoves = stage?.totalMoves ?? run.totalMoves;
       saveRun(run);
       run = null;
     }
     const back = playSession?.returnTo;
-    playSession = playSession ? { ...playSession, returnTo: back || "home" } : null;
     lastLabel = label;
     if (back === "creator" || back === "puzzles" || back === "history") {
       parkCreateJsMenu();
-      setPlayfieldVisible(false);
-      show(extra, true);
-      openPanel(back);
+      setExportRootMouse(false);
       playSession = null;
+      hud?.setVisible(true);
+      openPanel(back);
       return;
     }
-    showFinish();
     playSession = null;
+    showFinish();
     return;
   }
   lastLabel = label;
 
   if (isLegacy()) {
     extraView = "auto";
-    show(extra, false);
-    setPlayfieldVisible(true);
+    hud?.setVisible(false);
+    placeHudInput(false, "0", "0", "0", "", "");
+    setExportRootMouse(true);
     setVanillaButtonsVisible(true);
     show(exitBtn, onMainMenu());
-    show(ingame, false);
     return;
   }
 
   show(exitBtn, false);
-  const devOn = isDevName(getName());
-  show(ingame, playing && devOn);
+  raiseHud();
 
   if (playing) {
-    show(extra, false);
-    setPlayfieldVisible(true);
+    setExportRootMouse(true);
     tickSolve();
-    pollGamepad(window.stage as StageLike, false);
+    pollGamepad(stage, false);
+    if (isDevName(getName())) {
+      hud?.setVisible(true);
+      if (lastHud !== "ingame") {
+        lastHud = "ingame";
+        hud?.drawInGameDev();
+      }
+    } else {
+      hud?.setVisible(false);
+      placeHudInput(false, "0", "0", "0", "", "");
+    }
     return;
   }
 
   parkCreateJsMenu();
-  setPlayfieldVisible(false);
-  show(extra, true);
-  paintExtraMenu();
-  if (extraView === "finish") return;
+  setExportRootMouse(false);
+  hud?.setVisible(true);
+  if (extraView === "finish") {
+    paintHud();
+    return;
+  }
   if (playSession?.returnTo && extraView === "auto") {
     const back = playSession.returnTo;
     playSession = null;
@@ -586,138 +765,12 @@ function syncOverlay(): void {
   }
   if (!getName()) {
     if (extraView !== "name") openPanel("name");
+    else paintHud();
   } else if (extraView === "auto" || extraView === "name") {
     openPanel("home");
+  } else {
+    paintHud();
   }
-}
-
-function bind(): void {
-  const extra = $("extra-shell");
-  const exitBtn = $("exit-legacy");
-  if (!extra || !exitBtn) return;
-
-  extra.addEventListener("keydown", (ev) => ev.stopPropagation());
-  extra.addEventListener("keyup", (ev) => ev.stopPropagation());
-
-  extra.addEventListener("click", (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button[data-act]") as HTMLButtonElement | null;
-    if (!btn || btn.disabled) return;
-    const act = btn.getAttribute("data-act");
-    if (act === "start") {
-      run = {
-        id: `${Date.now()}`,
-        at: Date.now(),
-        player: getName() || "BLOX",
-        totalTimeMs: 0,
-        totalMoves: 0,
-        fails: 0,
-        complete: false,
-        levels: [],
-      };
-      beginPlay(1, { kind: "campaign", defs: [], returnTo: "home", record: true });
-    } else if (act === "resume") {
-      const n = savedLevel();
-      if (!n) return;
-      beginPlay(n, { kind: "campaign", defs: [], returnTo: "home", record: true });
-    } else if (act === "load") openPanel("load");
-    else if (act === "load-go") loadPasscode();
-    else if (act === "sound") {
-      window.stage?.toggleSound?.();
-      paintExtraMenu();
-    } else if (act === "credits") openPanel("credits");
-    else if (act === "legacy") {
-      setMode("legacy");
-      window.location.reload();
-    } else if (act === "settings") openPanel("settings");
-    else if (act === "back") openPanel("home");
-    else if (act === "creator") openPanel("creator");
-    else if (act === "puzzles") openPanel("puzzles");
-    else if (act === "history") openPanel("history");
-    else if (act === "dev") openPanel("dev");
-    else if (act === "skip-name") {
-      if (!getName()) setName("BLOX");
-      paintExtraMenu();
-      openPanel("home");
-    } else if (act === "save-name") {
-      const field = $("settings-name") as HTMLInputElement | null;
-      if (!field?.value.trim()) return;
-      setName(field.value);
-      const rumbleBox = $("settings-rumble") as HTMLInputElement | null;
-      const s = loadSettings();
-      s.rumble = rumbleBox ? rumbleBox.checked : s.rumble;
-      saveSettings(s);
-      paintExtraMenu();
-      openPanel("home");
-    } else if (act === "creator-test") playDraft();
-    else if (act === "creator-save") saveDraft();
-    else if (act === "creator-new") {
-      draft = emptyDraft();
-      beaten = false;
-      paint = newPaintState();
-      scheduleBeatCheck();
-      renderEditor();
-    } else if (act === "creator-load") loadShare();
-    else if (act === "puzzle-daily") {
-      const p = generatePuzzle(dailySeed(new Date(), puzzleDiff), puzzleDiff);
-      startCustom([p.def], "puzzles", "Daily");
-    } else if (act === "puzzle-run") {
-      const seed = ($("puzzle-seed") as HTMLInputElement | null)?.value.trim() || `seed-${Date.now()}`;
-      const runP = generateRun(seed, puzzleDiff, puzzleCount);
-      startCustom(
-        runP.map((p) => p.def),
-        "puzzles",
-        seed,
-      );
-    }
-  });
-
-  extra.addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    const field = $("player-name") as HTMLInputElement | null;
-    if (!field?.value.trim()) return;
-    setName(field.value);
-    paintExtraMenu();
-    openPanel("home");
-  });
-
-  $("puzzle-diff")?.addEventListener("click", (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button") as HTMLButtonElement | null;
-    if (!btn?.dataset.diff) return;
-    puzzleDiff = btn.dataset.diff as Difficulty;
-    renderPuzzles();
-  });
-  $("puzzle-len")?.addEventListener("click", (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button") as HTMLButtonElement | null;
-    if (!btn?.dataset.n) return;
-    puzzleCount = Number(btn.dataset.n);
-    renderPuzzles();
-  });
-
-  exitBtn.addEventListener("click", () => {
-    setMode("extra");
-    window.location.reload();
-  });
-
-  $("extra-ingame")?.addEventListener("click", (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button[data-act]") as HTMLButtonElement | null;
-    if (!btn) return;
-    if (btn.dataset.act === "dev-beat") beatCurrentStage();
-    if (btn.dataset.act === "dev-menu") {
-      returnToMenu();
-      openPanel("dev");
-    }
-  });
-
-  window.addEventListener("keydown", (ev) => {
-    if (currentLabel() !== "game") return;
-    const cmd = KEY_CMD[ev.code];
-    if (!cmd) return;
-    tape.push(cmd);
-  });
-
-  bindCreator();
-  const nameField = $("player-name") as HTMLInputElement | null;
-  if (nameField) nameField.value = getName();
 }
 
 declare global {
@@ -725,29 +778,32 @@ declare global {
     exportRoot?: {
       currentLabel?: string;
       splash?: { visible: boolean };
-      menu?: { currentFrame: number; gotoAndStop: (n: number) => void };
+      menu?: {
+        currentFrame: number;
+        gotoAndStop: (n: number) => void;
+        [k: string]: unknown;
+      };
       gotoAndPlay?: (l: string) => void;
       gotoAndStop?: (l: string) => void;
     };
-    stage?: StageLike & { toggleSound?: () => void };
+    stage?: StageLike;
     startBloxorzShell?: () => void;
     GAME_VERSION?: string;
     createjs?: { Sound?: { volume: number }; Ticker?: { addEventListener: (n: string, fn: () => void) => void } };
   }
 }
 
-declare const createjs: {
-  Sound?: { volume: number };
-  Ticker?: { addEventListener: (n: string, fn: () => void) => void };
-};
-
 export function startBloxorzShell(): void {
   const version = $("build-version");
-    if (version) version.textContent = "v" + (window.GAME_VERSION || "2.3.0");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.4.0");
   wrapGetLevels();
   bind();
+  if (window.stage && !hud) {
+    hud = new ExtraHud(window.stage as { addChild: (c: unknown) => void });
+    hud.onAction = handleHudAction;
+  }
   if (!isLegacy()) parkCreateJsMenu();
-  createjs.Ticker?.addEventListener("tick", syncOverlay);
+  window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
   syncOverlay();
 }
 

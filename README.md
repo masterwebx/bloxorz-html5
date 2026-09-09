@@ -12,7 +12,7 @@ Spencer’s repo is the Coolmath **Adobe Animate HTML5** Bloxorz client, plus:
 
 We are adding web extras (player name, Stage Creator, puzzles, history, DEV tools) **on top of that runtime**. The CreateJS game in `src/bloxorz.js` stays the playfield — we do not rewrite the rolling block. See [GAMEPLAN.md](GAMEPLAN.md).
 
-The default **extra** app is its own menu (Orbitron, name → **WEXORZ**, Stage Creator, Puzzles, History, Settings). CreateJS only comes on for the rolling stage. **Legacy mode** reloads the vanilla Coolmath menu if you want that; **EXIT LEGACY MODE** comes back.
+The default **extra** app draws its menu as CreateJS text on the same 550×300 stage as the block — their menu sky stays visible, bitmap buttons are hidden. HTML is only used for actual text fields (name, passcode, share code). **Start New Game** still plays in their engine. **Legacy mode** reloads the vanilla Coolmath menu; **EXIT LEGACY MODE** comes back.
 
 Set the name to **DEV** to unlock Dev tools (jump to any campaign stage) and **Beat stage for me** while playing.
 
@@ -36,6 +36,6 @@ npm run tauri dev
 
 ## Version
 
-The main menu shows **v2.3.0** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+The main menu shows **v2.4.0** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
 
 `npm test` runs the TypeScript extra-library tests. `npm run build` bundles `src/extra/` into `extra.bundle.js` and copies `src` to `dist`.

@@ -76,7 +76,7 @@
 			dom_overlay_container = document.getElementById("dom_overlay_container");
 			var versionEl = document.getElementById("build-version");
 			if (versionEl) {
-				versionEl.textContent = "v" + (window.GAME_VERSION || "2.1.0");
+				versionEl.textContent = "v" + (window.GAME_VERSION || "2.4.0");
 			}
 			var comp = AdobeAn.getComposition("FE31B685947E79408F0C8768D6EC8517");
 			var lib = comp.getLibrary();
@@ -247,124 +247,7 @@
 			<div id="dom_overlay_container">
 				<div id="build-version"></div>
 				<button type="button" id="exit-legacy">EXIT LEGACY MODE</button>
-				<div id="extra-shell">
-					<section id="extra-name" class="panel" hidden>
-						<h1>What should we call you?</h1>
-						<p class="hint">This is how you show up in extra mode. Type DEV if you want developer tools later.</p>
-						<form>
-							<input id="player-name" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="NAME">
-							<div class="row">
-								<button type="submit">Continue</button>
-								<button type="button" data-act="skip-name">Stay anonymous</button>
-							</div>
-						</form>
-					</section>
-					<section id="extra-home" class="panel extra-scroll" hidden>
-						<h1 id="extra-brand">BLOXORZ</h1>
-						<nav class="menu">
-							<button type="button" data-act="start">Start New Game</button>
-							<button type="button" id="extra-resume" data-act="resume">Resume Game</button>
-							<button type="button" data-act="load">Load Stage</button>
-							<button type="button" data-act="creator">Stage Creator</button>
-							<button type="button" data-act="puzzles">Puzzles</button>
-							<button type="button" data-act="history">History</button>
-							<button type="button" id="extra-sound" data-act="sound">Sound: On</button>
-							<button type="button" data-act="credits">Credits</button>
-							<button type="button" data-act="settings">Settings</button>
-							<button type="button" data-act="legacy">Legacy mode</button>
-							<button type="button" id="extra-dev-btn" data-act="dev" hidden>Dev tools</button>
-						</nav>
-					</section>
-					<section id="extra-load" class="panel extra-scroll" hidden>
-						<button type="button" data-act="back">Back</button>
-						<h1>Load Stage</h1>
-						<p class="hint">Enter a campaign passcode from the original 33 stages.</p>
-						<input id="load-code" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000">
-						<p id="load-error" class="hint" hidden></p>
-						<button type="button" data-act="load-go">Load</button>
-					</section>
-					<section id="extra-credits" class="panel extra-scroll" hidden>
-						<button type="button" data-act="back">Back</button>
-						<h1>Credits</h1>
-						<p class="hint">Bloxorz was created by Damien Clarke / DX Interactive (21 June 2007).</p>
-						<p class="hint">The rolling stage is Coolmath’s Adobe Animate HTML5 export. Nathan Spencer added the desktop shell, timer, and themes.</p>
-						<p class="hint">This extra app sits around that playfield. We do not redraw the block.</p>
-						<button type="button" data-act="back">Back</button>
-					</section>
-					<section id="extra-finish" class="panel extra-scroll" hidden>
-						<h1>Congratulations</h1>
-						<p class="hint">You cleared the run.</p>
-						<p class="hint">Moves: <span id="finish-moves">0</span></p>
-						<p class="hint">Falls: <span id="finish-fails">0</span></p>
-						<button type="button" data-act="back">Menu</button>
-					</section>
-					<section id="extra-settings" class="panel extra-scroll" hidden>
-						<h1>Settings</h1>
-						<p class="hint">Change your player name. DEV unlocks extra tools. Gamepad uses D-pad / left stick, A confirm, B back, X swap, Start pause.</p>
-						<label for="settings-name" class="hint">Player name</label>
-						<input id="settings-name" type="text" maxlength="24" autocomplete="off" spellcheck="false">
-						<label class="row"><input id="settings-rumble" type="checkbox" checked> Gamepad rumble</label>
-						<div class="row">
-							<button type="button" data-act="save-name">Save</button>
-							<button type="button" data-act="back">Back</button>
-						</div>
-					</section>
-					<section id="extra-creator" class="panel extra-scroll" hidden>
-						<div class="creator-head">
-							<button type="button" data-act="back">Back</button>
-							<h1>Stage Creator</h1>
-							<span id="creator-badge" class="badge">Paint tiles</span>
-						</div>
-						<div id="creator-tools" class="creator-tools"></div>
-						<div id="creator-grid" class="creator-grid"></div>
-						<p id="creator-hint" class="hint"></p>
-						<div class="row wrap">
-							<button type="button" data-act="creator-new">New</button>
-							<button type="button" data-act="creator-test">Test</button>
-							<button type="button" id="creator-save" data-act="creator-save" disabled>Save</button>
-						</div>
-						<input id="creator-name" type="text" maxlength="32" placeholder="Stage name">
-						<input id="creator-code" type="text" placeholder="BXS- / BXS. / BX1. code">
-						<button type="button" data-act="creator-load">Enter Code</button>
-					</section>
-					<section id="extra-puzzles" class="panel extra-scroll" hidden>
-						<button type="button" data-act="back">Back</button>
-						<h1>Puzzles</h1>
-						<p class="hint">Maps are generated here, then played in the original CreateJS engine.</p>
-						<p class="hint">Difficulty</p>
-						<div id="puzzle-diff" class="row">
-							<button type="button" data-diff="easy" class="is-on">Easy</button>
-							<button type="button" data-diff="medium">Medium</button>
-							<button type="button" data-diff="hard">Hard</button>
-							<button type="button" data-diff="insane">Insane</button>
-						</div>
-						<p id="puzzle-daily-meta" class="hint"></p>
-						<button type="button" data-act="puzzle-daily">Play Daily</button>
-						<p class="hint">Seeded run length</p>
-						<div id="puzzle-len" class="row">
-							<button type="button" data-n="1" class="is-on">1</button>
-							<button type="button" data-n="5">5</button>
-							<button type="button" data-n="10">10</button>
-						</div>
-						<input id="puzzle-seed" type="text" maxlength="40" placeholder="Seed (optional)">
-						<button type="button" data-act="puzzle-run">Start Seeded Run</button>
-					</section>
-					<section id="extra-history" class="panel extra-scroll" hidden>
-						<button type="button" data-act="back">Back</button>
-						<h1>History</h1>
-						<div id="history-list"></div>
-					</section>
-					<section id="extra-dev" class="panel extra-scroll" hidden>
-						<button type="button" data-act="back">Back</button>
-						<h1>Dev tools</h1>
-						<p class="hint">Jump to a campaign stage, or beat the current one for you while playing.</p>
-						<div id="dev-stages" class="dev-grid"></div>
-					</section>
-				</div>
-				<div id="extra-ingame">
-					<button type="button" data-act="dev-beat">Beat stage for me</button>
-					<button type="button" data-act="dev-menu">Dev menu</button>
-				</div>
+				<input id="hud-input" type="text" maxlength="80" autocomplete="off" spellcheck="false" hidden>
 			</div>
 		</div>
 	</div>

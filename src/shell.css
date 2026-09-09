@@ -12,15 +12,7 @@
 }
 
 #extra-shell {
-	display: none;
-	position: absolute;
-	inset: 0;
-	z-index: 4;
-	pointer-events: auto;
-	background:
-		radial-gradient(ellipse at 20% 0%, rgba(255, 120, 40, 0.18), transparent 50%),
-		linear-gradient(180deg, #140c08 0%, #070604 100%);
-	font-family: Orbitron, sans-serif;
+	display: none !important;
 }
 
 #extra-shell.is-open {
