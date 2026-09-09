@@ -12,7 +12,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "resolveJsonModule": true
   },
-  "include": ["src/extra"]
+  "include": ["src/extra", "translations/*.json", "themes/*/theme.json"]
 }

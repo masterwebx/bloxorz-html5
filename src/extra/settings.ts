@@ -21,7 +21,7 @@ export const ACTION_LABEL: Record<Action, string> = {
   swap: "Swap Split Block",
 };
 
-export type ThemeId = "original" | "gray" | "holiday";
+export type ThemeId = string;
 
 export type MobilePadChoice = "" | "on" | "off";
 
@@ -38,6 +38,7 @@ export interface Settings {
   bgHue: number;
   blockHue: number;
   playerName: string;
+  locale: string;
   keys: Record<Action, string>;
   pads: Record<Action, number>;
 }
@@ -55,6 +56,7 @@ const DEFAULTS: Settings = {
   bgHue: 28,
   blockHue: 0,
   playerName: "",
+  locale: "",
   keys: {
     up: "ArrowUp",
     down: "ArrowDown",
@@ -104,6 +106,7 @@ export function loadSettings(): Settings {
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
       blockHue: clampHue(parsed.blockHue ?? DEFAULTS.blockHue),
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
+      locale: typeof parsed.locale === "string" ? parsed.locale : "",
       keys: { ...DEFAULTS.keys, ...parsed.keys },
       pads: { ...DEFAULTS.pads, ...parsed.pads },
     };
@@ -193,8 +196,12 @@ export function prettyKey(code: string): string {
 }
 
 export function normalizeTheme(value: string | null | undefined): ThemeId {
-  if (value === "gray" || value === "holiday" || value === "original") return value;
-  return "original";
+  const id = (value || "").trim();
+  return id || "original";
+}
+
+export function isAtlasTheme(value: string): value is "original" | "gray" | "holiday" {
+  return value === "original" || value === "gray" || value === "holiday";
 }
 
 export function currentTheme(): ThemeId {

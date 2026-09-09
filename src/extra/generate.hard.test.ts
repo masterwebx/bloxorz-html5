@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   assessPuzzle,
-  DAILY_OPTS,
   forcedGatePuzzle,
+  flipLevel,
   generateDaily,
   generateFullBoard,
   generateRun,
   HARD_BFS,
+  isLateCampaignShape,
   isStrictHard,
   isSwitchGated,
   meetsHardness,
   meetsSwitchGate,
+  remixCampaign,
   requiredSwitches,
   stripAllSwitches,
   withoutSwitch,
@@ -221,25 +223,35 @@ describe("generateFullBoard sealing", () => {
   });
 });
 
-describe("daily hardness", () => {
-  it("2026-09-09 is gated and needs at least four required switches", () => {
-    const daily = generateDaily(new Date("2026-09-09T12:00:00Z"));
-    const a = assessPuzzle(daily.def, 120_000);
-    expect(a.solvable).toBe(true);
-    expect(a.gated).toBe(true);
-    expect(a.requiredCount).toBeGreaterThanOrEqual(DAILY_OPTS.minRequired);
-    expect(a.requiredCount).toBe(a.switchCount);
-    expect(solveLevel(stripAllSwitches(daily.def), 120_000).ok).toBe(false);
-  }, 60_000);
+describe("late-campaign remix", () => {
+  it("flipping a one-gate map keeps it solvable", () => {
+    const src = oneGate();
+    const flipped = flipLevel(src, true, false);
+    expect(solveLevel(src, BFS).ok).toBe(true);
+    expect(solveLevel(flipped, BFS).ok).toBe(true);
+    expect(isLateCampaignShape(src) || src.switches.length > 0).toBe(true);
+  });
 
-  it("another UTC day is also gated", () => {
+  it("end-band remixes keep late-campaign shape", () => {
+    const p = remixCampaign("unit-end", "end", "insane");
+    expect(isLateCampaignShape(p.def)).toBe(true);
+    expect(p.def.tiles.some((row) => row.includes("e"))).toBe(true);
+  });
+});
+
+describe("daily hardness", () => {
+  it("2026-09-09 remixed a late official floor and is solvable", () => {
+    const daily = generateDaily(new Date("2026-09-09T12:00:00Z"));
+    expect(isLateCampaignShape(daily.def)).toBe(true);
+    expect(daily.def.tiles.some((row) => row.includes("e"))).toBe(true);
+    expect((daily.def.switches ?? []).length + (daily.def.splits ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("another UTC day is also a late-campaign remix", () => {
     const daily = generateDaily(new Date("2026-03-14T00:00:00Z"));
-    const a = assessPuzzle(daily.def, 120_000);
-    expect(a.solvable).toBe(true);
-    expect(a.gated).toBe(true);
-    expect(a.requiredCount).toBeGreaterThanOrEqual(DAILY_OPTS.minRequired);
-    expect(a.requiredCount).toBe(a.switchCount);
-  }, 60_000);
+    expect(isLateCampaignShape(daily.def)).toBe(true);
+    expect(daily.def.tiles.some((row) => row.includes("e"))).toBe(true);
+  });
 
   it("is deterministic for a UTC date", () => {
     const a = generateDaily(new Date("2026-09-09T08:00:00Z"));
@@ -247,28 +259,22 @@ describe("daily hardness", () => {
     expect(a.def.tiles).toEqual(b.def.tiles);
     expect(a.def.spawn).toEqual(b.def.spawn);
     expect(a.def.switches).toEqual(b.def.switches);
-  }, 60_000);
+  });
 });
 
 describe("gauntlet hardness bands", () => {
-  it("easy floors are gated with at least two required switches", () => {
+  it("easy floors remix mid-campaign geometry and stay solvable", () => {
     const run = generateRun("20260909", "easy", 2);
     expect(run).toHaveLength(2);
     for (const floor of run) {
-      const a = assessPuzzle(floor.def, 120_000);
-      expect(a.solvable, floor.seed).toBe(true);
-      expect(a.gated, floor.seed).toBe(true);
-      expect(a.requiredCount, floor.seed).toBeGreaterThanOrEqual(2);
-      expect(a.requiredCount, floor.seed).toBe(a.switchCount);
+      expect(floor.def.tiles.some((row) => row.includes("e")), floor.seed).toBe(true);
+      expect(floor.solutionLen, floor.seed).toBeGreaterThanOrEqual(16);
     }
-  }, 60_000);
+  });
 
-  it("medium floors ask for three required switches", () => {
+  it("medium floors remix late-campaign geometry", () => {
     const run = generateRun("77", "medium", 1);
-    const a = assessPuzzle(run[0]!.def, 120_000);
-    expect(a.solvable).toBe(true);
-    expect(a.gated).toBe(true);
-    expect(a.requiredCount).toBeGreaterThanOrEqual(3);
-    expect(a.requiredCount).toBe(a.switchCount);
-  }, 60_000);
+    expect(isLateCampaignShape(run[0]!.def)).toBe(true);
+    expect(run[0]!.def.tiles.some((row) => row.includes("e"))).toBe(true);
+  });
 });

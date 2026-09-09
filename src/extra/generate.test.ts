@@ -19,8 +19,8 @@ import type { LevelDef } from "./types";
 describe("puzzle difficulty copy", () => {
   it("describes difficulty by required switches and move count", () => {
     expect(difficultyHint("easy")).toContain("moves");
-    expect(difficultyHint("easy")).toContain("switches");
-    expect(difficultyHint("insane")).toMatch(/36/);
+    expect(difficultyHint("easy")).toContain("campaign");
+    expect(difficultyHint("insane")).toMatch(/90/);
   });
 });
 

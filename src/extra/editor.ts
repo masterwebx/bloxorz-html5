@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { setTile, tileChar } from "./customLevels";
 import type { LevelDef, SwitchMode } from "./types";
 import { solveLevel } from "./solve";
@@ -74,7 +75,7 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
 
   if (tool.id === "spawn") {
     def.spawn = [x, y];
-    state.hint = "Spawn set.";
+    state.hint = t("editor.hint.spawn");
     return;
   }
 
@@ -82,15 +83,15 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
     const ch = tileChar(def, x, y);
     if (ch === "s" || ch === "h") {
       state.linkFrom = { x, y };
-      state.hint = "Now click a bridge to link. Click again to cycle On / Off / Toggle.";
+      state.hint = t("editor.hint.linkStart");
       return;
     }
     if (!state.linkFrom) {
-      state.hint = "Click a soft or heavy switch first.";
+      state.hint = t("editor.hint.linkNeedSwitch");
       return;
     }
     if (ch !== "l" && ch !== "r" && ch !== "k" && ch !== "q") {
-      state.hint = "Link target must be a bridge.";
+      state.hint = t("editor.hint.linkNeedBridge");
       return;
     }
     const from = state.linkFrom;
@@ -103,10 +104,10 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
     const cycle: SwitchMode[] = ["onoff", "on", "off"];
     if (existing) {
       existing.mode = cycle[(cycle.indexOf(existing.mode) + 1) % 3];
-      state.hint = `Bridge link set to ${existing.mode}.`;
+      state.hint = t("editor.hint.linkMode", { mode: existing.mode });
     } else {
       sw.bridges.push({ x, y, mode: "onoff" });
-      state.hint = "Bridge linked (toggle). Click again to change mode.";
+      state.hint = t("editor.hint.linkNew");
     }
     return;
   }
@@ -114,7 +115,7 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
   if (tool.ch === "v") {
     if (state.splitStep === 1 && state.splitAt) {
       if (!solid(def, x, y)) {
-        state.hint = "Cube A needs a solid tile, not empty or the hole.";
+        state.hint = t("editor.hint.splitASolid");
         return;
       }
       const at = state.splitAt;
@@ -122,12 +123,12 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
       if (pad) pad.a = [x, y];
       else def.splits.push({ x: at.x, y: at.y, a: [x, y], b: [x, y] });
       state.splitStep = 2;
-      state.hint = "Click destination for cube B.";
+      state.hint = t("editor.hint.splitB");
       return;
     }
     if (state.splitStep === 2 && state.splitAt) {
       if (!solid(def, x, y)) {
-        state.hint = "Cube B needs a solid tile, not empty or the hole.";
+        state.hint = t("editor.hint.splitBSolid");
         return;
       }
       const at = state.splitAt;
@@ -139,14 +140,14 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
       pad.b = [x, y];
       state.splitStep = 0;
       state.splitAt = null;
-      state.hint = "Split destinations set. Cubes drop onto those tiles, not extra split pads.";
+      state.hint = t("editor.hint.splitDone");
       return;
     }
     setTile(def, x, y, "v");
     def.splits = def.splits.filter((s) => !(s.x === x && s.y === y));
     state.splitAt = { x, y };
     state.splitStep = 1;
-    state.hint = "Click destination for cube A (an existing tile, not another split pad).";
+    state.hint = t("editor.hint.splitA");
     return;
   }
 
@@ -158,39 +159,39 @@ export function paintEditorCell(def: LevelDef, x: number, y: number, state: Edit
         }
       }
       setTile(def, x, y, "e");
-      state.hint = "Exit set. Only one exit can be placed.";
+      state.hint = t("editor.hint.exit");
       return;
     }
     if (tool.ch === "l" || tool.ch === "r") {
       const cur = tileChar(def, x, y);
       if (tool.ch === "l" && cur === "l") {
         setTile(def, x, y, "k");
-        state.hint = "Left bridge starts ON. Click again to start OFF.";
+        state.hint = t("editor.hint.bridgeLon");
         return;
       }
       if (tool.ch === "l" && cur === "k") {
         setTile(def, x, y, "l");
-        state.hint = "Left bridge starts OFF.";
+        state.hint = t("editor.hint.bridgeLoff");
         return;
       }
       if (tool.ch === "r" && cur === "r") {
         setTile(def, x, y, "q");
-        state.hint = "Right bridge starts ON. Click again to start OFF.";
+        state.hint = t("editor.hint.bridgeRon");
         return;
       }
       if (tool.ch === "r" && cur === "q") {
         setTile(def, x, y, "r");
-        state.hint = "Right bridge starts OFF.";
+        state.hint = t("editor.hint.bridgeRoff");
         return;
       }
     }
     setTile(def, x, y, tool.ch);
-    if (tool.ch === " ") state.hint = "Erased.";
+    if (tool.ch === " ") state.hint = t("editor.hint.erased");
     else if (tool.ch === "s" || tool.ch === "h") {
       state.tool = "link";
       state.linkFrom = { x, y };
-      state.hint = "Switch placed. Click or drag bridges to link. Click a linked bridge again to cycle On / Off / Toggle.";
-    } else if (tool.ch === "l" || tool.ch === "r") state.hint = "Bridge starts OFF. Click again to start ON.";
+      state.hint = t("editor.hint.switchPlaced");
+    } else if (tool.ch === "l" || tool.ch === "r") state.hint = t("editor.hint.bridgeOff");
     else state.hint = "";
   }
 }

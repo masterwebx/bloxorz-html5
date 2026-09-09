@@ -1,4 +1,4 @@
-import { H, occupied, Stage, W } from "./engine";
+import { H, LEVELS, occupied, Stage, W } from "./engine";
 import type { LevelDef, SplitDef, SwitchDef } from "./types";
 import { applyCmd, shortestLen, solveLevel } from "./solve";
 import type { WalkCmd } from "./walkthrough";
@@ -37,14 +37,21 @@ export const QUALITY: Record<Difficulty, QualityOpts> = {
 
 /** Gauntlet floors: required switches first. Move count is a floor, not the puzzle. */
 export const GAUNTLET_QUALITY: Record<Difficulty, QualityOpts> = {
-  easy: { minMoves: 16, minUsed: 6, minRequired: 2, attempts: 10, bfs: 120_000 },
-  medium: { minMoves: 22, minUsed: 8, minRequired: 3, attempts: 10, bfs: 140_000 },
-  hard: { minMoves: 28, minUsed: 10, minRequired: 4, attempts: 12, bfs: 160_000 },
-  insane: { minMoves: 36, minUsed: 12, minRequired: 4, attempts: 12, bfs: 180_000 },
+  easy: { minMoves: 40, minUsed: 6, minRequired: 1, attempts: 8, bfs: 160_000 },
+  medium: { minMoves: 55, minUsed: 8, minRequired: 2, attempts: 8, bfs: 180_000 },
+  hard: { minMoves: 70, minUsed: 10, minRequired: 2, attempts: 8, bfs: 200_000 },
+  insane: { minMoves: 90, minUsed: 12, minRequired: 3, attempts: 8, bfs: 220_000 },
 };
 
-export const DAILY_OPTS: QualityOpts = { minMoves: 24, minUsed: 10, minRequired: 4, attempts: 10, bfs: 200_000 };
-export const SEEDED_OPTS: QualityOpts = { minMoves: 20, minUsed: 8, minRequired: 3, attempts: 12, bfs: 140_000 };
+export const DAILY_OPTS: QualityOpts = { minMoves: 70, minUsed: 10, minRequired: 2, attempts: 6, bfs: 220_000 };
+export const SEEDED_OPTS: QualityOpts = { minMoves: 55, minUsed: 8, minRequired: 2, attempts: 8, bfs: 180_000 };
+
+/** Campaign slices that actually play like Bloxorz, not island chains. */
+const DONOR: Record<"mid" | "late" | "end", [number, number]> = {
+  mid: [9, 16],
+  late: [19, 27],
+  end: [28, 32],
+};
 export const GAUNTLET_LEN = 5;
 export const HARD_BFS = 80_000;
 
@@ -234,6 +241,83 @@ export function meetsSwitchGate(assess: PuzzleAssess, minRequired: number): bool
 
 export function isStrictHard(assess: PuzzleAssess, opts: Pick<QualityOpts, "minMoves" | "minRequired">): boolean {
   return meetsSwitchGate(assess, opts.minRequired) && assess.solutionLen >= opts.minMoves;
+}
+
+export function sharedBridgeCount(def: LevelDef): number {
+  const hits = new Map<string, number>();
+  for (const sw of def.switches ?? []) {
+    for (const b of sw.bridges) {
+      const k = `${b.x},${b.y}`;
+      hits.set(k, (hits.get(k) ?? 0) + 1);
+    }
+  }
+  return [...hits.values()].filter((n) => n >= 2).length;
+}
+
+export function hasStartingOnBridges(def: LevelDef): boolean {
+  return def.tiles.some((row) => [...row].some((ch) => ch === "k" || ch === "q"));
+}
+
+export function hasOffOrToggle(def: LevelDef): boolean {
+  return (def.switches ?? []).some((sw) => sw.bridges.some((b) => b.mode === "off" || b.mode === "onoff"));
+}
+
+/** Late campaign feel: shared gates, bridges that start ON, or off/toggle modes — not a line of ON pads. */
+export function isLateCampaignShape(def: LevelDef): boolean {
+  const fragile = countObstacles(def.tiles);
+  return (
+    sharedBridgeCount(def) >= 1 ||
+    hasStartingOnBridges(def) ||
+    hasOffOrToggle(def) ||
+    (def.splits ?? []).length > 0 ||
+    fragile >= 12
+  );
+}
+
+export function flipLevel(def: LevelDef, fx: boolean, fy: boolean): LevelDef {
+  const src = def.tiles.map((row) => row.padEnd(W, " ").slice(0, W));
+  const out = Array.from({ length: H }, () => Array.from({ length: W }, () => " "));
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const nx = fx ? W - 1 - x : x;
+      const ny = fy ? H - 1 - y : y;
+      out[ny][nx] = src[y]?.[x] ?? " ";
+    }
+  }
+  const mx = (x: number) => (fx ? W - 1 - x : x);
+  const my = (y: number) => (fy ? H - 1 - y : y);
+  return {
+    ...def,
+    tiles: out.map((row) => row.join("")),
+    spawn: [mx(def.spawn[0]), my(def.spawn[1])],
+    switches: (def.switches ?? []).map((sw) => ({
+      x: mx(sw.x),
+      y: my(sw.y),
+      bridges: sw.bridges.map((b) => ({ ...b, x: mx(b.x), y: my(b.y) })),
+    })),
+    splits: (def.splits ?? []).map((s) => ({
+      x: mx(s.x),
+      y: my(s.y),
+      a: [mx(s.a[0]), my(s.a[1])],
+      b: [mx(s.b[0]), my(s.b[1])],
+    })),
+  };
+}
+
+export function remixCampaign(seed: string, band: "mid" | "late" | "end", difficulty: Difficulty): Puzzle {
+  const [lo, hi] = DONOR[band];
+  const rng = mulberry32(hashSeed(`remix:${seed}:${band}`));
+  const src = LEVELS[lo + Math.floor(rng() * (hi - lo + 1))] ?? LEVELS[29]!;
+  const def = flipLevel(src, rng() < 0.5, rng() < 0.5);
+  const packed = packDef(def.tiles, def.spawn, seed, def.switches, def.splits);
+  const solved = solveLevel(packed, 220_000);
+  return {
+    def: packed,
+    seed,
+    difficulty,
+    solutionLen: solved.ok ? solved.cmds.length : 80,
+    usedObstacles: solved.ok ? usedObstacleCount(packed, solved.cmds) : countObstacles(packed.tiles),
+  };
 }
 
 export function hashSeed(text: string): number {
@@ -1150,37 +1234,11 @@ export function generatePuzzle(seed: string, difficulty: Difficulty): Puzzle {
   };
 }
 
-function pickHardPuzzle(raw: Puzzle | null, opts: QualityOpts, bfs = opts.bfs): Puzzle | null {
-  if (!raw) return null;
-  const p = tightenPuzzle(raw, bfs);
-  const assess = assessPuzzle(p.def, Math.min(bfs, 100_000));
-  if (!meetsSwitchGate(assess, opts.minRequired)) return null;
-  return p;
-}
-
 export function generateDaily(date: Date): Puzzle {
   const seed = dailySeed(date);
-  const rng = mulberry32(hashSeed(`daily-full:${seed}`));
-  let best: Puzzle | null = null;
-  let bestScore = -1;
-  for (let i = 0; i < 8; i++) {
-    const raw =
-      i < 5 ? tryFullBoard(rng, `${seed}:${i}`, "insane") : i < 7 ? tryPacked(rng, `${seed}:p${i}`, "insane") : trySlots(rng, `${seed}:s${i}`, "insane", 5, true);
-    const p = pickHardPuzzle(raw, DAILY_OPTS, 200_000);
-    if (!p) continue;
-    const assess = assessPuzzle(p.def, HARD_BFS);
-    const sc = scorePuzzle(p.solutionLen, p.usedObstacles, DAILY_OPTS, assess.requiredCount, assess.gated);
-    if (sc > bestScore) {
-      best = p;
-      bestScore = sc;
-    }
-    if (isStrictHard(assess, DAILY_OPTS)) return { ...p, seed };
-  }
-  if (best) {
-    const assess = assessPuzzle(best.def, HARD_BFS);
-    if (meetsSwitchGate(assess, DAILY_OPTS.minRequired)) return { ...best, seed };
-  }
-  return { ...forceHardPuzzle(seed, DAILY_OPTS, "insane"), seed };
+  const rng = mulberry32(hashSeed(`daily-late:${seed}`));
+  const remix = remixCampaign(seed, rng() < 0.45 ? "end" : "late", "insane");
+  return { ...remix, seed };
 }
 
 export function generateSeeded(seed: string): Puzzle {
@@ -1190,20 +1248,15 @@ export function generateSeeded(seed: string): Puzzle {
 
 export function generateRun(seed: string, difficulty: Difficulty, count: number): Puzzle[] {
   const n = Math.max(1, Math.min(15, count));
-  const opts = GAUNTLET_QUALITY[difficulty];
+  const band: "mid" | "late" | "end" = difficulty === "easy" ? "mid" : difficulty === "medium" ? "late" : "end";
+  const used = new Set<string>();
   return Array.from({ length: n }, (_, i) => {
-    const tag = `${seed}#${i}`;
-    const rng = mulberry32(hashSeed(`gfull:${difficulty}:${tag}`));
-    const full = pickHardPuzzle(tryFullBoard(rng, tag, difficulty), opts);
-    if (full) return full;
-    const packed = pickHardPuzzle(tryPacked(rng, `${tag}:p`, difficulty), opts);
-    if (packed) return packed;
-    const slots = pickHardPuzzle(trySlots(rng, `${tag}:s`, difficulty, difficulty === "easy" ? 3 : 4, difficulty !== "easy"), opts);
-    if (slots) return slots;
-    const quality = generateQualityPuzzle(tag, opts, difficulty);
-    const assess = assessPuzzle(quality.def, HARD_BFS);
-    if (meetsSwitchGate(assess, opts.minRequired)) return quality;
-    return forceHardPuzzle(tag, opts, difficulty);
+    let p = remixCampaign(`${seed}#${i}`, band, difficulty);
+    for (let guard = 1; used.has(p.def.tiles.join("")) && guard < 10; guard++) {
+      p = remixCampaign(`${seed}#${i}:${guard}`, band, difficulty);
+    }
+    used.add(p.def.tiles.join(""));
+    return p;
   });
 }
 
@@ -1215,7 +1268,8 @@ export function difficultyLabel(d: Difficulty): string {
 
 export function difficultyHint(d: Difficulty): string {
   const q = GAUNTLET_QUALITY[d];
-  return `${q.minRequired}+ required switches · ${q.minMoves}+ moves`;
+  const shape = d === "easy" ? "mid-campaign routing" : d === "medium" ? "shared gates" : "late-campaign traps";
+  return `${q.minMoves}+ moves · ${shape}`;
 }
 
 export function difficultyBand(d: Difficulty): (typeof BAND)[Difficulty] {

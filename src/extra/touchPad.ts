@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { loadSettings } from "./settings";
 
 export type TouchDir = "up" | "down" | "left" | "right";
@@ -29,7 +30,7 @@ export function padDirToCode(dir: TouchDir, rotated: boolean): string {
 }
 
 export function swapPadLabel(playing: boolean): string {
-  return playing ? "SPLIT" : "OK";
+  return playing ? t("touch.split") : t("touch.ok");
 }
 
 const INSTALL_KEY = "bloxorz-install-hint";
@@ -145,7 +146,9 @@ export class TouchChrome {
       const swap = this.pad.querySelector(".tp-swap");
       if (swap) swap.textContent = swapPadLabel(this.playing);
       const menu = this.pad.querySelector(".tp-menu");
-      if (menu) menu.textContent = "PAUSE";
+      if (menu) menu.textContent = t("touch.pause");
+      const rotateBtn = this.pad.querySelector(".tp-rotate");
+      if (rotateBtn) rotateBtn.textContent = t("touch.rotate");
     }
     if (this.landscape) this.landscape.hidden = true;
     if (this.install) {

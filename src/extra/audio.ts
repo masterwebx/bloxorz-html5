@@ -1,4 +1,5 @@
 import { loadSettings } from "./settings";
+import { playThemeSound, themeSoundUrl } from "./themePack";
 
 type SoundInst = {
   volume?: number;
@@ -53,6 +54,16 @@ function audioContext(): { resume?: () => Promise<unknown>; state?: string } | u
 
 function playNow(args: PlayArgs): SoundInst {
   if (!origPlay) return null;
+  const id = typeof args[0] === "string" ? args[0] : "";
+  if (id && themeSoundUrl(id)) {
+    if (isMusicId(id) && !allowMenuMusic) return null;
+    if (isMusicId(id)) stopTrackedMusic();
+    const loop = isMusicId(id);
+    const html = playThemeSound(id, loop);
+    const s = loadSettings();
+    if (html) html.volume = isMusicId(id) ? s.music : s.sfx;
+    return html as SoundInst;
+  }
   if (isMusicId(args[0])) {
     if (!allowMenuMusic) return null;
     stopTrackedMusic();

@@ -29,14 +29,15 @@
 	<script src="bloxorz.js"></script>
 	<script>
 		var canvas, stage, exportRoot, anim_container, dom_overlay_container, fnStartAnimation;
-		var VALID_THEMES = ["original", "gray", "holiday"];
+		var ATLAS_THEMES = ["original", "gray", "holiday"];
+
+		function isAtlasTheme(value) {
+			return ATLAS_THEMES.indexOf(value) !== -1;
+		}
 
 		function normalizeTheme(value) {
-			if (VALID_THEMES.indexOf(value) !== -1) {
-				return value;
-			}
-
-			return "original";
+			if (!value) return "original";
+			return value;
 		}
 
 		function getThemeFromUrl() {
@@ -65,7 +66,7 @@
 			var themeFromUrl = getThemeFromUrl();
 			var storedTheme = getStoredTheme();
 
-			if (!hasThemeInUrl && storedTheme !== "original") {
+			if (!hasThemeInUrl && isAtlasTheme(storedTheme) && storedTheme !== "original") {
 				window.location.replace(buildThemeUrl(storedTheme));
 				return;
 			}
@@ -165,8 +166,9 @@
 					dom_overlay_container.style.width = wpx;
 					canvas.style.height = hpx;
 					dom_overlay_container.style.height = hpx;
-					canvas.style.imageRendering = "pixelated";
-					canvas.style.imageRendering = "crisp-edges";
+					var hd = document.body.classList.contains("is-hd");
+					canvas.style.imageRendering = hd ? "auto" : "pixelated";
+					if (!hd) canvas.style.imageRendering = "crisp-edges";
 					stage.scaleX = pRatio * sRatio;
 					stage.scaleY = pRatio * sRatio;
 					stage.tickOnUpdate = false;
@@ -174,7 +176,7 @@
 					stage.tickOnUpdate = true;
 					var ctx = canvas.getContext("2d");
 					if (ctx) {
-						ctx.imageSmoothingEnabled = false;
+						ctx.imageSmoothingEnabled = hd;
 					}
 				}
 			}
@@ -239,10 +241,24 @@
 	<div id="app-shell">
 	<div id="screen-split">
 		<div id="animation_container">
+			<div id="theme-media" hidden>
+				<img id="theme-media-img" alt="" />
+				<video id="theme-media-video" autoplay loop muted playsinline></video>
+			</div>
 			<canvas id="canvas"></canvas>
 			<div id="dom_overlay_container">
 				<div id="build-version"></div>
 				<input id="hud-input" type="text" maxlength="10" autocomplete="off" spellcheck="false" hidden>
+				<select id="hud-theme-select" hidden aria-label="Theme"></select>
+				<select id="hud-locale-select" hidden aria-label="Language"></select>
+				<button type="button" id="hud-theme-upload-btn" hidden>Upload theme</button>
+				<input id="hud-theme-upload" type="file" accept=".zip,application/zip" hidden>
+				<div id="play-chrome" hidden>
+					<button type="button" id="play-menu">Menu</button>
+					<div id="play-pass"><span id="play-pass-lab">Passcode</span> <b id="play-pass-val"></b></div>
+					<div id="play-moves"><span id="play-moves-lab">Moves</span> <b id="play-moves-val"></b></div>
+					<p id="play-help" hidden></p>
+				</div>
 				<div id="hud-modal">
 					<div class="hud-modal-card">
 						<p id="hud-modal-title">Enter code</p>

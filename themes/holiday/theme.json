@@ -1,0 +1,23 @@
+{
+  "id": "holiday",
+  "name": "Holiday",
+  "atlas": "/images/bloxorz_atlas_holiday.png",
+  "atlasScale": 1,
+  "hd": false,
+  "render": "atlas",
+  "paint": {
+    "ink": "#ffe8ef",
+    "hot": "#ffffff",
+    "muted": "rgba(255,190,200,0.5)",
+    "green": "#9dffb8",
+    "field": "#1a0c12",
+    "stroke": "#d64545",
+    "track": "#2a1018",
+    "fill": "#d64545",
+    "billboardCore": "#fff0f3",
+    "billboardGlow": "rgba(255,80,100,0.35)",
+    "shadow": "rgba(255,80,100,0.9)"
+  },
+  "background": { "type": "sky" },
+  "audio": {}
+}

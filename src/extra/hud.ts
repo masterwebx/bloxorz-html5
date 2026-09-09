@@ -6,10 +6,12 @@ import {
   type ClipName,
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
-import { difficultyHint } from "./generate";
+import { GAUNTLET_QUALITY } from "./generate";
 import { DEFAULT_ISO, TILE_FACE, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
 import { rustFaces } from "./hue";
-import { currentTheme, type ThemeId } from "./settings";
+import { t } from "./i18n";
+import { currentTheme } from "./settings";
+import { themePaint } from "./themePack";
 import { wantsVirtualPad } from "./touchPad";
 
 declare const createjs: {
@@ -89,50 +91,8 @@ type ThemePaint = {
   shadow: string;
 };
 
-const THEME_PAINT: Record<ThemeId, ThemePaint> = {
-  original: {
-    ink: "#ffe6c4",
-    hot: "#ffffff",
-    muted: "rgba(255,210,160,0.45)",
-    green: "#9dffb0",
-    field: "#1a120c",
-    stroke: "#c45a18",
-    track: "#2a1810",
-    fill: "#c45a18",
-    billboardCore: "#fff4dc",
-    billboardGlow: "rgba(255,140,30,0.35)",
-    shadow: "rgba(255,150,40,0.95)",
-  },
-  gray: {
-    ink: "#e8eef5",
-    hot: "#ffffff",
-    muted: "rgba(200,210,220,0.5)",
-    green: "#9fd6ff",
-    field: "#14181e",
-    stroke: "#7a8899",
-    track: "#1c222b",
-    fill: "#8aa0b8",
-    billboardCore: "#f2f6fa",
-    billboardGlow: "rgba(160,190,220,0.35)",
-    shadow: "rgba(180,200,220,0.9)",
-  },
-  holiday: {
-    ink: "#ffe8ef",
-    hot: "#ffffff",
-    muted: "rgba(255,190,200,0.5)",
-    green: "#9dffb8",
-    field: "#1a0c12",
-    stroke: "#d64545",
-    track: "#2a1018",
-    fill: "#d64545",
-    billboardCore: "#fff0f3",
-    billboardGlow: "rgba(255,80,100,0.35)",
-    shadow: "rgba(255,80,100,0.9)",
-  },
-};
-
 function paint(): ThemePaint {
-  return THEME_PAINT[currentTheme()] || THEME_PAINT.original;
+  return themePaint(currentTheme());
 }
 
 const FONT = "Orbitron, sans-serif";
@@ -435,52 +395,52 @@ export class ExtraHud {
       this.onAction("splash-continue");
     });
     this.add(hit);
-    this.add(text("All graphics, audio, ActionScript and puzzles", 275, 108, 13, theme.ink, "center"));
-    this.add(text("in Bloxorz created by Damien Clarke,", 275, 132, 13, theme.ink, "center"));
-    this.add(text("DX Interactive, 21st June 2007.", 275, 156, 13, theme.ink, "center"));
-    this.add(text("Click or press any key", 275, 214, 12, theme.muted, "center"));
+    this.add(text(t("splash.line1"), 275, 108, 13, theme.ink, "center"));
+    this.add(text(t("splash.line2"), 275, 132, 13, theme.ink, "center"));
+    this.add(text(t("splash.line3"), 275, 156, 13, theme.ink, "center"));
+    this.add(text(t("splash.prompt"), 275, 214, 12, theme.muted, "center"));
   }
 
   drawName(): void {
     this.clear();
     this.hideMascot();
-    this.add(text("What should we call you?", 40, 70, 18));
+    this.add(text(t("name.title"), 40, 70, 18));
     this.add(fieldBox(40, 128, 240));
-    this.add(this.act("name-continue", "Continue", 40, 168, 13, false, 120));
-    this.add(this.act("skip-name", "Stay anonymous", 160, 168, 13, false, 160));
+    this.add(this.act("name-continue", t("name.continue"), 40, 168, 13, false, 120));
+    this.add(this.act("skip-name", t("name.skip"), 160, 168, 13, false, 160));
   }
 
   drawCredits(): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
-    this.add(text("Credits", 275, 28, 20, theme.ink, "center"));
-    this.add(text("Bloxorz — Damien Clarke / DX Interactive, 21 June 2007.", 40, 72, 11, theme.muted));
-    this.add(text("Playfield: Coolmath Adobe Animate / CreateJS export.", 40, 94, 11, theme.muted));
-    this.add(text("Timer, themes & desktop shell — Nathan Spencer.", 40, 116, 11, theme.muted));
-    this.add(text("Bloxorz+ — Stage Creator, puzzles, history, ghosts.", 40, 138, 11, theme.muted));
+    this.add(this.act("back", t("common.back"), 24, 16, 12, false, 80));
+    this.add(text(t("credits.title"), 275, 28, 20, theme.ink, "center"));
+    this.add(text(t("credits.damien"), 40, 72, 11, theme.muted));
+    this.add(text(t("credits.coolmath"), 40, 94, 11, theme.muted));
+    this.add(text(t("credits.spencer"), 40, 116, 11, theme.muted));
+    this.add(text(t("credits.plus"), 40, 138, 11, theme.muted));
   }
 
   drawLoadPasscode(error: string): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
-    this.add(text("Load Stage", 275, 28, 20, theme.ink, "center"));
-    this.add(text("Campaign passcode, six digits.", 40, 80, 11, theme.muted));
+    this.add(this.act("back", t("common.back"), 24, 16, 12, false, 80));
+    this.add(text(t("load.title"), 275, 28, 20, theme.ink, "center"));
+    this.add(text(t("load.hint"), 40, 80, 11, theme.muted));
     this.add(fieldBox(40, 114, 160));
     if (error) this.add(text(error, 40, 150, 11, "#ff8a8a"));
-    this.add(this.act("load-go", "Load", 40, 180, 13, false, 80));
+    this.add(this.act("load-go", t("common.load"), 40, 180, 13, false, 80));
   }
 
   drawLoadStages(): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
-    this.add(text("Load Stage", 275, 28, 20, theme.ink, "center"));
-    this.add(text("Jump to a campaign stage.", 40, 54, 11, theme.muted));
+    this.add(this.act("back", t("common.back"), 24, 16, 12, false, 80));
+    this.add(text(t("load.title"), 275, 28, 20, theme.ink, "center"));
+    this.add(text(t("load.jump"), 40, 54, 11, theme.muted));
     for (let i = 1; i <= 33; i++) {
       const col = (i - 1) % 11;
       const row = Math.floor((i - 1) / 11);
@@ -493,12 +453,12 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(text("On-screen controls", 275, 36, 20, theme.ink, "center"));
-    this.add(text("This looks like a phone. Overlay a D-pad on the", 275, 80, 12, theme.muted, "center"));
-    this.add(text("stage for move, confirm, and split?", 275, 100, 12, theme.muted, "center"));
-    this.add(this.act("mobile-pad-on", "Enable", 40, 150, 16, false, 160));
-    this.add(this.act("mobile-pad-off", "Not now", 230, 150, 16, false, 160));
-    this.add(text("You can change this later in Settings.", 275, 220, 11, theme.muted, "center"));
+    this.add(text(t("mobile.title"), 275, 36, 20, theme.ink, "center"));
+    this.add(text(t("mobile.body1"), 275, 80, 12, theme.muted, "center"));
+    this.add(text(t("mobile.body2"), 275, 100, 12, theme.muted, "center"));
+    this.add(this.act("mobile-pad-on", t("mobile.enable"), 40, 150, 16, false, 160));
+    this.add(this.act("mobile-pad-off", t("mobile.later"), 230, 150, 16, false, 160));
+    this.add(text(t("mobile.footer"), 275, 220, 11, theme.muted, "center"));
   }
 
   drawSettings(opts: {
@@ -510,6 +470,7 @@ export class ExtraHud {
     music: number;
     sfx: number;
     theme: string;
+    locale: string;
     bgTint: number;
     bgHue: number;
     blockHue: number;
@@ -517,48 +478,48 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("back", "Back", 24, 8, 12, false, 80));
-    this.add(text("Settings", 275, 8, 16, theme.ink, "center"));
-    this.add(text("Name", 40, 34, 12));
-    this.add(fieldBox(100, 32, 220));
-    this.add(text("Music", 40, 62, 12, this.focusId === "music" ? theme.hot : theme.ink));
-    this.add(slider(100, 62, 140, opts.music, (v) => this.onAction("music:" + v.toFixed(2))));
-    this.add(text(Math.round(opts.music * 100) + "%", 300, 62, 11, theme.muted));
-    this.add(text("SFX", 40, 84, 12, this.focusId === "sfx" ? theme.hot : theme.ink));
-    this.add(slider(100, 84, 140, opts.sfx, (v) => this.onAction("sfx:" + v.toFixed(2))));
-    this.add(text(Math.round(opts.sfx * 100) + "%", 300, 84, 11, theme.muted));
-    this.add(this.act("toggle-rumble", opts.rumble ? "> Rumble  On" : "  Rumble  Off", 40, 106, 12, false, 150));
-    this.add(this.act("toggle-mobile-pad", opts.mobilePad ? "> Mobile pad  On" : "  Mobile pad  Off", 250, 106, 12, false, 180));
-    this.add(this.act("toggle-timer", opts.showTimer ? "> Speedrun timer  On" : "  Speedrun timer  Off", 40, 126, 12, false, 240));
+    const onOff = (on: boolean) => (on ? t("common.on") : t("common.off"));
+    this.add(this.act("back", t("common.back"), 24, 6, 12, false, 80));
+    this.add(text(t("settings.title"), 275, 6, 16, theme.ink, "center"));
+    this.add(text(t("settings.name"), 40, 28, 12));
+    this.add(fieldBox(100, 26, 220));
+    this.add(text(t("settings.music"), 40, 50, 12, this.focusId === "music" ? theme.hot : theme.ink));
+    this.add(slider(100, 50, 140, opts.music, (v) => this.onAction("music:" + v.toFixed(2))));
+    this.add(text(Math.round(opts.music * 100) + "%", 300, 50, 11, theme.muted));
+    this.add(text(t("settings.sfx"), 40, 70, 12, this.focusId === "sfx" ? theme.hot : theme.ink));
+    this.add(slider(100, 70, 140, opts.sfx, (v) => this.onAction("sfx:" + v.toFixed(2))));
+    this.add(text(Math.round(opts.sfx * 100) + "%", 300, 70, 11, theme.muted));
+    this.add(this.act("toggle-rumble", `${this.focusId === "toggle-rumble" ? "> " : "  "}${t("settings.rumble")}  ${onOff(opts.rumble)}`, 40, 90, 12, false, 150));
+    this.add(this.act("toggle-mobile-pad", `${this.focusId === "toggle-mobile-pad" ? "> " : "  "}${t("settings.pad")}  ${onOff(opts.mobilePad)}`, 250, 90, 12, false, 180));
+    this.add(this.act("toggle-timer", `${this.focusId === "toggle-timer" ? "> " : "  "}${t("settings.timer")}  ${onOff(opts.showTimer)}`, 40, 110, 12, false, 240));
     if (opts.mobilePad) {
-      this.add(this.act("toggle-rotate", opts.rotateScreen ? "> Rotate screen  On" : "  Rotate screen  Off", 300, 126, 12, false, 220));
+      this.add(this.act("toggle-rotate", `${this.focusId === "toggle-rotate" ? "> " : "  "}${t("settings.rotate")}  ${onOff(opts.rotateScreen)}`, 300, 110, 12, false, 220));
     }
-    this.add(text("Theme", 40, 146, 12));
-    (["original", "gray", "holiday"] as const).forEach((th, i) => {
-      const mark = opts.theme === th ? "> " : "  ";
-      this.add(this.act("theme:" + th, mark + th, 110 + i * 110, 146, 12, false, 100));
-    });
-    this.add(this.act("toggle-theme-bg", opts.themeBg ? "> Theme background  On" : "  Theme background  Off", 40, 166, 12, false, 260));
-    this.add(text("Backdrop tint", 40, 188, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
-    this.add(slider(160, 188, 120, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
-    this.add(swatch(300, 190, opts.bgHue, opts.bgTint));
-    this.add(text("Backdrop hue", 40, 210, 12, this.focusId === "bghue" ? theme.hot : theme.ink));
-    this.add(slider(160, 210, 120, opts.bgHue / 360, (v) => this.onAction("bghue:" + Math.round(v * 360))));
-    this.add(text(String(Math.round(opts.bgHue)), 300, 210, 11, theme.muted));
-    this.add(text("Block hue", 40, 232, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
-    this.add(slider(160, 232, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
-    this.add(swatch(300, 234, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
-    this.placePreview(392, 188);
-    this.add(this.act("remap", "Remap controls", 40, 256, 12, false, 180));
+    this.add(text(t("settings.theme"), 40, 132, 12, this.focusId === "theme-cycle" ? theme.hot : theme.ink));
+    this.add(text(opts.theme, 118, 132, 11, theme.muted));
+    this.add(text(t("settings.language"), 40, 156, 12, this.focusId === "locale-cycle" ? theme.hot : theme.ink));
+    this.add(text(opts.locale, 118, 156, 11, theme.muted));
+    this.add(this.act("toggle-theme-bg", `${this.focusId === "toggle-theme-bg" ? "> " : "  "}${t("settings.themeBg")}  ${onOff(opts.themeBg)}`, 40, 180, 12, false, 280));
+    this.add(text(t("settings.tint"), 40, 202, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
+    this.add(slider(160, 202, 120, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
+    this.add(swatch(300, 204, opts.bgHue, opts.bgTint));
+    this.add(text(t("settings.hue"), 40, 222, 12, this.focusId === "bghue" ? theme.hot : theme.ink));
+    this.add(slider(160, 222, 120, opts.bgHue / 360, (v) => this.onAction("bghue:" + Math.round(v * 360))));
+    this.add(text(String(Math.round(opts.bgHue)), 300, 222, 11, theme.muted));
+    this.add(text(t("settings.blockHue"), 40, 242, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
+    this.add(slider(160, 242, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
+    this.add(swatch(300, 244, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
+    this.placePreview(392, 198);
+    this.add(this.act("remap", t("settings.remap"), 40, 264, 12, false, 180));
   }
 
   drawRemap(rows: { id: string; label: string; bind: string }[], waiting: string | null): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("settings", "Back", 24, 12, 12, false, 80));
-    this.add(text("Remap controls", 275, 12, 18, theme.ink, "center"));
-    this.add(text(waiting ? "Press a key or pad button for " + waiting + "…" : "Click a row, then press a key or pad button.", 40, 40, 11, theme.muted));
+    this.add(this.act("settings", t("common.back"), 24, 12, 12, false, 80));
+    this.add(text(t("remap.title"), 275, 12, 18, theme.ink, "center"));
+    this.add(text(waiting ? t("remap.wait") : t("remap.hint"), 40, 40, 11, theme.muted));
     rows.forEach((row, i) => {
       const y = 68 + i * 22;
       const mark = waiting === row.id ? "> " : "  ";
@@ -577,13 +538,13 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(text("Congratulations", 275, 28, 20, theme.ink, "center"));
-    this.add(text("You cleared the run.", 275, 56, 12, theme.muted, "center"));
-    this.add(text("Moves  " + opts.moves + "    Falls  " + opts.falls + "    Attempts  " + opts.fails, 275, 82, 12, theme.ink, "center"));
-    this.add(this.act("toggle-stats", opts.showStats ? "> Hide Stats" : "  Show Stats", 40, 104, 12, false, 160));
-    this.add(this.act("back", "Menu", 230, 104, 12, false, 90));
+    this.add(text(t("finish.title"), 275, 28, 20, theme.ink, "center"));
+    this.add(text(t("finish.cleared"), 275, 56, 12, theme.muted, "center"));
+    this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 82, 12, theme.ink, "center"));
+    this.add(this.act("toggle-stats", opts.showStats ? t("finish.hide") : t("finish.show"), 40, 104, 12, false, 160));
+    this.add(this.act("back", t("common.menu"), 230, 104, 12, false, 90));
     if (opts.showStats) {
-      if (!opts.rows.length) this.add(text("No per-stage times recorded.", 40, 140, 11, theme.muted));
+      if (!opts.rows.length) this.add(text(t("finish.none"), 40, 140, 11, theme.muted));
       opts.rows.slice(0, 6).forEach((row, i) => {
         this.add(text(row.title, 40, 136 + i * 22, 11));
         this.add(text(row.meta, 320, 136 + i * 22, 11, theme.muted));
@@ -595,48 +556,50 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("back", "Back", 24, 12, 12, false, 80));
-    this.add(text("Puzzles", 275, 12, 18, theme.ink, "center"));
+    this.add(this.act("back", t("common.back"), 24, 12, 12, false, 80));
+    this.add(text(t("puzzles.title"), 275, 12, 18, theme.ink, "center"));
     const card = new createjs.Shape();
     card.graphics.beginFill("rgba(255,120,30,0.16)").beginStroke("#c45a18").setStrokeStyle(1).drawRect(24, 44, 502, 148);
     card.mouseEnabled = false;
     this.add(card);
-    this.add(text("DAILY PUZZLE", 40, 56, 22, theme.ink));
+    this.add(text(t("puzzles.daily"), 40, 56, 22, theme.ink));
     this.add(text(date, 40, 86, 14, theme.muted));
-    this.add(text("Same gated stage for everyone today. The switches are the route.", 40, 110, 12, theme.muted));
-    this.add(this.act("puzzle-daily", "Play Daily", 40, 142, 16, false, 200));
-    this.add(this.act("puzzles-seeded", "Seeded", 40, 208, 14, false, 140));
-    this.add(this.act("puzzles-gauntlet", "Gauntlet", 200, 208, 14, false, 140));
-    this.add(text("Share a seed, or run five stages.", 40, 248, 11, theme.muted));
+    this.add(text(t("puzzles.dailyHint"), 40, 110, 12, theme.muted));
+    this.add(this.act("puzzle-daily", t("puzzles.playDaily"), 40, 142, 16, false, 200));
+    this.add(this.act("puzzles-seeded", t("puzzles.seeded"), 40, 208, 14, false, 140));
+    this.add(this.act("puzzles-gauntlet", t("puzzles.gauntlet"), 200, 208, 14, false, 140));
+    this.add(text(t("puzzles.share"), 40, 248, 11, theme.muted));
   }
 
   drawSeeded(): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("puzzles", "Back", 24, 16, 12, false, 80));
-    this.add(text("Seeded Run", 275, 28, 20, theme.ink, "center"));
-    this.add(text("Play this seed, or type another.", 40, 80, 12, theme.muted));
+    this.add(this.act("puzzles", t("common.back"), 24, 16, 12, false, 80));
+    this.add(text(t("seeded.title"), 275, 28, 20, theme.ink, "center"));
+    this.add(text(t("seeded.hint"), 40, 80, 12, theme.muted));
     this.add(fieldBox(40, 112, 280));
-    this.add(this.act("puzzle-seed-go", "Play", 40, 154, 14, false, 100));
-    this.add(text("Same seed, same map. If a switch is on the board, you need it.", 40, 200, 11, theme.muted));
+    this.add(this.act("puzzle-seed-go", t("common.play"), 40, 154, 14, false, 100));
+    this.add(text(t("seeded.same"), 40, 200, 11, theme.muted));
   }
 
   drawGauntlet(diff: string): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("puzzles", "Back", 24, 16, 12, false, 80));
-    this.add(text("Gauntlet", 275, 28, 20, theme.ink, "center"));
+    this.add(this.act("puzzles", t("common.back"), 24, 16, 12, false, 80));
+    this.add(text(t("gauntlet.title"), 275, 28, 20, theme.ink, "center"));
     (["easy", "medium", "hard", "insane"] as const).forEach((d, i) => {
       const mark = d === diff ? "> " : "  ";
-      this.add(this.act("diff:" + d, mark + d, 40 + i * 120, 78, 13, false, 100));
+      this.add(this.act("diff:" + d, mark + t("diff." + d), 40 + i * 120, 78, 13, false, 100));
     });
-    this.add(text(difficultyHint(diff as "easy" | "medium" | "hard" | "insane"), 40, 110, 11, theme.muted));
-    this.add(text("Seed — share this with friends.", 40, 138, 12, theme.muted));
+    const band = diff === "easy" || diff === "medium" || diff === "hard" || diff === "insane" ? diff : "easy";
+    const era = band === "easy" ? t("hint.era.mid") : band === "medium" ? t("hint.era.late") : t("hint.era.end");
+    this.add(text(t("hint.campaign", { n: GAUNTLET_QUALITY[band].minMoves, era }), 40, 110, 11, theme.muted));
+    this.add(text(t("gauntlet.seed"), 40, 138, 12, theme.muted));
     this.add(fieldBox(40, 160, 280));
-    this.add(this.act("gauntlet-go", "Play Gauntlet", 40, 200, 14, false, 180));
-    this.add(text("Five stages. Same seed, same gauntlet.", 40, 236, 11, theme.muted));
+    this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 200, 14, false, 180));
+    this.add(text(t("gauntlet.five"), 40, 236, 11, theme.muted));
   }
 
   drawTitleCard(title: string, subtitle = ""): void {
@@ -667,19 +630,19 @@ export class ExtraHud {
     const scroll = opts.scroll ?? 0;
     const pageSize = opts.pageSize ?? 5;
     const total = opts.total ?? opts.rows.length;
-    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
-    this.add(text("History", 275, 16, 18, theme.ink, "center"));
-    this.add(this.act("toggle-ghosts", opts.seeGhosts ? "> See ghosts   On" : "  See ghosts   Off", 40, 48, 14, false, 280));
+    this.add(this.act("back", t("common.back"), 24, 16, 12, false, 80));
+    this.add(text(t("history.title"), 275, 16, 18, theme.ink, "center"));
+    this.add(this.act("toggle-ghosts", `${opts.seeGhosts ? "> " : "  "}${t("history.ghosts")}   ${opts.seeGhosts ? t("common.on") : t("common.off")}`, 40, 48, 14, false, 280));
     if (!opts.rows.length) {
-      this.add(text("No finished stages yet. Clear a campaign, custom,", 40, 96, 12, theme.muted));
-      this.add(text("or puzzle stage to record it here.", 40, 114, 12, theme.muted));
+      this.add(text(t("history.empty"), 40, 96, 12, theme.muted));
+      this.add(text(t("history.emptyLine2"), 40, 114, 12, theme.muted));
       return;
     }
     opts.rows.slice(0, pageSize).forEach((row, i) => {
       const y = 86 + i * 38;
       this.add(text(row.title, 40, y, 11));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      if (row.replay) this.add(this.act("replay:" + (scroll + i), "Replay", 420, y, 11, false, 80));
+      if (row.replay) this.add(this.act("replay:" + (scroll + i), t("history.replay"), 420, y, 11, false, 80));
     });
     if (total > pageSize) {
       const trackH = 186;
@@ -718,7 +681,7 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act(opts.backId, "Back", 24, 16, 12, false, 80));
+    this.add(this.act(opts.backId, t("common.back"), 24, 16, 12, false, 80));
     this.add(text(opts.title, 275, 18, 18, theme.ink, "center"));
     if (!opts.rows.length) {
       this.add(text(opts.empty, 40, 80, 12, theme.muted));
@@ -728,7 +691,7 @@ export class ExtraHud {
       const y = 48 + i * 38;
       this.add(this.act(row.openId, row.title || "Untitled", 40, y, 13, false, 300));
       this.add(text(row.meta, 40, y + 18, 10, theme.muted));
-      if (row.deleteId) this.add(this.act(row.deleteId, "Delete", 420, y, 13, false, 96));
+      if (row.deleteId) this.add(this.act(row.deleteId, t("creator.delete"), 420, y, 13, false, 96));
     });
     if (opts.total > opts.pageSize) {
       const trackH = 210;
@@ -761,11 +724,11 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("creator-make", "Back", 10, 6, 12, false, 56));
-    this.add(text("Name", 72, 8, 12));
+    this.add(this.act("creator-make", t("common.back"), 10, 6, 12, false, 56));
+    this.add(text(t("settings.name"), 72, 8, 12));
     this.add(fieldBox(118, 6, 200));
     this.add(text(opts.badge, 330, 8, 11, theme.green));
-    this.add(this.act("creator-test", "Test", 490, 6, 12, false, 50));
+    this.add(this.act("creator-test", t("creator.test"), 490, 6, 12, false, 50));
 
     this.board = new createjs.Container();
     this.refreshCreatorBoard(opts);
@@ -799,19 +762,19 @@ export class ExtraHud {
       const mark = opts.tool === tool.id ? "> " : "  ";
       const icon = this.toolClip(tool.id, x, y);
       if (icon) this.add(icon);
-      const label = tool.label.replace(" Switch", "");
+      const label = t("editor." + tool.id);
       this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, 11, false, col === 0 ? 104 : 88));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, 236, 10, theme.muted));
-    this.add(text("Pad: move cursor · hold Confirm to paint · LB/RB tools · Start test", 10, 250, 9, theme.muted));
-    this.add(this.act("creator-new", "New", 10, 266, 11, false, 40));
-    this.add(this.act("creator-clear", "Clear", 56, 266, 11, false, 48));
-    this.add(this.act("creator-undo", "Undo", 112, 266, 11, !opts.canUndo, 44));
-    this.add(this.act("creator-redo", "Redo", 164, 266, 11, !opts.canRedo, 44));
-    this.add(this.act("creator-save", "Save", 216, 266, 11, !opts.canSave, 44));
-    this.add(this.act("creator-copy", "Copy Seed", 268, 266, 11, false, 88));
-    this.add(this.act("creator-load", "Enter Code", 364, 266, 11, false, 96));
+    this.add(text(t("creator.padHint"), 10, 250, 9, theme.muted));
+    this.add(this.act("creator-new", t("creator.new"), 10, 266, 11, false, 40));
+    this.add(this.act("creator-clear", t("creator.clear"), 56, 266, 11, false, 48));
+    this.add(this.act("creator-undo", t("creator.undo"), 112, 266, 11, !opts.canUndo, 44));
+    this.add(this.act("creator-redo", t("creator.redo"), 164, 266, 11, !opts.canRedo, 44));
+    this.add(this.act("creator-save", t("common.save"), 216, 266, 11, !opts.canSave, 44));
+    this.add(this.act("creator-copy", t("creator.copy"), 268, 266, 11, false, 88));
+    this.add(this.act("creator-load", t("creator.code"), 364, 266, 11, false, 96));
   }
 
   refreshCreatorBoard(opts: {

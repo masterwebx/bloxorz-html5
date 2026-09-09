@@ -1,0 +1,23 @@
+{
+  "id": "solid3d",
+  "name": "Solid 3D",
+  "atlas": "/images/bloxorz_atlas_original.png",
+  "atlasScale": 1,
+  "hd": true,
+  "render": "solid3d",
+  "paint": {
+    "ink": "#e8f4ff",
+    "hot": "#ffffff",
+    "muted": "rgba(160,200,230,0.5)",
+    "green": "#7dffc4",
+    "field": "#10161c",
+    "stroke": "#3d8ec9",
+    "track": "#152028",
+    "fill": "#3d8ec9",
+    "billboardCore": "#f2fbff",
+    "billboardGlow": "rgba(70,170,230,0.4)",
+    "shadow": "rgba(40,140,210,0.9)"
+  },
+  "background": { "type": "sky" },
+  "audio": {}
+}

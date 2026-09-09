@@ -2,15 +2,28 @@
 
 <img width="1133" height="765" alt="Bloxorz+" src="https://github.com/user-attachments/assets/9ab02db6-e01f-4428-ae38-9eff7f474d19" />
 
-The orange block still clonks. The hole is still one tile too far. Then it gets meaner.
-
-This is Coolmath’s HTML5 Bloxorz — Damien Clarke’s puzzle, still rolling in their CreateJS export — with the stuff the Flash days never shipped. A stage painter. A daily that actually makes you use the switches. Ghosts of old lines sliding across the tiles. A speedrun clock that sits on the playfield instead of shoving it aside.
+Coolmath’s HTML5 Bloxorz — Damien Clarke’s puzzle, still rolling in their CreateJS export — plus a painter, a daily that remixes the late campaign, ghosts, live themes, and a speedrun clock that sits on the 550×300 stage.
 
 **[Play it](https://masterwebx.github.io/bloxorz-plus/)**
 
-Today’s daily is the same map for everyone. If a switch is on the board, the hole is on the other side of it. Gauntlet does the same thing five times, louder. Paint your own: drop a pad, drag a line of bridges, send the split cubes where you want them. Clear a floor and it lands in History; turn ghosts on and yesterday’s route plays beside you. Themes swap live. The timer, when you want it, is a thin column on the right of the 550×300 stage.
+## Features
 
-We did not rebuild the roll. We built around it.
+- **Classic** — all 33 official rooms, passcodes, and the original roll.
+- **Daily** — one late-campaign remix for everyone that UTC day (shared bridges, bridges that start on, traps).
+- **Gauntlet** — five remixed floors from mid, late, or end-campaign geometry.
+- **Paint** — drop a pad, drag bridges, send split cubes where you want them.
+- **History** — cleared floors land here; replay the tape.
+- **Ghosts** — yesterday’s route plays beside you when the toggle is on.
+- **Themes** — drop a folder in `themes/` or upload a zip. Original, Gray, Holiday, and Solid 3D ship in-repo. Custom music and SFX fall back to Original. GIF and video backgrounds are supported. HD atlases use smooth filtering.
+- **Languages** — drop a JSON file in `translations/`. English (Classic) is the default for English browsers; other recognized languages switch automatically.
+- **Timer** — optional thin column on the right of the stage.
+
+<!-- screenshots
+<img alt="Daily" src="docs/daily.png" />
+<img alt="Gauntlet" src="docs/gauntlet.png" />
+<img alt="Paint" src="docs/paint.png" />
+<img alt="Themes" src="docs/themes.png" />
+-->
 
 A fork of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate). Spencer’s Tauri shell, timer, and themes are why this playfield was here to decorate.
 
@@ -19,7 +32,12 @@ npm install
 npm run dev
 ```
 
-Browser on port **4398**. `npm test` for the extras. `npm run tauri dev` if you want the desktop wrap. Menu version is **v1.1.1**.
+Browser on port **4398**. `npm test` for the extras. `npm run tauri dev` if you want the desktop wrap. Menu version is **v1.2.0**.
+
+Drop-in packs:
+
+- `themes/<id>/theme.json` — see `themes/_template/`
+- `translations/<id>.json` — copy `translations/en.json` and translate
 
 ## Credits
 

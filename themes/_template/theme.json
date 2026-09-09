@@ -1,0 +1,25 @@
+{
+  "id": "my-theme",
+  "name": "My Theme",
+  "atlas": "atlas.png",
+  "atlasScale": 1,
+  "hd": false,
+  "render": "atlas",
+  "paint": {
+    "ink": "#ffe6c4",
+    "hot": "#ffffff",
+    "muted": "rgba(255,210,160,0.45)",
+    "green": "#9dffb0",
+    "field": "#1a120c",
+    "stroke": "#c45a18",
+    "track": "#2a1810",
+    "fill": "#c45a18",
+    "billboardCore": "#fff4dc",
+    "billboardGlow": "rgba(255,140,30,0.35)",
+    "shadow": "rgba(255,150,40,0.95)"
+  },
+  "background": {
+    "type": "sky"
+  },
+  "audio": {}
+}
