@@ -11,12 +11,28 @@ export interface Puzzle {
   solutionLen: number;
 }
 
-const BAND: Record<Difficulty, { min: number; max: number; tiles: [number, number] }> = {
-  easy: { min: 5, max: 12, tiles: [18, 28] },
-  medium: { min: 12, max: 22, tiles: [26, 40] },
-  hard: { min: 18, max: 34, tiles: [32, 52] },
-  insane: { min: 22, max: 56, tiles: [36, 64] },
+const BAND: Record<Difficulty, { min: number; max: number; tiles: [number, number]; obstacles: [number, number] }> = {
+  easy: { min: 5, max: 12, tiles: [18, 28], obstacles: [0, 2] },
+  medium: { min: 12, max: 22, tiles: [26, 40], obstacles: [2, 8] },
+  hard: { min: 18, max: 34, tiles: [32, 52], obstacles: [2, 12] },
+  insane: { min: 22, max: 56, tiles: [36, 64], obstacles: [1, 16] },
 };
+
+export function countObstacles(tiles: string[]): number {
+  let n = 0;
+  for (const row of tiles) {
+    for (const ch of row) {
+      if ("shfvlkrq".includes(ch)) n++;
+    }
+  }
+  return n;
+}
+
+function inObstacleBand(tiles: string[], difficulty: Difficulty): boolean {
+  const n = countObstacles(tiles);
+  const [lo, hi] = BAND[difficulty].obstacles;
+  return n >= lo && n <= hi;
+}
 
 export function hashSeed(text: string): number {
   let h = 2166136261;
@@ -148,7 +164,9 @@ function tryPlain(rng: () => number, seed: string, difficulty: Difficulty, wantF
     }
   }
   grid[end[1]][end[0]] = "e";
-  const def = packDef(toTiles(grid), spawn, seed);
+  const tiles = toTiles(grid);
+  if (!inObstacleBand(tiles, difficulty)) return null;
+  const def = packDef(tiles, spawn, seed);
   const len = shortestLen(def, 80_000);
   if (len < band.min || len > band.max) return null;
   return { def, seed, difficulty, solutionLen: len };
@@ -193,7 +211,9 @@ function tryBridges(rng: () => number, seed: string, difficulty: Difficulty): Pu
   }
   grid[end[1]][end[0]] = "e";
   const switches: SwitchDef[] = [{ x: sw[0], y: sw[1], bridges: [{ x: bx, y: by, mode: "onoff" }] }];
-  const def = packDef(toTiles(grid), spawn, seed, switches);
+  const tiles = toTiles(grid);
+  if (!inObstacleBand(tiles, difficulty)) return null;
+  const def = packDef(tiles, spawn, seed, switches);
   const len = shortestLen(def, 120_000);
   const band = BAND[difficulty];
   if (len < Math.max(10, band.min - 4) || len > band.max + 8) return null;
@@ -239,7 +259,9 @@ function trySplit(rng: () => number, seed: string, difficulty: Difficulty): Puzz
   grid[pad[1]][pad[0]] = "v";
   grid[end[1]][end[0]] = "e";
   const splits: SplitDef[] = [{ x: pad[0], y: pad[1], a: drop1, b: drop2 }];
-  const def = packDef(toTiles(grid), spawn, seed, [], splits);
+  const tiles = toTiles(grid);
+  if (!inObstacleBand(tiles, difficulty)) return null;
+  const def = packDef(tiles, spawn, seed, [], splits);
   const len = shortestLen(def, 150_000);
   const band = BAND[difficulty];
   if (len < 8 || len > band.max + 10) return null;
@@ -279,4 +301,13 @@ export const RUN_LENGTHS = [1, 5, 10] as const;
 
 export function difficultyLabel(d: Difficulty): string {
   return d[0].toUpperCase() + d.slice(1);
+}
+
+export function difficultyHint(d: Difficulty): string {
+  const b = BAND[d];
+  return `${b.min}–${b.max} moves · ${b.obstacles[0]}–${b.obstacles[1]} obstacles`;
+}
+
+export function difficultyBand(d: Difficulty): (typeof BAND)[Difficulty] {
+  return BAND[d];
 }

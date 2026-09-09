@@ -176,5 +176,12 @@ export function playHomeWhoosh(): void {
 }
 
 export function playDevJingle(): void {
-  playId("blox003wav");
+  // Remake uses whoosh_2 for the DEV unlock. Coolmath's matching clip is blox2wav.
+  if (!ctxReady) {
+    queued.push(["blox2wav"]);
+    queued.push(["blox003wav"]);
+    return;
+  }
+  playId("blox2wav");
+  window.setTimeout(() => playId("blox003wav"), 30);
 }

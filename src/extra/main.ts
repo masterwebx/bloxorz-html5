@@ -9,17 +9,28 @@ import {
   saveStage,
   stageId,
 } from "./customLevels";
-import { campaignDefs, createJsToDef, defToCreateJs } from "./convert";
-import { dailySeed, difficultyLabel, generatePuzzle, generateRun, type Difficulty } from "./generate";
+import { createJsToDef, defToCreateJs } from "./convert";
+import { dailySeed, generatePuzzle, generateRun, type Difficulty } from "./generate";
 import { actionFromCode, pollGamepad, pollMenuPad, rumble } from "./gamepad";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, stopMenuMusic, unlockAudio } from "./audio";
 import { fetchOnlineStages } from "./community";
-import { loadRuns, loadSeeGhosts, pushGhost, saveRun, saveSeeGhosts, winningTape, type RunRecord, type TapeCmd } from "./history";
+import {
+  loadFinishedStages,
+  loadSeeGhosts,
+  pushGhost,
+  saveFinishedStage,
+  saveRun,
+  saveSeeGhosts,
+  winningTape,
+  type RunRecord,
+  type TapeCmd,
+} from "./history";
 import {
   ACTIONS,
   ACTION_LABEL,
   brandName,
   currentTheme,
+  hueCss,
   isDevName,
   loadSettings,
   NAME_MAX,
@@ -32,9 +43,11 @@ import {
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, type MenuItem } from "./hud";
-import type { WalkCmd } from "./walkthrough";
+import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
+import type { ClipName } from "./coolmathBoard";
 
 type Screen =
+  | "splash"
   | "name"
   | "home"
   | "settings"
@@ -79,6 +92,14 @@ type SkyClip = { x: number; y: number; visible: boolean; mouseEnabled: boolean }
 type LibCtor = {
   bettersky_22?: new () => SkyClip;
   spinna?: new () => { x: number; y: number; scaleX: number; scaleY: number; mouseEnabled: boolean; shadow?: unknown; parent?: unknown };
+  metal_v2?: new () => unknown;
+  metal_v3?: new () => unknown;
+  softswitch_v3?: new () => unknown;
+  hardswitch_v3?: new () => unknown;
+  splitswitch_v2?: new () => unknown;
+  stoneexit_v2?: new () => unknown;
+  stone2_v2?: new () => unknown;
+  Block?: new () => { gotoAndStop?: (n: string | number) => void };
 };
 
 const MODE_KEY = "bloxorz-play-mode";
@@ -96,7 +117,8 @@ const KEY_CMD: Record<string, TapeCmd> = {
   Space: "swap",
 };
 
-let extraView: Screen = "auto";
+let extraView: Screen = "splash";
+let splashDone = false;
 let playSession: PlaySession | null = null;
 let draft = emptyDraft();
 let paint = newPaintState();
@@ -132,8 +154,6 @@ let cachedDev = false;
 let nameRead = false;
 /** When true, next home paint slides menu rows in with whoosh. */
 let animateHome = false;
-/** Authored CreateJS fps (RAF-synced). Keep tick-based delays in sync. */
-const TICK_SCALE = 1;
 let undoStack: LevelDef[] = [];
 let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
@@ -145,6 +165,14 @@ let beatBanner = "";
 let onlineRows: { title: string; meta: string; play: () => void }[] = [];
 let onlineStatus = "";
 let modalKind: "code" | "seed" | null = null;
+type TintShape = {
+  graphics: { clear: () => void; beginFill: (c: string) => { drawRect: (x: number, y: number, w: number, h: number) => void } };
+  alpha: number;
+  mouseEnabled: boolean;
+  visible: boolean;
+};
+let tintLayer: TintShape | null = null;
+let lastBlockHue = -1;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -252,6 +280,34 @@ function applyThemeBg(): void {
   const on = loadSettings().themeBg;
   document.body.classList.toggle("no-theme-bg", !on);
   if (sky) sky.visible = sky.visible && on;
+  applyLooks();
+}
+
+function ensureTint(): void {
+  const st = window.stage;
+  const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
+  if (tintLayer || !st?.addChildAt || !cjs?.Shape) return;
+  const layer = new cjs.Shape();
+  layer.mouseEnabled = false;
+  st.addChildAt(layer, sky ? 1 : 0);
+  tintLayer = layer;
+}
+
+function applyLooks(): void {
+  const s = loadSettings();
+  document.body.classList.toggle("no-theme-bg", !s.themeBg);
+  document.body.style.setProperty("--bg-tint", hueCss(s.bgHue, s.bgTint * 0.55));
+  ensureTint();
+  if (tintLayer) {
+    tintLayer.graphics.clear();
+    if (s.bgTint > 0.01) {
+      tintLayer.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(0, 0, 550, 300);
+      tintLayer.alpha = s.bgTint * 0.42;
+      tintLayer.visible = true;
+    } else {
+      tintLayer.visible = false;
+    }
+  }
 }
 
 function showGameSky(on: boolean): void {
@@ -417,6 +473,9 @@ function hudKey(): string {
     String(s.rumble),
     String(s.showTimer),
     String(s.themeBg),
+    String(s.bgTint),
+    String(s.bgHue),
+    String(s.blockHue),
     String(s.music),
     String(s.sfx),
     currentTheme(),
@@ -430,7 +489,7 @@ function hudKey(): string {
     String(beaten),
     draft.tiles.join(""),
     draft.spawn.join(","),
-    String(loadRuns().length),
+    String(loadFinishedStages().length),
     JSON.stringify(s.keys),
   ].join("|");
 }
@@ -453,7 +512,9 @@ function paintHud(): void {
   hudDirty = false;
   placeHudInput(false, "0", "0", "0", "", "");
   const s = loadSettings();
-  if (extraView === "home") {
+  if (extraView === "splash") {
+    hud.drawSplash();
+  } else if (extraView === "home") {
     hud.drawHome(brandName(getName()), homeItems(), homeCursor, animateHome);
     animateHome = false;
   } else if (extraView === "name") {
@@ -475,8 +536,11 @@ function paintHud(): void {
       music: s.music,
       sfx: s.sfx,
       theme: currentTheme(),
+      bgTint: s.bgTint,
+      bgHue: s.bgHue,
+      blockHue: s.blockHue,
     });
-    placeHudInput(true, "7.3%", "19.5%", "40%", "NAME", getName(), NAME_MAX);
+    placeHudInput(true, "18.2%", "10.6%", "40%", "", getName(), NAME_MAX);
   } else if (extraView === "remap") {
     hud.drawRemap(
       ACTIONS.map((id) => ({ id, label: ACTION_LABEL[id], bind: prettyKey(s.keys[id]) })),
@@ -495,25 +559,25 @@ function paintHud(): void {
       })),
     });
   } else if (extraView === "puzzles") {
-    hud.drawPuzzles(puzzleDiff, puzzleCount, dailySeed(new Date(), puzzleDiff) + " · " + difficultyLabel(puzzleDiff));
+    hud.drawPuzzles(puzzleDiff, puzzleCount);
   } else if (extraView === "history") {
     hud.drawHistory({
       seeGhosts: loadSeeGhosts(),
-      rows: loadRuns()
+      rows: loadFinishedStages()
         .slice(0, 6)
         .map((rec) => {
-          const lv = rec.levels.find((l) => winningTape(l));
+          const title = rec.title || `Stage ${String(rec.stage).padStart(2, "0")}`;
           return {
-            title: `${rec.player} · ${rec.complete ? "Finished" : "Stopped"} · ${rec.levels.length} stages`,
+            title: `${title} · ${rec.player} · ${rec.moves} moves`,
             meta: new Date(rec.at).toLocaleString(),
-            replay: lv
+            replay: rec.cmds.length
               ? () => {
-                  const cmds = winningTape(lv);
-                  const def = campaignDefs()[(lv.stage || 1) - 1];
-                  if (def && cmds) {
+                  const defs = rawCampaignDefs();
+                  const def = defs[(rec.stage || 1) - 1];
+                  if (def) {
                     startCustom([def], "history");
-                    solvePending = cmds;
-                    solveArm = 24;
+                    solvePending = rec.cmds;
+                    solveArm = 8;
                   }
                 }
               : undefined,
@@ -561,7 +625,40 @@ function applyTheme(theme: ThemeId): void {
   window.location.href = url.toString();
 }
 
+function rawCampaignDefs(): LevelDef[] {
+  const raw = origGetLevels?.() ?? [];
+  return raw.map((level, i) => createJsToDef(level as ReturnType<typeof defToCreateJs>, i));
+}
+
+function dismissSplash(): void {
+  if (splashDone) return;
+  splashDone = true;
+  unlockAudio(() => ensureMenuMusic());
+  if (!getName()) openPanel("name");
+  else openPanel("home");
+}
+
+function persistWonStage(stageNo: number): void {
+  if (!run || !playSession?.record) return;
+  const lv = run.levels.find((l) => l.stage === stageNo);
+  const cmds = lv ? winningTape(lv) : tape.length ? tape : null;
+  if (!cmds?.length) return;
+  saveFinishedStage({
+    id: `${run.id}-${stageNo}`,
+    at: Date.now(),
+    player: run.player,
+    stage: stageNo,
+    moves: cmds.length,
+    cmds,
+    title: playSession.title || `Stage ${String(stageNo).padStart(2, "0")}`,
+  });
+}
+
 function handleHudAction(act: string): void {
+  if (act === "splash-continue") {
+    dismissSplash();
+    return;
+  }
   if (act === "start") {
     run = {
       id: `${Date.now()}`,
@@ -585,7 +682,13 @@ function handleHudAction(act: string): void {
     window.location.reload();
   } else if (act === "settings") openPanel("settings");
   else if (act === "remap") openPanel("remap");
-  else if (act === "back") openPanel("home");
+  else if (act === "back") {
+    if (extraView === "settings") {
+      const typed = hudInput()?.value.trim();
+      if (typed) setName(typed);
+    }
+    openPanel("home");
+  }
   else if (act === "creator") openPanel("creator");
   else if (act === "puzzles") openPanel("puzzles");
   else if (act === "history") openPanel("history");
@@ -594,11 +697,6 @@ function handleHudAction(act: string): void {
     openPanel("home");
   } else if (act === "name-continue") {
     const next = hudInput()?.value.trim();
-    if (!next) return;
-    setName(next);
-    openPanel("home");
-  } else if (act === "save-name") {
-    const next = (hudInput()?.value.trim() || getName()).slice(0, NAME_MAX);
     if (!next) return;
     setName(next);
     openPanel("home");
@@ -645,6 +743,28 @@ function handleHudAction(act: string): void {
     s.sfx = Number(act.slice(4));
     saveSettings(s);
     applyVolumes();
+    markHudDirty();
+    paintHud();
+  } else if (act.startsWith("bgtint:")) {
+    const s = loadSettings();
+    s.bgTint = Number(act.slice(7));
+    saveSettings(s);
+    applyLooks();
+    markHudDirty();
+    paintHud();
+  } else if (act.startsWith("bghue:")) {
+    const s = loadSettings();
+    s.bgHue = Number(act.slice(6));
+    saveSettings(s);
+    applyLooks();
+    markHudDirty();
+    paintHud();
+  } else if (act.startsWith("blockhue:")) {
+    const s = loadSettings();
+    s.blockHue = Number(act.slice(9));
+    saveSettings(s);
+    lastBlockHue = -1;
+    applyBlockHue();
     markHudDirty();
     paintHud();
   } else if (act.startsWith("theme:")) {
@@ -855,7 +975,7 @@ function playDef(): LevelDef | null {
   if (playSession?.defs.length) return playSession.defs[n - 1] ?? null;
   const raw = origGetLevels?.();
   if (raw?.[n - 1]) return createJsToDef(raw[n - 1] as ReturnType<typeof defToCreateJs>, n - 1);
-  return campaignDefs()[n - 1] ?? null;
+  return rawCampaignDefs()[n - 1] ?? null;
 }
 
 function showFinish(): void {
@@ -916,57 +1036,168 @@ function cmdToCode(cmd: WalkCmd): string {
   return "ArrowRight";
 }
 
-function enqueueSolve(cmds: WalkCmd[]): void {
-  solveQueue = cmds.slice();
-  solveHold = Math.round(20 * TICK_SCALE);
+type PlayBlock = { roll?: { idle?: boolean }; currentFrame?: number };
+
+function playBlocks(): PlayBlock[] {
+  const gc = window.stage?.gameContainer as { children?: { children?: PlayBlock[] }[] } | undefined;
+  const out: PlayBlock[] = [];
+  for (const child of gc?.children ?? []) {
+    for (const node of child.children ?? []) {
+      if (node.roll) out.push(node);
+    }
+  }
+  return out;
+}
+
+function blocksIdle(): boolean {
+  const blocks = playBlocks();
+  if (!blocks.length) return false;
+  return blocks.every((b) => b.roll?.idle);
+}
+
+function solveCmdsForCurrent(): WalkCmd[] | null {
+  const n = window.stage?.levelNumber ?? 1;
+  if (!playSession?.defs.length && CAMPAIGN_WALKTHROUGH[n - 1]) {
+    return expandWalkthrough(CAMPAIGN_WALKTHROUGH[n - 1]);
+  }
+  const def = playDef();
+  if (!def) return null;
+  const result = solveLevel(def, 250_000);
+  return result.ok && result.cmds.length ? result.cmds : null;
 }
 
 function tickSolve(): void {
   const stage = window.stage;
   if (currentLabel() !== "game") return;
-  if (solvePending && stage?.triggerKeyDown) {
+  if (!stage?.triggerKeyDown) return;
+
+  if (solvePending) {
+    if (!blocksIdle()) return;
     if (solveArm > 0) {
       solveArm--;
       return;
     }
-    enqueueSolve(solvePending);
+    solveQueue = solvePending.slice();
     solvePending = null;
     beatBanner = "Auto-solve";
     lastHudPaint = "";
     hud?.drawInGameDev(beatBanner);
   }
-  if (!stage?.triggerKeyDown) return;
-  if (solveHold > 0) {
-    solveHold--;
-    if (solveHold === Math.round(10 * TICK_SCALE) && solveCode) stage.triggerKeyUp?.({ code: solveCode });
+
+  if (solveCode) {
+    if (!blocksIdle()) {
+      stage.triggerKeyUp?.({ code: solveCode });
+      solveCode = "";
+      solveHold = 0;
+      return;
+    }
+    solveHold++;
+    if (solveHold > 10) {
+      stage.triggerKeyUp?.({ code: solveCode });
+      stage.triggerKeyDown({ code: solveCode });
+      solveHold = 0;
+    }
     return;
   }
+
+  if (!solveQueue.length) return;
+  if (!blocksIdle()) return;
+
   const cmd = solveQueue.shift();
   if (!cmd) return;
   solveCode = cmdToCode(cmd);
+  solveHold = 0;
   stage.triggerKeyDown({ code: solveCode });
-  solveHold = Math.round((cmd === "swap" ? 16 : 28) * TICK_SCALE);
+  if (cmd === "swap") {
+    stage.triggerKeyUp?.({ code: solveCode });
+    solveCode = "";
+  }
 }
 
 function beatCurrentStage(): void {
-  const def = playDef();
-  if (!def) {
-    beatBanner = "No stage loaded";
-    hud?.drawInGameDev(beatBanner);
-    return;
-  }
-  const result = solveLevel(def, 250_000);
-  if (!result.ok || !result.cmds.length) {
+  const cmds = solveCmdsForCurrent();
+  if (!cmds?.length) {
     beatBanner = "No solution found";
     hud?.drawInGameDev(beatBanner);
     return;
   }
   beatBanner = "Auto-solve";
   hud?.drawInGameDev(beatBanner);
-  solvePending = result.cmds;
+  solvePending = cmds;
   solveQueue = [];
-  solveArm = 28;
+  solveCode = "";
+  solveArm = 6;
   window.exportRoot?.gotoAndPlay?.("restart");
+}
+
+function syncHelpText(): void {
+  const n = window.stage?.levelNumber ?? 0;
+  const gc = window.stage?.gameContainer as {
+    children?: { buttons?: unknown; menuButton?: unknown; roll?: unknown; totalFrames?: number; visible?: boolean; alpha?: number }[];
+  } | undefined;
+  for (const child of gc?.children ?? []) {
+    if (child.buttons || child.menuButton || child.roll) continue;
+    if (typeof child.totalFrames === "number" && child.totalFrames >= 40 && child.totalFrames <= 52) {
+      const show = n === 1;
+      child.visible = show;
+      child.alpha = show ? 1 : 0;
+    }
+  }
+}
+
+function applyPlayTint(): void {
+  const gc = window.stage?.gameContainer as {
+    addChildAt?: (c: unknown, i: number) => void;
+    children?: unknown[];
+    __bloxTint?: TintShape;
+  } | undefined;
+  const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
+  if (!gc?.addChildAt || !cjs?.Shape) return;
+  let overlay = gc.__bloxTint;
+  if (!overlay || !gc.children?.includes(overlay)) {
+    overlay = new cjs.Shape();
+    overlay.mouseEnabled = false;
+    gc.addChildAt(overlay, Math.min(1, gc.children?.length ?? 0));
+    gc.__bloxTint = overlay;
+  }
+  const s = loadSettings();
+  overlay.graphics.clear();
+  if (s.bgTint > 0.01) {
+    overlay.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(0, 0, 550, 300);
+    overlay.alpha = s.bgTint * 0.42;
+    overlay.visible = true;
+  } else {
+    overlay.visible = false;
+  }
+}
+
+function applyBlockHue(): void {
+  const hue = loadSettings().blockHue;
+  const cjs = window.createjs as {
+    ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
+    ColorMatrixFilter?: new (m: unknown) => unknown;
+  };
+  const blocks = playBlocks() as (PlayBlock & {
+    filters?: unknown;
+    cache?: (x: number, y: number, w: number, h: number) => void;
+    uncache?: () => void;
+  })[];
+  if (!blocks.length || !cjs.ColorMatrix || !cjs.ColorMatrixFilter) return;
+  const key = hue * 1000 + (blocks[0].currentFrame ?? 0);
+  if (key === lastBlockHue) return;
+  lastBlockHue = key;
+  for (const block of blocks) {
+    if (!hue) {
+      block.filters = null;
+      block.uncache?.();
+      continue;
+    }
+    const deg = hue <= 180 ? hue : hue - 360;
+    const matrix = new cjs.ColorMatrix();
+    matrix.adjustHue(deg);
+    block.filters = [new cjs.ColorMatrixFilter(matrix)];
+    block.cache?.(-70, -110, 140, 180);
+  }
 }
 
 function commitTape(won: boolean, stageNo: number): void {
@@ -1072,7 +1303,9 @@ function bindMenuPad(): void {
         const item = homeItems()[homeCursor];
         if (item && !item.disabled) handleHudAction(item.id);
       }
-    } else if (ev === "back" && extraView !== "name" && extraView !== "auto") {
+    } else if (ev === "confirm" && extraView === "splash") {
+      dismissSplash();
+    } else if (ev === "back" && extraView !== "name" && extraView !== "auto" && extraView !== "splash") {
       openPanel(extraView === "remap" ? "settings" : "home");
     }
   }
@@ -1119,14 +1352,26 @@ function bind(): void {
     ev.preventDefault();
     if (extraView === "name") handleHudAction("name-continue");
     else if (extraView === "load") handleHudAction("load-go");
-    else if (extraView === "settings") handleHudAction("save-name");
-    else if (extraView === "puzzles") handleHudAction("puzzle-run");
+    else if (extraView === "settings") {
+      const next = input.value.trim();
+      if (next) setName(next);
+    } else if (extraView === "puzzles") handleHudAction("puzzle-run");
   });
   input?.addEventListener("keyup", (ev) => ev.stopPropagation());
   input?.addEventListener("keypress", (ev) => ev.stopPropagation());
+  input?.addEventListener("input", () => {
+    if (extraView !== "name" && extraView !== "settings") return;
+    const next = (input.value || "").trim();
+    if (isDevName(next) && !cachedDev) setName(next);
+  });
 
   window.addEventListener("keydown", (ev) => {
     if (isLegacy()) return;
+    if (extraView === "splash") {
+      ev.preventDefault();
+      dismissSplash();
+      return;
+    }
     if (document.activeElement === hudInput()) return;
 
     if (extraView === "remap" && rebindAction) {
@@ -1207,13 +1452,19 @@ function syncOverlay(): void {
   }
 
   if ((playing || label === "stagetitle") && stage) {
-    if (lastLevelNum > 0 && stage.levelNumber > lastLevelNum) commitTape(true, lastLevelNum);
+    if (lastLevelNum > 0 && stage.levelNumber > lastLevelNum) {
+      commitTape(true, lastLevelNum);
+      persistWonStage(lastLevelNum);
+    }
     lastLevelNum = stage.levelNumber;
   }
 
   if (label === "finish" && !isLegacy() && lastLabel !== "finish") {
     beaten = playSession?.returnTo === "creator" ? true : beaten;
-    if (tape.length) commitTape(true, lastLevelNum || stage?.levelNumber || 1);
+    if (tape.length) {
+      commitTape(true, lastLevelNum || stage?.levelNumber || 1);
+      persistWonStage(lastLevelNum || stage?.levelNumber || 1);
+    }
     if (run && playSession?.record) {
       run.complete = true;
       run.totalTimeMs = Date.now() - run.at;
@@ -1266,6 +1517,19 @@ function syncOverlay(): void {
 
   show(exitBtn, false);
 
+  if (!splashDone && extraView === "splash") {
+    if (overlayMode !== "menu") {
+      overlayMode = "menu";
+      parkCreateJsMenu();
+      setExportRootMouse(false);
+      setMouseOverRate(5);
+      hud?.setVisible(true);
+      raiseHud();
+    }
+    paintHud();
+    return;
+  }
+
   if (inRun) {
     if (overlayMode !== "run") {
       overlayMode = "run";
@@ -1276,6 +1540,9 @@ function syncOverlay(): void {
     if (playing) {
       tickSolve();
       pollGamepad(stage);
+      syncHelpText();
+      applyPlayTint();
+      applyBlockHue();
       if (cachedDev) {
         if (!hud?.root.visible) {
           hud?.setVisible(true);
@@ -1320,7 +1587,10 @@ function syncOverlay(): void {
     openPanel(back);
     return;
   }
-  if (!getName()) {
+  if (!splashDone) {
+    if (extraView !== "splash") openPanel("splash");
+    else paintHud();
+  } else if (!getName()) {
     if (extraView !== "name") openPanel("name");
     else paintHud();
   } else if (extraView === "auto" || extraView === "name") {
@@ -1369,7 +1639,7 @@ declare global {
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.7.0");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.8.0");
   refreshNameCache();
   gateSoundPlay();
   wrapGetLevels();
@@ -1382,10 +1652,17 @@ export function startBloxorzShell(): void {
       if (!Spin) return null;
       return new Spin() as never;
     };
+    hud.makeClip = (name: ClipName) => {
+      const lib = adobeLib() as unknown as Record<string, new () => unknown>;
+      const Ctor = lib?.[name];
+      if (!Ctor) return null;
+      return new Ctor() as never;
+    };
   }
   if (!isLegacy()) {
     parkCreateJsMenu();
     setMouseOverRate(5);
+    applyLooks();
     const sel = $("image_select") as HTMLSelectElement | null;
     if (sel) sel.value = currentTheme();
   }

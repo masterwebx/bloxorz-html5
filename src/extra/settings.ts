@@ -29,6 +29,9 @@ export interface Settings {
   rumble: boolean;
   showTimer: boolean;
   themeBg: boolean;
+  bgTint: number;
+  bgHue: number;
+  blockHue: number;
   playerName: string;
   keys: Record<Action, string>;
   pads: Record<Action, number>;
@@ -40,6 +43,9 @@ const DEFAULTS: Settings = {
   rumble: true,
   showTimer: true,
   themeBg: true,
+  bgTint: 0,
+  bgHue: 28,
+  blockHue: 0,
   playerName: "",
   keys: {
     up: "ArrowUp",
@@ -83,6 +89,9 @@ export function loadSettings(): Settings {
       rumble: parsed.rumble !== false,
       showTimer: parsed.showTimer !== false,
       themeBg: parsed.themeBg !== false,
+      bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
+      bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
+      blockHue: clampHue(parsed.blockHue ?? DEFAULTS.blockHue),
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       keys: { ...DEFAULTS.keys, ...parsed.keys },
       pads: { ...DEFAULTS.pads, ...parsed.pads },
@@ -105,6 +114,16 @@ export function invalidateSettingsCache(): void {
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
+}
+
+function clampHue(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const wrapped = ((n % 360) + 360) % 360;
+  return Math.round(wrapped);
+}
+
+export function hueCss(hue: number, alpha = 1): string {
+  return `hsla(${clampHue(hue)}, 72%, 42%, ${clamp01(alpha)})`;
 }
 
 export function brandName(name: string): string {

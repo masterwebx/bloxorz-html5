@@ -33,11 +33,23 @@ export type HistoryStorage = {
 };
 
 const RUNS_KEY = "bloxorz-history-v1";
+const FINISHED_KEY = "bloxorz-finished-v1";
 const GHOSTS_KEY = "bloxorz-ghosts-v1";
 const GHOSTS_PREF = "bloxorz-see-ghosts";
 const MAX_RUNS = 24;
+const MAX_FINISHED = 48;
 const MAX_GHOSTS_PER_STAGE = 32;
 export const MAX_GHOST_DRAW = 16;
+
+export interface FinishedStage {
+  id: string;
+  at: number;
+  player: string;
+  stage: number;
+  moves: number;
+  cmds: TapeCmd[];
+  title?: string;
+}
 
 let storageOverride: HistoryStorage | null = null;
 
@@ -76,10 +88,45 @@ export function loadRuns(): RunRecord[] {
 }
 
 export function saveRun(run: RunRecord): void {
-  if (!run.levels.length) return;
-  const runs = loadRuns().filter((r) => r.id !== run.id);
-  runs.unshift(run);
+  const levels = run.levels.filter((lv) => lv.tapes.some((t) => t.won && t.cmds.length));
+  if (!levels.length) return;
+  const next = { ...run, levels, complete: true };
+  const runs = loadRuns().filter((r) => r.id !== next.id);
+  runs.unshift(next);
   store().setItem(RUNS_KEY, JSON.stringify(runs.slice(0, MAX_RUNS)));
+}
+
+function migrateFinishedFromRuns(): FinishedStage[] {
+  const out: FinishedStage[] = [];
+  for (const run of loadRuns()) {
+    for (const lv of run.levels) {
+      const win = [...lv.tapes].reverse().find((t) => t.won && t.cmds.length);
+      if (!win) continue;
+      out.push({
+        id: `${run.id}-${lv.stage}`,
+        at: run.at,
+        player: run.player,
+        stage: lv.stage,
+        moves: lv.moves || win.cmds.length,
+        cmds: win.cmds,
+        title: `Stage ${String(lv.stage).padStart(2, "0")}`,
+      });
+    }
+  }
+  return out;
+}
+
+export function loadFinishedStages(): FinishedStage[] {
+  const rows = readJson<FinishedStage[]>(FINISHED_KEY, []);
+  if (Array.isArray(rows) && rows.length) return rows;
+  return migrateFinishedFromRuns();
+}
+
+export function saveFinishedStage(row: FinishedStage): void {
+  if (!row.cmds.length) return;
+  const rows = loadFinishedStages().filter((r) => r.id !== row.id);
+  rows.unshift(row);
+  store().setItem(FINISHED_KEY, JSON.stringify(rows.slice(0, MAX_FINISHED)));
 }
 
 export function loadGhostBank(): Record<string, TapeCmd[][]> {
@@ -114,9 +161,7 @@ export function saveSeeGhosts(on: boolean): void {
 
 export function winningTape(level: LevelStat): TapeCmd[] | null {
   const win = [...level.tapes].reverse().find((t) => t.won && t.cmds.length);
-  if (win) return win.cmds;
-  const last = level.tapes.at(-1);
-  return last?.cmds.length ? last.cmds : null;
+  return win?.cmds.length ? win.cmds : null;
 }
 
 export class GhostRunner {
