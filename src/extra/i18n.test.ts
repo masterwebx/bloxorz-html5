@@ -32,5 +32,9 @@ describe("i18n", () => {
     setLocale("en");
     expect(t("play.moves")).toBe("Moves");
     expect(t("play.stage", { n: 4 })).toBe("Stage 4");
+    expect(t("play.stageCard", { n: "01" })).toBe("STAGE 01");
+    setLocale("es");
+    expect(t("play.stageCard", { n: "01" })).toBe("FASE 01");
+    expect(t("howto.0")).toContain("33");
   });
 });

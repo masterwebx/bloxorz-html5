@@ -83,6 +83,7 @@ import { ExtraHud, type MenuItem } from "./hud";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
 import type { ClipName } from "./coolmathBoard";
 import { looksLikeMobile, registerServiceWorker, TouchChrome } from "./touchPad";
+import { howtoSlide, padStage } from "./howto";
 
 type Screen =
   | "splash"
@@ -145,6 +146,7 @@ type PauseMenuClip = {
     toggleSound?: PauseBtn;
     quitToMenu?: PauseBtn;
   };
+  stats?: { instance?: { alpha?: number }; instance_1?: { alpha?: number }; instance_4?: { alpha?: number } };
 };
 
 type BloxWorld = {
@@ -158,6 +160,7 @@ type BloxWorld = {
   layerBlocks?: unknown;
   tiles?: { x?: number; y?: number; type?: string; alpha?: number; visible?: boolean }[];
   background?: SkyClip & { instance_2?: SkyClip };
+  helpText?: { alpha?: number; visible?: boolean };
   tick?: () => void;
   moves?: number;
 };
@@ -281,7 +284,6 @@ let undoStack: LevelDef[] = [];
 let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
 let lastTintKey = "";
-let helpTextKey = "";
 let lastPlayHudKey = "";
 let ghostPool: { x: number; y: number; alpha: number; mouseEnabled: boolean; graphics: { clear: () => unknown; beginFill: (c: string) => { drawRect: (x: number, y: number, w: number, h: number) => unknown } } }[] = [];
 let settingsChromeBound = false;
@@ -776,6 +778,7 @@ function applyLanguage(id: string): void {
   saveSettings(s);
   applyDomCopy();
   lastHudPaint = "";
+  lastPlayHudKey = "";
   markHudDirty();
   paintHud();
 }
@@ -819,7 +822,7 @@ function hideBitmapPlayText(): void {
         digit5a?: { alpha?: number };
         digit6a?: { alpha?: number };
         instance_1?: { alpha?: number };
-        menuButton?: { children?: { alpha?: number }[] };
+        menuButton?: { alpha?: number };
       }
     | undefined;
   if (!bg) return;
@@ -827,6 +830,11 @@ function hideBitmapPlayText(): void {
     if (bg[key]) bg[key]!.alpha = 0;
   }
   if (bg.instance_1) bg.instance_1.alpha = 0;
+  if (bg.menuButton) {
+    bg.menuButton.alpha = 0;
+    const kids = (bg.menuButton as { children?: { alpha?: number }[] }).children;
+    for (const child of kids ?? []) child.alpha = 0;
+  }
 }
 
 function syncPlayChrome(on: boolean): void {
@@ -852,8 +860,8 @@ function syncPlayChrome(on: boolean): void {
   const moveLab = $("play-moves-lab");
   const menu = $("play-menu");
   const help = $("play-help");
-  if (passLab) passLab.textContent = t("play.passcode");
-  if (moveLab) moveLab.textContent = t("play.moves");
+  if (passLab) passLab.textContent = t("play.passcode") + ":";
+  if (moveLab) moveLab.textContent = t("play.moves") + ":";
   if (pass) pass.textContent = code || String(stageNo).padStart(2, "0");
   if (moveVal) moveVal.textContent = String(moves);
   if (menu) menu.textContent = t("play.menu");
@@ -861,6 +869,66 @@ function syncPlayChrome(on: boolean): void {
     help.hidden = !classicFirst;
     help.textContent = t("play.help1");
   }
+}
+
+function hideInstructionBitmaps(): void {
+  const inst = window.exportRoot?.inst as {
+    instance_4?: { alpha?: number; visible?: boolean; children?: { alpha?: number }[] };
+  } | undefined;
+  const tween = inst?.instance_4;
+  if (!tween) return;
+  tween.alpha = 0;
+  for (const child of tween.children ?? []) child.alpha = 0;
+}
+
+function syncStageCard(on: boolean, title = ""): void {
+  const box = $("stage-card");
+  const lab = $("stage-card-text");
+  if (!box) return;
+  box.hidden = !on;
+  if (lab && on) lab.textContent = title;
+  const clip = window.exportRoot?.stagetitle as { alpha?: number; visible?: boolean } | undefined;
+  if (clip && on) {
+    clip.alpha = 0;
+    clip.visible = false;
+  }
+}
+
+function syncHowto(on: boolean): void {
+  const copy = $("howto-copy");
+  const page = $("howto-page");
+  if (!copy || !page) return;
+  if (!on) {
+    copy.hidden = true;
+    page.hidden = true;
+    return;
+  }
+  hideInstructionBitmaps();
+  const frame = instructionClip()?.currentFrame ?? 0;
+  const slide = howtoSlide(frame);
+  copy.hidden = false;
+  page.hidden = false;
+  copy.textContent = t("howto." + slide);
+  page.textContent = t("howto.page", { n: slide + 1 });
+}
+
+function syncPauseStats(on: boolean): void {
+  const box = $("pause-stats");
+  if (!box) return;
+  box.hidden = !on;
+  const stats = pauseMenuClip()?.stats as
+    | { instance?: { alpha?: number }; instance_1?: { alpha?: number }; instance_4?: { alpha?: number } }
+    | undefined;
+  if (!on || !stats) return;
+  if (stats.instance) stats.instance.alpha = 0;
+  if (stats.instance_1) stats.instance_1.alpha = 0;
+  if (stats.instance_4) stats.instance_4.alpha = 0;
+  const timeLab = $("pause-time")?.querySelector(".lab");
+  const stageLab = $("pause-stage")?.querySelector(".lab");
+  const tryLab = $("pause-tries")?.querySelector(".lab");
+  if (timeLab) timeLab.textContent = t("hud.time") + ":";
+  if (stageLab) stageLab.textContent = t("hud.stage") + ":";
+  if (tryLab) tryLab.textContent = t("hud.attempts") + ":";
 }
 
 function cycleList(ids: string[], cur: string, dir: -1 | 1): string {
@@ -2442,8 +2510,10 @@ function leavePlayTo(view: Screen): void {
   flags.setSplit?.(0);
   playSession = null;
   lastTintKey = "";
-  helpTextKey = "";
   syncPlayChrome(false);
+  syncHowto(false);
+  syncStageCard(false);
+  syncPauseStats(false);
   clearTheme3d();
   clearGhosts();
   stopAutoSolve("");
@@ -2485,7 +2555,6 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   lastLevelNum = levelNumber;
   overlayMode = "run";
   playLaunching = true;
-  helpTextKey = "";
   lastTintKey = "";
   enterPlayVisuals();
   hushPlayAudio();
@@ -2731,19 +2800,19 @@ function cacheStaticWorldTiles(): void {
 }
 
 function syncHelpText(): void {
-  const key = `${!!playSession?.classicRun}|${window.stage?.levelNumber ?? 0}`;
-  if (helpTextKey === key) return;
-  helpTextKey = key;
-  const classicFirst =
-    !!playSession?.classicRun && playSession.kind === "campaign" && (window.stage?.levelNumber ?? 0) === 1;
+  const ht = window.stage?.bloxWorld?.helpText;
+  if (ht) {
+    ht.alpha = 0;
+    ht.visible = false;
+  }
   const gc = window.stage?.gameContainer as {
     children?: { buttons?: unknown; menuButton?: unknown; roll?: unknown; totalFrames?: number; visible?: boolean; alpha?: number }[];
   } | undefined;
   for (const child of gc?.children ?? []) {
     if (child.buttons || child.menuButton || child.roll) continue;
     if (typeof child.totalFrames === "number" && child.totalFrames >= 40 && child.totalFrames <= 52) {
-      child.visible = classicFirst;
-      child.alpha = classicFirst ? 1 : 0;
+      child.visible = false;
+      child.alpha = 0;
     }
   }
 }
@@ -3291,8 +3360,7 @@ function syncOverlay(): void {
   const playing = label === "game" || label === "restart";
   const onTitle = label === "instructions" || label === "stagetitle";
   syncLetterbox(onTitle);
-  if (onTitle) setVanillaTitleVisible(usesVanillaTitle());
-  else setVanillaTitleVisible(true);
+  setVanillaTitleVisible(false);
 
   if (playSession && !playLaunching && !labeledRun && (extraView === "auto" || label === "menu" || label === "splash")) {
     const back = playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
@@ -3407,7 +3475,10 @@ function syncOverlay(): void {
     applyPlayTint();
     applyBlockHue();
     syncPlayChrome(playing);
+    syncHowto(label === "instructions");
+    syncPauseStats(playing && isPauseMenuOpen());
     if (playing) {
+      syncStageCard(false);
       tickSolve();
       if (isPauseMenuOpen()) pollPauseMenuPad();
       else pollGamepad(stage, togglePauseMenu, recordCmd);
@@ -3441,6 +3512,7 @@ function syncOverlay(): void {
     } else if (label === "stagetitle") {
       const card = titleCardCopy();
       if (card) {
+        syncStageCard(false);
         if (!hud?.root.visible) {
           hud?.setVisible(true);
           raiseHud();
@@ -3450,11 +3522,14 @@ function syncOverlay(): void {
           lastHudPaint = key;
           hud?.drawTitleCard(card.title, card.subtitle);
         }
-      } else if (hud?.root.visible) {
-        hud?.setVisible(false);
+      } else {
+        const n = padStage(window.stage?.levelNumber ?? 1);
+        syncStageCard(true, t("play.stageCard", { n }));
+        if (hud?.root.visible) hud.setVisible(false);
       }
-    } else if (hud?.root.visible) {
-      hud?.setVisible(false);
+    } else {
+      syncStageCard(false);
+      if (hud?.root.visible && !cachedDev) hud.setVisible(false);
     }
     return;
   }
@@ -3475,6 +3550,9 @@ function syncOverlay(): void {
   }
   hideVanillaMenu();
   syncPlayChrome(false);
+  syncHowto(false);
+  syncStageCard(false);
+  syncPauseStats(false);
   placeSettingsChrome(extraView === "settings");
   touchChrome?.sync(false);
 
