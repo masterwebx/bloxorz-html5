@@ -1,7 +1,7 @@
 {
   "id": "gray",
   "name": "Gray",
-  "atlas": "/images/bloxorz_atlas_gray.png",
+  "atlas": "atlas.png",
   "atlasScale": 1,
   "hd": false,
   "render": "atlas",
@@ -19,5 +19,5 @@
     "shadow": "rgba(180,200,220,0.9)"
   },
   "background": { "type": "sky" },
-  "audio": {}
+  "audio": { "music": "music.mp3" }
 }

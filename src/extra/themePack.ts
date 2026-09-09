@@ -145,9 +145,11 @@ export function atlasUrlFor(id: string): string {
     const hit = Object.entries(pack.files).find(([k]) => k.endsWith("/" + pack.atlas) || k === pack.atlas);
     if (hit) return hit[1];
   }
-  if (id === "gray") return "/images/bloxorz_atlas_gray.png";
-  if (id === "holiday") return "/images/bloxorz_atlas_holiday.png";
-  return "/images/bloxorz_atlas_original.png";
+  if (pack.atlas && pack.builtin) return `/themes/${pack.id}/${pack.atlas}`;
+  if (id === "gray") return "/themes/gray/atlas.png";
+  if (id === "holiday") return "/themes/holiday/atlas.png";
+  if (id === "solid3d") return "/themes/solid3d/atlas.png";
+  return "/themes/original/atlas.png";
 }
 
 export function mediaUrlFor(pack: ThemePack): string | null {

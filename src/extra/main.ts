@@ -254,9 +254,9 @@ const NAME_KEY = "bloxorz-player-name";
 const LIST_PAGE = 6;
 const LIST_HISTORY = 5;
 const ATLAS_SRC: Record<string, string> = {
-  original: "images/bloxorz_atlas_original.png",
-  gray: "images/bloxorz_atlas_gray.png",
-  holiday: "images/bloxorz_atlas_holiday.png",
+  original: "/themes/original/atlas.png",
+  gray: "/themes/gray/atlas.png",
+  holiday: "/themes/holiday/atlas.png",
 };
 const VANILLA_BUTTONS = ["startNewGame", "resumeGame", "loadStage", "toggleSound", "credits"];
 const KEY_CMD: Record<string, TapeCmd> = {

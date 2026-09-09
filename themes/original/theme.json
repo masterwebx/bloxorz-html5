@@ -1,7 +1,7 @@
 {
   "id": "original",
   "name": "Original",
-  "atlas": "/images/bloxorz_atlas_original.png",
+  "atlas": "atlas.png",
   "atlasScale": 1,
   "hd": false,
   "render": "atlas",
@@ -19,5 +19,5 @@
     "shadow": "rgba(255,150,40,0.95)"
   },
   "background": { "type": "sky" },
-  "audio": {}
+  "audio": { "music": "music.mp3" }
 }

@@ -1,7 +1,7 @@
 {
   "id": "solid3d",
   "name": "Solid 3D",
-  "atlas": "/images/bloxorz_atlas_original.png",
+  "atlas": "atlas.png",
   "atlasScale": 1,
   "hd": true,
   "render": "solid3d",
@@ -19,5 +19,5 @@
     "shadow": "rgba(40,140,210,0.9)"
   },
   "background": { "type": "sky" },
-  "audio": {}
+  "audio": { "music": "music.mp3" }
 }

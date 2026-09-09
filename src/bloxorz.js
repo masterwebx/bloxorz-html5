@@ -13099,12 +13099,12 @@
     const img_key = search_params.get("img") ?? "original";
     switch (img_key) {
       case "holiday":
-        return "images/bloxorz_atlas_holiday.png";
+        return "/themes/holiday/atlas.png";
       case "gray":
-        return "images/bloxorz_atlas_gray.png";
+        return "/themes/gray/atlas.png";
       case "original":
       default:
-        return "images/bloxorz_atlas_original.png";
+        return "/themes/original/atlas.png";
     }
   }
   lib.properties = {

@@ -36,6 +36,7 @@ type HudNode = {
   y: number;
   scaleX?: number;
   scaleY?: number;
+  hitW?: number;
   visible: boolean;
   mouseEnabled: boolean;
   mouseChildren?: boolean;
@@ -184,6 +185,7 @@ function hitRow(label: string, x: number, y: number, size: number, fn: () => voi
   const pad = wantsVirtualPad();
   const w = Math.max(minW, (t.getMeasuredWidth?.() || label.length * size * 0.62) + (pad ? 36 : 24));
   const h = Math.max(pad ? 32 : 24, size + (pad ? 16 : 10));
+  row.hitW = w;
   const area = new createjs.Shape();
   area.graphics.beginFill(hitFill()).drawRect(-8, -6, w, h);
   area.mouseEnabled = !disabled;
@@ -785,13 +787,35 @@ export class ExtraHud {
 
     if (opts.hint) this.add(text(opts.hint, 10, 236, 10, theme.muted));
     this.add(text(t("creator.padHint"), 10, 250, 9, theme.muted));
-    this.add(this.act("creator-new", t("creator.new"), 10, 266, 11, false, 40));
-    this.add(this.act("creator-clear", t("creator.clear"), 56, 266, 11, false, 48));
-    this.add(this.act("creator-undo", t("creator.undo"), 112, 266, 11, !opts.canUndo, 44));
-    this.add(this.act("creator-redo", t("creator.redo"), 164, 266, 11, !opts.canRedo, 44));
-    this.add(this.act("creator-save", t("common.save"), 216, 266, 11, !opts.canSave, 44));
-    this.add(this.act("creator-copy", t("creator.copy"), 268, 266, 11, false, 88));
-    this.add(this.act("creator-load", t("creator.code"), 364, 266, 11, false, 96));
+    const bar = [
+      { id: "creator-new", label: t("creator.new"), off: false },
+      { id: "creator-clear", label: t("creator.clear"), off: false },
+      { id: "creator-undo", label: t("creator.undo"), off: !opts.canUndo },
+      { id: "creator-redo", label: t("creator.redo"), off: !opts.canRedo },
+      { id: "creator-save", label: t("common.save"), off: !opts.canSave },
+      { id: "creator-copy", label: t("creator.copy"), off: false },
+      { id: "creator-load", label: t("creator.code"), off: false },
+    ];
+    const tray = new createjs.Container();
+    tray.x = 8;
+    tray.y = 266;
+    let barX = 0;
+    const pad = wantsVirtualPad();
+    let size = 11;
+    const extra = pad ? 36 : 24;
+    const guess = (label: string): number => Math.max(36, Math.ceil(label.length * size * 0.62) + extra);
+    let total = bar.reduce((sum, row) => sum + guess(row.label), 0) + 4 * (bar.length - 1);
+    while (total > 534 && size > 8) {
+      size--;
+      total = bar.reduce((sum, row) => sum + guess(row.label), 0) + 4 * (bar.length - 1);
+    }
+    for (const row of bar) {
+      const node = this.act(row.id, row.label, barX, 0, size, row.off, 36);
+      tray.addChild(node);
+      barX += (node.hitW ?? guess(row.label)) + 4;
+    }
+    if (barX > 534) tray.scaleX = 534 / barX;
+    this.add(tray);
   }
 
   refreshCreatorBoard(opts: {

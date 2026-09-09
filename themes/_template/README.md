@@ -8,7 +8,7 @@ Copy this folder, rename it, and drop it in `themes/`. The game lists every fold
 | --- | --- |
 | `id` | Folder name, used in Settings |
 | `name` | Label in the theme dropdown |
-| `atlas` | PNG spritesheet. Same layout as `src/images/bloxorz_atlas_original.png`. Leave empty to keep the current atlas. |
+| `atlas` | PNG spritesheet in this folder (builtin packs use `atlas.png`). Same sprite layout as Original. Leave empty to keep the current atlas. |
 | `atlasScale` | `2` if the PNG is 2× the original sheet (HD). |
 | `hd` | Smooth filtering instead of nearest-neighbor. |
 | `render` | `atlas` (default) or `solid3d` (isometric cubes for tiles, pieces, and the block). |
