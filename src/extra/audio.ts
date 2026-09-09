@@ -30,7 +30,8 @@ export function gateSoundPlay(): void {
   };
 }
 
-export function unlockAudio(): void {
+export function unlockAudio(): boolean {
+  const first = !unlocked;
   unlocked = true;
   const w = window as unknown as {
     createjs?: {
@@ -43,6 +44,7 @@ export function unlockAudio(): void {
   void ctx?.resume?.();
   if (cjs?.Sound) cjs.Sound.volume = 1;
   applyVolumes();
+  return first;
 }
 
 export function ensureMenuMusic(): void {
@@ -52,7 +54,7 @@ export function ensureMenuMusic(): void {
     stopMenuMusic();
     return;
   }
-  if (menuMusic && menuMusic.playState) {
+  if (menuMusic) {
     menuMusic.volume = s.music;
     return;
   }
