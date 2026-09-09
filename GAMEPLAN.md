@@ -7,7 +7,7 @@ Living doc. Update this when a slice lands or the plan changes.
 | Repo | Role |
 | --- | --- |
 | [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate) | Upstream. Tauri wrap of Coolmath’s Bloxorz HTML5 export, plus timer and themes. |
-| [masterwebx/bloxorz-cybernate](https://github.com/masterwebx/bloxorz-cybernate) | **This repo.** GitHub fork so Spencer keeps fork credit. We add extras here without rewriting their runtime. |
+| [masterwebx/bloxorz-html5](https://github.com/masterwebx/bloxorz-html5) | **This repo** (renamed fork of Cybernate so it does not share the upstream repo name). GitHub still lists it as a fork of Spencer’s project. Live test: https://masterwebx.github.io/bloxorz-html5/ |
 | [masterwebx/web-bloxorz](https://github.com/masterwebx/web-bloxorz) | Earlier canvas remake, frozen at the last good commit before a failed sprite-port. Keep for reference until this fork covers the extras; then retire it. |
 
 Remote `upstream` should stay pointed at Spencer’s repo.
@@ -51,10 +51,11 @@ Keep solver / editor / seed tests as a library. Smoke-test that this bundle stil
 
 ## Done
 
-- [x] Fork `nathan-spencer/bloxorz-cybernate` → `masterwebx/bloxorz-cybernate`
+- [x] Fork `nathan-spencer/bloxorz-cybernate` → renamed **`masterwebx/bloxorz-html5`** (still a GitHub fork)
 - [x] Park `web-bloxorz` at the pre-sprite-port commit
 - [x] Vite web wrap (`npm run dev` / `npm run build`) without changing `bloxorz.js`
 - [x] Version label on the game stage (`v2.0.0`)
+- [x] GitHub Pages at https://masterwebx.github.io/bloxorz-html5/
 - [x] This file
 
 ## Next

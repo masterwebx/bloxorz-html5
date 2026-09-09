@@ -1,6 +1,8 @@
-# Bloxorz (Cybernate fork)
+# Bloxorz HTML5
 
-This is a **fork** of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate), so that project keeps GitHub credit for the desktop wrap.
+This is a **fork** of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate), renamed to **bloxorz-html5** so it does not share the upstream repo name. Spencer still gets GitHub fork credit.
+
+**Play it:** https://masterwebx.github.io/bloxorz-html5/
 
 Spencer’s repo is the Coolmath **Adobe Animate HTML5** Bloxorz client, plus:
 
@@ -19,7 +21,7 @@ npm install
 npm run dev
 ```
 
-Opens on port **4398**. `npm run build` / `npm run preview` for a static build (Vercel can host `dist`).
+Opens on port **4398**. `npm run build` copies `src` to `dist` (GitHub Pages and Vercel). Push to `master` deploys Pages.
 
 ## Desktop (upstream)
 
