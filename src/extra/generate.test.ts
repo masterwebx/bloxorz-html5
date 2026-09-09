@@ -90,13 +90,6 @@ describe("seeded generator", () => {
     expect(run[0].def.tiles.join("")).not.toBe(run[1].def.tiles.join(""));
   });
 
-  it("keeps gauntlet floors under a full 150-tile dump", () => {
-    const run = generateRun("lag-check", "insane", 3);
-    for (const p of run) {
-      expect(filledCellCount(p.def.tiles)).toBeLessThan(140);
-    }
-  });
-
   it("fills the whole 15×10 board for a full-board puzzle", () => {
     const p = generateFullBoard("fill-check");
     expect(filledCellCount(p.def.tiles)).toBe(150);

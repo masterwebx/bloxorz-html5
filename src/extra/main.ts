@@ -1511,8 +1511,8 @@ function modalBox(): HTMLElement | null {
   return $("hud-modal");
 }
 
-function modalInput(): HTMLInputElement | null {
-  return $("hud-modal-input") as HTMLInputElement | null;
+function modalInput(): HTMLTextAreaElement | null {
+  return $("hud-modal-input") as HTMLTextAreaElement | null;
 }
 
 function openModal(kind: "code-play" | "code-edit", title: string, placeholder: string): void {
@@ -1524,7 +1524,7 @@ function openModal(kind: "code-play" | "code-edit", title: string, placeholder: 
   if (input) {
     input.placeholder = placeholder;
     input.value = "";
-    input.maxLength = 160;
+    input.maxLength = 4096;
   }
   box?.classList.add("is-open");
   window.setTimeout(() => input?.focus(), 0);
@@ -1672,6 +1672,8 @@ function leavePlayTo(view: Screen): void {
   flags.setStageLoaded?.(0);
   flags.setSplit?.(0);
   playSession = null;
+  lastTintKey = "";
+  helpTextKey = "";
   stopAutoSolve("");
   extraView = view;
   overlayMode = "";
@@ -1895,29 +1897,51 @@ function beatCurrentStage(): void {
   window.exportRoot?.gotoAndPlay?.("restart");
 }
 
+type PlayTile = {
+  type?: string;
+  image?: unknown;
+  cache?: (x: number, y: number, w: number, h: number) => void;
+  gotoAndStop?: (n: number | string) => void;
+  stop?: () => void;
+  play?: () => void;
+  mouseEnabled?: boolean;
+  mouseChildren?: boolean;
+  tickEnabled?: boolean;
+  flasher?: { visible?: boolean; filters?: unknown; tickEnabled?: boolean };
+};
+
+function hardenPlayTile(tile: PlayTile): void {
+  tile.mouseEnabled = false;
+  tile.mouseChildren = false;
+  if (tile.image) {
+    tile.tickEnabled = false;
+    return;
+  }
+  if (tile.type !== "b") return;
+  tile.gotoAndStop?.(24);
+  tile.stop?.();
+  if (tile.flasher) {
+    tile.flasher.visible = false;
+    tile.flasher.filters = null;
+    tile.flasher.tickEnabled = false;
+  }
+  tile.tickEnabled = false;
+  tile.play = () => undefined;
+  tile.cache?.(-40, -52, 88, 78);
+}
+
 function cacheStaticWorldTiles(): void {
   const world = window.stage?.bloxWorld as
-    | {
-        tiles?: {
-          type?: string;
-          cache?: (x: number, y: number, w: number, h: number) => void;
-          nominalBounds?: { x: number; y: number; width: number; height: number };
-        }[];
-        __bloxTileCache?: boolean;
-      }
+    | { tiles?: PlayTile[]; layerTiles?: PlayTile; __bloxTileCache?: boolean }
     | null
     | undefined;
   if (!world?.tiles?.length || world.__bloxTileCache) return;
   world.__bloxTileCache = true;
-  for (const tile of world.tiles) {
-    if (tile.type !== "b" || !tile.cache) continue;
-    const b = tile.nominalBounds;
-    const x = (b?.x ?? -48) - 8;
-    const y = (b?.y ?? -40) - 8;
-    const w = (b?.width ?? 96) + 16;
-    const h = (b?.height ?? 80) + 16;
-    tile.cache(x, y, w, h);
+  if (world.layerTiles) {
+    world.layerTiles.mouseEnabled = false;
+    world.layerTiles.mouseChildren = false;
   }
+  for (const tile of world.tiles) hardenPlayTile(tile);
 }
 
 function syncHelpText(): void {

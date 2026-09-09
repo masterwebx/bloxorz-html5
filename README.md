@@ -36,7 +36,9 @@ npm run tauri dev
 
 ## Version
 
-The main menu shows **v1.0.9** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+The main menu shows **v1.0.10** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+
+Insane gauntlet and Daily can dump a full 15×10 board. Static stone tiles share one cached bitmap so 150-tile stages stay playable. Dense reverse seeds encode as the compact 75-nibble form; a copied `BXS.` code pastes back as the same stage.
 
 On a phone, turn on **Mobile pad** (the game asks if it thinks you are on a phone). The D-pad appears only while a stage is running. Installed app mode often stays portrait — use **Rotate screen** in Settings or the ROTATE button on the pad to flip the layout to landscape without fighting the phone.
 

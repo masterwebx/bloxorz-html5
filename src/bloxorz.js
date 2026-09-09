@@ -12221,9 +12221,37 @@
       // createTile
       //
 
-      function createTile(_, type, x, y) {
-        var tile = new lib.Tile();
+      var stoneStamp = null;
+      function createStoneTile(x, y) {
+        if (!stoneStamp) {
+          var proto = new lib.Tile();
+          proto.gotoAndStop(24);
+          proto.mouseEnabled = false;
+          proto.tickEnabled = false;
+          if (proto.flasher) {
+            proto.flasher.visible = false;
+            proto.flasher.filters = null;
+          }
+          proto.cache(-40, -52, 88, 78);
+          stoneStamp = proto.cacheCanvas || null;
+        }
+        var tile = stoneStamp ? new createjs.Bitmap(stoneStamp) : new lib.Tile();
+        if (stoneStamp) {
+          tile.regX = 40;
+          tile.regY = 52;
+        } else {
+          tile.gotoAndStop(24);
+          tile.tickEnabled = false;
+          tile.cache(-40, -52, 88, 78);
+        }
+        addPos(tile, x, y);
+        tile.pos.update();
+        tile.mouseEnabled = false;
+        tile.tickEnabled = false;
+        return tile;
+      }
 
+      function createTile(_, type, x, y) {
         var types = {
           b: "normalblock",
           s: "softswitch",
@@ -12243,6 +12271,19 @@
           r: false,
           q: true,
         };
+
+        if (type === "b") {
+          var stone = createStoneTile(x, y);
+          stone.isLand = function () {
+            return true;
+          };
+          stone.onLand = function (mc) {
+            _.playSound("clonk", mc.isSmall ? "half" : "clonk", 6);
+          };
+          return stone;
+        }
+
+        var tile = new lib.Tile();
 
         if (initialDoorStates.hasOwnProperty(type)) {
           tile.door = {
@@ -12324,11 +12365,14 @@
         tile.pos.update();
         tile.gotoAndStop(types[type]);
 
-        var delay = "bshvf".indexOf(type) !== -1 ? Math.floor(Math.random() * 5) + 10 : 30;
-
-        wait(delay, function () {
-          tile.play();
-        });
+        if (type === "f") {
+          tile.gotoAndStop(182);
+        } else {
+          var delay = "bshvf".indexOf(type) !== -1 ? Math.floor(Math.random() * 5) + 10 : 30;
+          wait(delay, function () {
+            tile.play();
+          });
+        }
 
         tile.isLand = isLandFns[type] || isLandFns.default;
         tile.onLand = onLandFns[type];

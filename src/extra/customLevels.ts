@@ -143,12 +143,15 @@ function writeLinks(bytes: number[], def: LevelDef): void {
   }
 }
 
-function readLinks(bytes: Uint8Array, i: number): { i: number; switches: LevelDef["switches"]; splits: LevelDef["splits"] } {
+function readLinks(bytes: Uint8Array, i: number): { i: number; switches: LevelDef["switches"]; splits: LevelDef["splits"] } | null {
+  if (i >= bytes.length) return null;
   const switches: LevelDef["switches"] = [];
   const nsw = bytes[i++] ?? 0;
   for (let s = 0; s < nsw; s++) {
+    if (i + 2 > bytes.length) return null;
     const [x, y] = fromCell(bytes[i++] ?? 0);
     const nb = bytes[i++] ?? 0;
+    if (i + nb * 2 > bytes.length) return null;
     const bridges: { x: number; y: number; mode: SwitchMode }[] = [];
     for (let b = 0; b < nb; b++) {
       const [bx, by] = fromCell(bytes[i++] ?? 0);
@@ -158,8 +161,10 @@ function readLinks(bytes: Uint8Array, i: number): { i: number; switches: LevelDe
     }
     switches.push({ x, y, bridges });
   }
+  if (i >= bytes.length) return null;
   const splits: LevelDef["splits"] = [];
   const nsp = bytes[i++] ?? 0;
+  if (i + nsp * 3 > bytes.length) return null;
   for (let s = 0; s < nsp; s++) {
     const [x, y] = fromCell(bytes[i++] ?? 0);
     const a = fromCell(bytes[i++] ?? 0);
@@ -169,19 +174,32 @@ function readLinks(bytes: Uint8Array, i: number): { i: number; switches: LevelDe
   return { i, switches, splits };
 }
 
+function packNibble(ch: string): number {
+  const i = TILE_PACK.indexOf(ch);
+  return i < 0 ? 0 : i;
+}
+
 /** Compact reverse seed that reconstructs the painted map. Sparse v2, dense v1 still decodes. */
 export function encodeSeed(def: LevelDef): string {
   const tiles = padTiles(def.tiles);
   const occupied: { n: number; ch: string }[] = [];
+  const cells: string[] = [];
   for (let y = 0; y < 10; y++) {
     for (let x = 0; x < 15; x++) {
       const ch = tiles[y][x] ?? " ";
+      cells.push(ch);
       if (ch !== " ") occupied.push({ n: cellCode(x, y), ch });
     }
   }
-  const bytes: number[] = [2, Math.min(255, occupied.length)];
-  for (const cell of occupied) {
-    bytes.push(cell.n, Math.max(0, TILE_PACK.indexOf(cell.ch)));
+  const bytes: number[] = [];
+  if (occupied.length >= 37) {
+    bytes.push(1);
+    for (let n = 0; n < 75; n++) {
+      bytes.push((packNibble(cells[n * 2] ?? " ") << 4) | packNibble(cells[n * 2 + 1] ?? " "));
+    }
+  } else {
+    bytes.push(2, Math.min(255, occupied.length));
+    for (const cell of occupied) bytes.push(cell.n, packNibble(cell.ch));
   }
   bytes.push(cellCode(def.spawn[0], def.spawn[1]));
   writeLinks(bytes, def);
@@ -205,6 +223,7 @@ export function decodeSeed(text: string): LevelDef | null {
       }
     } else if (bytes[0] === 2) {
       const count = bytes[i++] ?? 0;
+      if (bytes.length < i + count * 2 + 3) return null;
       for (let n = 0; n < count; n++) {
         const at = bytes[i++] ?? 0;
         const ch = TILE_PACK[bytes[i++] ?? 0] ?? " ";
@@ -215,8 +234,10 @@ export function decodeSeed(text: string): LevelDef | null {
     }
     const tiles: string[] = [];
     for (let y = 0; y < 10; y++) tiles.push(cells.slice(y * 15, y * 15 + 15).join(""));
+    if (i >= bytes.length) return null;
     const spawn = fromCell(bytes[i++] ?? 0);
     const links = readLinks(bytes, i);
+    if (!links) return null;
     return { id: "custom", code: "000000", tiles, spawn, switches: links.switches, splits: links.splits };
   } catch {
     return null;

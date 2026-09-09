@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { occupiedCells } from "./coolmathBoard";
 import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, isPlayable, parseShare, setTile, stageId } from "./customLevels";
+import type { LevelDef } from "./types";
 import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
 import { Stage } from "./engine";
 import { playScript, solveLevel } from "./solve";
@@ -100,6 +101,45 @@ describe("reverse seeds", () => {
     expect(back?.switches).toEqual(def.switches);
     expect(back?.splits).toEqual(def.splits);
     expect(parseShare(seed)?.tiles).toEqual(def.tiles);
+  });
+
+  it("round-trips a 150-tile board and the reported reverse seed", () => {
+    const tiles = Array.from({ length: 10 }, () => "bbbbbbbbbbbbbbb");
+    tiles[9] = "bbbbbbbbbbbbbbe";
+    const packed: LevelDef = {
+      id: "custom",
+      code: "000000",
+      tiles,
+      spawn: [0, 0],
+      switches: [{ x: 1, y: 0, bridges: [{ x: 2, y: 0, mode: "on" }] }],
+      splits: [],
+    };
+    const seed = encodeSeed(packed);
+    expect(seed.length).toBeLessThan(200);
+    const back = decodeSeed(seed);
+    expect(back?.tiles).toEqual(tiles);
+    expect(back?.spawn).toEqual([0, 0]);
+    expect(back?.switches).toEqual(packed.switches);
+
+    const reported =
+      "BXS.AksAAQEBAgEDAQQBBQEGCAcICAgJCAoBCwEMAQ0BDwEQAREBEgETARQBFQEWARcBGAgZCBoIGwgcAh4BHwEgASEBIgEjAS0BLgEvATABMQEyATwBPQE-AT8BQAFBAUsBTAFNAU4BTwFQAVoBWwFcAV0BXgRfAWkBagFrAWwBbQFuAXgBeQF6AXsBfAF9AYgBiQGKAYsBjAE-AV4IBgEHAQgACQIYABkAGgAbAAA";
+    const fromPaste = decodeSeed(reported);
+    expect(fromPaste).not.toBeNull();
+    expect(fromPaste?.tiles[0]).toBe("bbbbbbllllbbbb ");
+    expect(fromPaste?.tiles[1]).toBe("bbbbbbbbblllle ");
+    expect(fromPaste?.spawn).toEqual([2, 4]);
+    expect(fromPaste?.switches).toHaveLength(1);
+    expect(fromPaste?.switches[0]?.bridges).toHaveLength(8);
+    const again = encodeSeed(fromPaste!);
+    expect(again.length).toBeLessThan(reported.length);
+    const loop = decodeSeed(again);
+    expect(loop?.tiles).toEqual(fromPaste?.tiles);
+    expect(loop?.spawn).toEqual(fromPaste?.spawn);
+    expect(loop?.switches).toEqual(fromPaste?.switches);
+    expect(loop?.splits).toEqual(fromPaste?.splits);
+    expect(parseShare(reported)?.tiles).toEqual(fromPaste?.tiles);
+    expect(decodeSeed(reported.slice(0, 160))).toBeNull();
+    expect(decodeSeed(reported.slice(0, 80))).toBeNull();
   });
 
   it("keeps BX1 share codes working and tags them with the short id", () => {
