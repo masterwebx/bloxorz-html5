@@ -12479,6 +12479,9 @@
         // destroy
         _.destroy = function () {
           createjs.Ticker.removeEventListener("tick", _.tick);
+          if (stage.bloxWorld === _) {
+            stage.bloxWorld = null;
+          }
           _.removeAllBlocks();
           _.removeAllTiles();
 
@@ -12949,6 +12952,7 @@
         };
 
         addKeys(_);
+        stage.bloxWorld = _;
       }
 
       var world = new World();

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { bakeHueIntoPixels, hueRotateRgb, rustFaces } from "./hue";
+import {
+  bakeFrameBackup,
+  bakeHueIntoPixels,
+  collectBlockFrameIndexes,
+  hueRotateRgb,
+  isBlockSpriteName,
+  makeImageData,
+  rustFaces,
+} from "./hue";
 
 describe("block hue bake", () => {
   it("leaves rust unchanged at hue 0", () => {
@@ -21,10 +29,38 @@ describe("block hue bake", () => {
     expect(data[7]).toBe(0);
   });
 
-  it("builds preview face colors for the settings cuboid", () => {
+  it("bakes a copied bitmap frame without mutating the original pixels", () => {
+    const original = makeImageData(new Uint8ClampedArray([196, 104, 32, 255]), 1, 1);
+    const baked = bakeFrameBackup({ x: 0, y: 0, width: 1, height: 1, original }, 180);
+    expect(original.data[0]).toBe(196);
+    expect(baked.data[0]).toBeLessThan(80);
+    expect(baked.data[2]).toBeGreaterThan(140);
+  });
+
+  it("builds preview face colors for the settings cuboid fallback", () => {
     const zero = rustFaces(0);
     const spun = rustFaces(140);
     expect(zero.top).toMatch(/^rgb\(/);
     expect(spun.top).not.toBe(zero.top);
+  });
+
+  it("collects roll, fall, land, and split cube frames but not shadows", () => {
+    expect(isBlockSpriteName("blocka0007")).toBe(true);
+    expect(isBlockSpriteName("blockafall0000")).toBe(true);
+    expect(isBlockSpriteName("blockaland0001")).toBe(true);
+    expect(isBlockSpriteName("blockasmall0000")).toBe(true);
+    expect(isBlockSpriteName("blockashrink0002")).toBe(true);
+    expect(isBlockSpriteName("blockashadow0000")).toBe(false);
+    expect(isBlockSpriteName("blockalandshadow0000")).toBe(false);
+    expect(isBlockSpriteName("blockasmallshadow0001")).toBe(false);
+    expect(isBlockSpriteName("bettersky_22")).toBe(false);
+    const frames = collectBlockFrameIndexes({
+      blocka0000: "function () { this.gotoAndStop(38); }",
+      blocka0120: "function () { this.gotoAndStop(158); }",
+      blockafall0000: "function () { this.gotoAndStop(159); }",
+      blockashadow0000: "function () { this.gotoAndStop(238); }",
+      metal_v2: "function () { this.gotoAndStop(400); }",
+    });
+    expect(frames).toEqual([38, 158, 159]);
   });
 });

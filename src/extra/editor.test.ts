@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { occupiedCells } from "./coolmathBoard";
-import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, parseShare, setTile, stageId } from "./customLevels";
-import { checkBeatable, newPaintState, paintEditorCell } from "./editor";
+import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, isPlayable, parseShare, setTile, stageId } from "./customLevels";
+import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
 import { Stage } from "./engine";
 import { playScript, solveLevel } from "./solve";
 
@@ -57,9 +57,18 @@ describe("new stage starter path", () => {
 });
 
 describe("editor beatability", () => {
-  it("marks the starter path as beatable", () => {
+  it("marks the starter path as beatable right away", () => {
     expect(checkBeatable(emptyDraft())).toBe(true);
+    expect(beatBadge(emptyDraft(), null)).toBe("CAN BE BEAT");
+    expect(beatBadge(emptyDraft(), isPlayable(emptyDraft()))).toBe("CAN BE BEAT");
+    expect(beatBadge(emptyDraft(), isPlayable(emptyDraft()))).not.toBe("Checking…");
     expect(playScript(emptyDraft(), "Rx4").result).toBe("win");
+  });
+
+  it("shows IMPOSSIBLE immediately for a disconnected hole", () => {
+    const def = emptyDraft();
+    def.tiles[4] = "  b      e    ";
+    expect(beatBadge(def, null)).toBe("IMPOSSIBLE");
   });
 
   it("marks a disconnected hole as impossible", () => {

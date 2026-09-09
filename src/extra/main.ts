@@ -1,4 +1,5 @@
-import { checkBeatable, newPaintState, paintEditorCell, splitMarks, type EditorToolId } from "./editor";
+import { cmdToCode, createFeeder, tickFeeder, type SolveFeeder } from "./autoSolve";
+import { beatBadge, EDITOR_TOOLS, newPaintState, paintEditorCell, splitMarks, type EditorToolId } from "./editor";
 import {
   emptyDraft,
   encodeSeed,
@@ -39,6 +40,7 @@ import {
   type Action,
   type ThemeId,
 } from "./settings";
+import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./hue";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, type MenuItem } from "./hud";
@@ -74,6 +76,12 @@ type PlaySession = {
   title?: string;
 };
 
+type BloxWorld = {
+  destroy?: () => void;
+  blocks?: { roll?: { idle?: boolean } }[];
+  keys?: { code?: string };
+};
+
 type StageLike = {
   levelNumber: number;
   triggerKeyDown?: (evt: { code: string }) => void;
@@ -90,6 +98,7 @@ type StageLike = {
   totalFalls?: number;
   gameContainer?: { visible?: boolean };
   menuMusic?: { stop?: () => void } | null;
+  bloxWorld?: BloxWorld | null;
 };
 
 type SkyClip = { x: number; y: number; visible: boolean; mouseEnabled: boolean };
@@ -128,20 +137,18 @@ let playSession: PlaySession | null = null;
 let draft = emptyDraft();
 let paint = newPaintState();
 let beaten = false;
-let beatTimer = 0;
 let beatLabel = "Checking…";
 let puzzleDiff: Difficulty = "easy";
 let puzzleCount = 1;
-let solveQueue: WalkCmd[] = [];
-let solveHold = 0;
 let solveCode = "";
+let solveFeeder: SolveFeeder | null = null;
 let run: RunRecord | null = null;
 let tape: TapeCmd[] = [];
 let lastLabel = "";
 let lastLevelNum = 0;
 let origGetLevels: (() => unknown[]) | null = null;
 let hud: ExtraHud | null = null;
-let homeCursor = 0;
+let menuCursor = 0;
 let loadError = "";
 let hudDirty = true;
 let lastHudPaint = "";
@@ -164,7 +171,6 @@ let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
 let lastFinished: RunRecord | null = null;
 let showStats = false;
-let solvePending: WalkCmd[] | null = null;
 let beatBanner = "";
 let autoSolve = false;
 let onlineRows: { title: string; meta: string; play: () => void }[] = [];
@@ -179,7 +185,9 @@ type TintShape = {
 let tintLayer: TintShape | null = null;
 let blocksWereIdle = true;
 let prevPadButtons = new Set<number>();
-let solveWait = 0;
+let bakedHue = -1;
+let atlasFrames: FrameBackup[] | null = null;
+let atlasCanvas: HTMLCanvasElement | null = null;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -253,8 +261,100 @@ function savedLevel(): number {
   }
 }
 
+function adobeComp(): {
+  getLibrary: () => LibCtor;
+  getSpriteSheet?: () => Record<string, SpriteSheetLike>;
+} | undefined {
+  return window.AdobeAn?.getComposition("FE31B685947E79408F0C8768D6EC8517");
+}
+
 function adobeLib(): LibCtor | undefined {
-  return window.AdobeAn?.getComposition("FE31B685947E79408F0C8768D6EC8517")?.getLibrary();
+  return adobeComp()?.getLibrary();
+}
+
+type SpriteSheetLike = {
+  getFrame?: (i: number) => { image?: CanvasImageSource; rect?: { x: number; y: number; width: number; height: number } } | null;
+  _images?: CanvasImageSource[];
+  _frames?: { image?: CanvasImageSource }[];
+};
+
+function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): HTMLCanvasElement | null {
+  let canvas: HTMLCanvasElement;
+  if (source instanceof HTMLCanvasElement) {
+    canvas = source;
+  } else if (source instanceof HTMLImageElement) {
+    canvas = document.createElement("canvas");
+    canvas.width = source.naturalWidth || source.width;
+    canvas.height = source.naturalHeight || source.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(source, 0, 0);
+  } else {
+    return null;
+  }
+  if (sheet._images) {
+    for (let i = 0; i < sheet._images.length; i++) sheet._images[i] = canvas;
+  }
+  for (const frame of sheet._frames ?? []) frame.image = canvas;
+  return canvas;
+}
+
+function atlasSheet(): SpriteSheetLike | undefined {
+  const fromComp = adobeComp()?.getSpriteSheet?.()?.bloxorz_atlas_;
+  if (fromComp) return fromComp;
+  const lib = adobeLib() as unknown as Record<string, new () => { spriteSheet?: SpriteSheetLike }>;
+  try {
+    const Ctor = lib?.blocka0000;
+    return Ctor ? new Ctor().spriteSheet : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function collectBlockAtlas(): { canvas: HTMLCanvasElement; frames: FrameBackup[] } | null {
+  const sheet = atlasSheet();
+  const lib = adobeLib() as unknown as Record<string, unknown>;
+  if (!sheet?.getFrame || !lib) return null;
+  const indexes = collectBlockFrameIndexes(lib);
+  if (!indexes.length) return null;
+  let source: CanvasImageSource | null = null;
+  const rects: { x: number; y: number; width: number; height: number }[] = [];
+  for (const i of indexes) {
+    const frame = sheet.getFrame(i);
+    if (!frame?.rect || !frame.image) continue;
+    source = frame.image;
+    rects.push(frame.rect);
+  }
+  if (!source || !rects.length) return null;
+  const canvas = adoptAtlasCanvas(sheet, source);
+  if (!canvas) return null;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const frames = rects.map((r) => ({
+    x: r.x,
+    y: r.y,
+    width: r.width,
+    height: r.height,
+    original: ctx.getImageData(r.x, r.y, r.width, r.height),
+  }));
+  return { canvas, frames };
+}
+
+function applyBlockHue(): void {
+  const hue = loadSettings().blockHue;
+  if (hue === bakedHue && atlasFrames) return;
+  if (!atlasFrames || !atlasCanvas) {
+    const atlas = collectBlockAtlas();
+    if (!atlas) return;
+    atlasFrames = atlas.frames;
+    atlasCanvas = atlas.canvas;
+  }
+  const ctx = atlasCanvas.getContext("2d");
+  if (!ctx) return;
+  for (const frame of atlasFrames) {
+    ctx.putImageData(bakeFrameBackup(frame, hue), frame.x, frame.y);
+  }
+  bakedHue = hue;
 }
 
 function ensureSky(): void {
@@ -460,14 +560,152 @@ function homeItems(): MenuItem[] {
   ];
 }
 
-function moveHome(dir: 1 | -1): void {
-  const items = homeItems();
+type NavItem = { id: string; disabled?: boolean; adjust?: (dir: -1 | 1) => void };
+
+function clampStep(n: number, step: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n + step));
+}
+
+function navItems(): NavItem[] {
+  const s = loadSettings();
+  if (extraView === "splash") return [{ id: "splash-continue" }];
+  if (extraView === "name") return [{ id: "name-continue" }, { id: "skip-name" }];
+  if (extraView === "home") return homeItems();
+  if (extraView === "credits") return [{ id: "back" }];
+  if (extraView === "load") {
+    if (cachedDev) {
+      return [{ id: "back" }, ...Array.from({ length: 33 }, (_, i) => ({ id: "dev:" + (i + 1) }))];
+    }
+    return [{ id: "back" }, { id: "load-go" }];
+  }
+  if (extraView === "settings") {
+    return [
+      { id: "back" },
+      { id: "music", adjust: (d) => handleHudAction("music:" + clampStep(s.music, d * 0.1, 0, 1).toFixed(2)) },
+      { id: "sfx", adjust: (d) => handleHudAction("sfx:" + clampStep(s.sfx, d * 0.1, 0, 1).toFixed(2)) },
+      { id: "toggle-rumble" },
+      { id: "toggle-timer" },
+      { id: "theme:original" },
+      { id: "theme:gray" },
+      { id: "theme:holiday" },
+      { id: "toggle-theme-bg" },
+      { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
+      { id: "bghue", adjust: (d) => handleHudAction("bghue:" + String(clampStep(s.bgHue, d * 12, 0, 360))) },
+      { id: "blockhue", adjust: (d) => handleHudAction("blockhue:" + String(clampStep(s.blockHue, d * 12, 0, 360))) },
+      { id: "remap" },
+    ];
+  }
+  if (extraView === "remap") {
+    return [{ id: "settings" }, ...ACTIONS.map((id) => ({ id: "rebind:" + id }))];
+  }
+  if (extraView === "puzzles") {
+    return [
+      { id: "back" },
+      { id: "diff:easy" },
+      { id: "diff:medium" },
+      { id: "diff:hard" },
+      { id: "diff:insane" },
+      { id: "puzzle-daily" },
+      { id: "len:1" },
+      { id: "len:5" },
+      { id: "len:10" },
+      { id: "puzzle-run" },
+    ];
+  }
+  if (extraView === "history") {
+    const rows = loadFinishedStages().slice(0, 6);
+    return [
+      { id: "back" },
+      { id: "toggle-ghosts" },
+      ...rows.flatMap((rec, i) =>
+        rec.cmds.length && (!rec.title || rec.title.startsWith("Stage")) ? [{ id: "replay:" + i }] : [],
+      ),
+    ];
+  }
+  if (extraView === "finish") return [{ id: "toggle-stats" }, { id: "back" }];
+  if (extraView === "creator") {
+    return [{ id: "creator-make" }, { id: "creator-play" }, { id: "back" }];
+  }
+  if (extraView === "creator-make") {
+    return [{ id: "creator-new-stage" }, { id: "creator-manage" }, { id: "creator" }];
+  }
+  if (extraView === "creator-play") {
+    return [{ id: "creator-load" }, { id: "creator-offline" }, { id: "online" }, { id: "creator" }];
+  }
+  if (extraView === "creator-manage") {
+    return [{ id: "creator-make" }, ...listSaved().slice(0, 7).map((_, i) => ({ id: "manage:" + i }))];
+  }
+  if (extraView === "creator-offline") {
+    return [{ id: "creator-play" }, ...listSaved().slice(0, 7).map((_, i) => ({ id: "offline:" + i }))];
+  }
+  if (extraView === "online") {
+    return [{ id: "creator-play" }, ...onlineRows.slice(0, 7).map((_, i) => ({ id: "online-play:" + i }))];
+  }
+  if (extraView === "creator-edit") {
+    const issue = isPlayable(draft);
+    return [
+      { id: "creator-make" },
+      { id: "creator-test" },
+      ...EDITOR_TOOLS.map((tool) => ({ id: "tool:" + tool.id })),
+      { id: "creator-new" },
+      { id: "creator-clear" },
+      { id: "creator-undo", disabled: undoStack.length === 0 },
+      { id: "creator-redo", disabled: redoStack.length === 0 },
+      { id: "creator-save", disabled: !beaten || !!issue },
+      { id: "creator-copy" },
+      { id: "creator-load" },
+      { id: "online" },
+    ];
+  }
+  return [{ id: "back" }];
+}
+
+function handleMenuNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
+  if (extraView === "remap" && rebindAction) return;
+  if (extraView === "splash") {
+    if (ev === "confirm" || ev === "back") dismissSplash();
+    return;
+  }
+  const items = navItems();
+  if (ev === "up") {
+    moveNav(-1);
+    markHudDirty();
+    paintHud();
+    return;
+  }
+  if (ev === "down") {
+    moveNav(1);
+    markHudDirty();
+    paintHud();
+    return;
+  }
+  const item = items[menuCursor];
+  if (ev === "left") {
+    item?.adjust?.(-1);
+    return;
+  }
+  if (ev === "right") {
+    item?.adjust?.(1);
+    return;
+  }
+  if (ev === "confirm") {
+    if (item && !item.disabled) {
+      if (item.adjust) item.adjust(1);
+      else handleHudAction(item.id);
+    }
+    return;
+  }
+  if (ev === "back" && extraView !== "name" && extraView !== "auto") goBack();
+}
+
+function moveNav(dir: 1 | -1): void {
+  const items = navItems();
   if (!items.length) return;
-  let i = homeCursor;
+  let i = menuCursor;
   for (let n = 0; n < items.length; n++) {
     i = (i + dir + items.length) % items.length;
     if (!items[i].disabled) {
-      homeCursor = i;
+      menuCursor = i;
       return;
     }
   }
@@ -477,7 +715,7 @@ function hudKey(): string {
   const s = loadSettings();
   return [
     extraView,
-    homeCursor,
+    menuCursor,
     savedLevel(),
     getName(),
     String(s.rumble),
@@ -521,12 +759,15 @@ function paintHud(): void {
   }
   lastHudPaint = key;
   hudDirty = false;
+  const nav = navItems();
+  if (menuCursor >= nav.length) menuCursor = Math.max(0, nav.length - 1);
+  hud.focusId = nav[menuCursor]?.id ?? "";
   placeHudInput(false, "0", "0", "0", "", "");
   const s = loadSettings();
   if (extraView === "splash") {
     hud.drawSplash();
   } else if (extraView === "home") {
-    hud.drawHome(brandName(getName()), homeItems(), homeCursor, animateHome);
+    hud.drawHome(brandName(getName()), homeItems(), menuCursor, animateHome);
     animateHome = false;
   } else if (extraView === "name") {
     hud.drawName();
@@ -593,8 +834,7 @@ function paintHud(): void {
                     if (def) {
                       startCustom([def], "history");
                       autoSolve = true;
-                      solvePending = rec.cmds;
-                      solveWait = 0;
+                      solveFeeder = createFeeder(rec.cmds);
                     }
                   }
                 : undefined,
@@ -608,20 +848,20 @@ function paintHud(): void {
       { id: "creator-make", label: "Create" },
       { id: "creator-play", label: "Play" },
       { id: "back", label: "Back" },
-    ]);
+    ], menuCursor);
   } else if (extraView === "creator-make") {
     hud.drawCreatorHub("Create", [
       { id: "creator-new-stage", label: "New Stage" },
       { id: "creator-manage", label: "Manage" },
       { id: "creator", label: "Back" },
-    ]);
+    ], menuCursor);
   } else if (extraView === "creator-play") {
     hud.drawCreatorHub("Play", [
       { id: "creator-load", label: "Enter Code" },
       { id: "creator-offline", label: "Offline" },
       { id: "online", label: "Online" },
       { id: "creator", label: "Back" },
-    ]);
+    ], menuCursor);
   } else if (extraView === "creator-manage") {
     hud.drawCreatorList(
       "Manage",
@@ -669,6 +909,7 @@ function paintHud(): void {
 
 function openPanel(name: Screen): void {
   extraView = name;
+  menuCursor = 0;
   markHudDirty();
   lastHudPaint = "";
   if (name === "home") animateHome = true;
@@ -947,6 +1188,28 @@ function handleHudAction(act: string): void {
   else if (act === "dev-menu") {
     returnToMenu();
     openPanel("load");
+  } else if (act.startsWith("manage:")) {
+    const row = listSaved()[Number(act.slice(7))];
+    if (!row) return;
+    draft = structuredClone(row.def);
+    beaten = true;
+    paint = newPaintState();
+    scheduleBeatCheck();
+    openPanel("creator-edit");
+  } else if (act.startsWith("offline:")) {
+    const row = listSaved()[Number(act.slice(8))];
+    if (row) startCustom([structuredClone(row.def)], "creator-play", row.name);
+  } else if (act.startsWith("online-play:")) {
+    onlineRows[Number(act.slice(12))]?.play();
+  } else if (act.startsWith("replay:")) {
+    const rec = loadFinishedStages()[Number(act.slice(7))];
+    if (!rec?.cmds.length) return;
+    const defs = rawCampaignDefs();
+    const def = defs[(rec.stage || 1) - 1];
+    if (!def) return;
+    startCustom([def], "history");
+    autoSolve = true;
+    solveFeeder = createFeeder(rec.cmds);
   }
 }
 
@@ -1140,14 +1403,6 @@ function startCustom(defs: LevelDef[], returnTo: Screen, title?: string): void {
   beginPlay(1, { kind: "custom", defs, returnTo, record: returnTo !== "creator-edit", classicRun: false, title });
 }
 
-function cmdToCode(cmd: WalkCmd): string {
-  if (cmd === "swap") return "Space";
-  if (cmd === "up") return "ArrowUp";
-  if (cmd === "down") return "ArrowDown";
-  if (cmd === "left") return "ArrowLeft";
-  return "ArrowRight";
-}
-
 type PlayBlock = {
   roll?: { idle?: boolean };
   currentFrame?: number;
@@ -1170,6 +1425,8 @@ function walkNodes(node: PlayBlock | undefined, fn: (n: PlayBlock) => void): voi
 }
 
 function playBlocks(): PlayBlock[] {
+  const live = window.stage?.bloxWorld?.blocks;
+  if (live?.length) return live as PlayBlock[];
   const gc = window.stage?.gameContainer as PlayBlock | undefined;
   const out: PlayBlock[] = [];
   walkNodes(gc, (node) => {
@@ -1199,63 +1456,36 @@ function solveCmdsForCurrent(): WalkCmd[] | null {
 
 function stopAutoSolve(banner = ""): void {
   autoSolve = false;
-  solvePending = null;
-  solveQueue = [];
+  solveFeeder = null;
   if (solveCode) window.stage?.triggerKeyUp?.({ code: solveCode });
   solveCode = "";
-  solveHold = 0;
-  solveWait = 0;
   beatBanner = banner;
   lastHudPaint = "";
 }
 
 function tickSolve(): void {
   const stage = window.stage;
-  if (!autoSolve) return;
+  if (!autoSolve || !solveFeeder) return;
   if (currentLabel() !== "game") return;
   if (!stage?.triggerKeyDown) return;
-
-  if (solvePending) {
-    const ready = !playBlocks().length || blocksIdle();
-    if (!ready && solveWait < 90) {
-      solveWait++;
-      return;
-    }
-    solveQueue = solvePending.slice();
-    solvePending = null;
-    solveWait = 0;
-    beatBanner = "Auto-solve";
-    lastHudPaint = "";
-    hud?.drawInGameDev(beatBanner, true);
-  }
-
-  if (solveCode) {
-    if (playBlocks().length && !blocksIdle()) {
-      stage.triggerKeyUp?.({ code: solveCode });
-      solveCode = "";
-      solveHold = 0;
-      return;
-    }
-    solveHold++;
-    if (solveHold > 24) {
-      stage.triggerKeyUp?.({ code: solveCode });
-      solveCode = "";
-      solveHold = 0;
-    }
-    return;
-  }
-
-  if (!solveQueue.length) return;
-  if (playBlocks().length && !blocksIdle()) return;
-
-  const cmd = solveQueue.shift();
-  if (!cmd) return;
-  solveCode = cmdToCode(cmd);
-  solveHold = 0;
-  stage.triggerKeyDown({ code: solveCode });
-  if (cmd === "swap") {
+  const hasBlock = playBlocks().length > 0;
+  const idle = hasBlock && blocksIdle();
+  const act = tickFeeder(solveFeeder, { idle, hasBlock });
+  if (act.release && solveCode) {
     stage.triggerKeyUp?.({ code: solveCode });
     solveCode = "";
+  }
+  if (act.press === "swap") {
+    solveCode = cmdToCode("swap");
+    stage.triggerKeyDown({ code: solveCode });
+    stage.triggerKeyUp?.({ code: solveCode });
+    solveCode = "";
+  } else if (act.press) {
+    solveCode = cmdToCode(act.press);
+    stage.triggerKeyDown({ code: solveCode });
+  } else if (act.hold) {
+    solveCode = cmdToCode(act.hold);
+    stage.triggerKeyDown({ code: solveCode });
   }
 }
 
@@ -1271,17 +1501,13 @@ function beatCurrentStage(): void {
     hud?.drawInGameDev(beatBanner, false);
     return;
   }
-  const n = window.stage?.levelNumber ?? 1;
-  const session = playSession;
   autoSolve = true;
   beatBanner = "Auto-solve";
   hud?.drawInGameDev(beatBanner, true);
-  solvePending = cmds;
-  solveQueue = [];
+  solveFeeder = createFeeder(cmds);
   solveCode = "";
-  solveWait = 0;
-  if (session) beginPlay(n, session);
-  else window.exportRoot?.gotoAndPlay?.("restart");
+  window.stage?.bloxWorld?.destroy?.();
+  window.exportRoot?.gotoAndPlay?.("restart");
 }
 
 function syncHelpText(): void {
@@ -1330,54 +1556,6 @@ function applyPlayTint(): void {
   }
 }
 
-function applyBlockHue(): void {
-  const hue = loadSettings().blockHue;
-  const cjs = window.createjs as {
-    ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
-    ColorMatrixFilter?: new (m: unknown) => unknown;
-  };
-  const blocks = playBlocks();
-  const ColorMatrix = cjs.ColorMatrix;
-  const ColorMatrixFilter = cjs.ColorMatrixFilter;
-  if (!blocks.length || !ColorMatrix || !ColorMatrixFilter) return;
-  const deg = hue <= 180 ? hue : hue - 360;
-  for (const block of blocks) {
-    let leaves = 0;
-    walkNodes(block, (node) => {
-      if (node === block || (!node.image && !node.spriteSheet)) return;
-      leaves++;
-      if (!hue) {
-        node.filters = null;
-        node.uncache?.();
-        node.__bloxHue = 0;
-        return;
-      }
-      if (node.__bloxHue === hue && node.cacheID) return;
-      const matrix = new ColorMatrix();
-      matrix.adjustHue(deg);
-      node.filters = [new ColorMatrixFilter(matrix)];
-      const b = node.getBounds?.();
-      node.cache?.(b?.x ?? -40, b?.y ?? -40, Math.max(8, b?.width ?? 80), Math.max(8, b?.height ?? 80));
-      node.__bloxHue = hue;
-    });
-    if (!hue) {
-      block.filters = null;
-      block.uncache?.();
-      continue;
-    }
-    if (leaves) {
-      block.uncache?.();
-      block.filters = null;
-      continue;
-    }
-    const matrix = new ColorMatrix();
-    matrix.adjustHue(deg);
-    block.filters = [new ColorMatrixFilter(matrix)];
-    if (block.cacheID) block.updateCache?.();
-    else block.cache?.(-70, -110, 140, 180);
-  }
-}
-
 function commitTape(won: boolean, stageNo: number): void {
   if (!run || !playSession?.record) {
     tape = [];
@@ -1400,17 +1578,11 @@ function commitTape(won: boolean, stageNo: number): void {
 }
 
 function scheduleBeatCheck(): void {
-  window.clearTimeout(beatTimer);
-  beatLabel = "Checking…";
-  beatTimer = window.setTimeout(() => {
-    const issue = isPlayable(draft);
-    if (issue) beatLabel = issue;
-    else beatLabel = checkBeatable(draft) ? "CAN BE BEAT" : "IMPOSSIBLE";
-    if (extraView === "creator") {
-      markHudDirty();
-      paintHud();
-    }
-  }, 200);
+  beatLabel = beatBadge(draft, isPlayable(draft));
+  if (extraView === "creator-edit" || extraView === "creator") {
+    markHudDirty();
+    paintHud();
+  }
 }
 
 function saveDraft(): void {
@@ -1486,26 +1658,7 @@ function capturePadRebind(): void {
 }
 
 function bindMenuPad(): void {
-  for (const ev of pollMenuPad()) {
-    if (extraView === "home") {
-      if (ev === "up") {
-        moveHome(-1);
-        markHudDirty();
-        paintHud();
-      } else if (ev === "down") {
-        moveHome(1);
-        markHudDirty();
-        paintHud();
-      } else if (ev === "confirm") {
-        const item = homeItems()[homeCursor];
-        if (item && !item.disabled) handleHudAction(item.id);
-      }
-    } else if (ev === "confirm" && extraView === "splash") {
-      dismissSplash();
-    } else if (ev === "back" && extraView !== "name" && extraView !== "auto" && extraView !== "splash") {
-      goBack();
-    }
-  }
+  for (const ev of pollMenuPad()) handleMenuNav(ev);
 }
 
 function bind(): void {
@@ -1615,21 +1768,22 @@ function bind(): void {
       goBack();
       return;
     }
-    if (extraView !== "home") return;
     if (ev.key === "ArrowDown") {
-      moveHome(1);
-      markHudDirty();
-      paintHud();
+      ev.preventDefault();
+      handleMenuNav("down");
     } else if (ev.key === "ArrowUp") {
-      moveHome(-1);
-      markHudDirty();
-      paintHud();
+      ev.preventDefault();
+      handleMenuNav("up");
+    } else if (ev.key === "ArrowLeft") {
+      ev.preventDefault();
+      handleMenuNav("left");
+    } else if (ev.key === "ArrowRight") {
+      ev.preventDefault();
+      handleMenuNav("right");
     } else if (ev.key === "Enter") {
-      const item = homeItems()[homeCursor];
-      if (item && !item.disabled) {
-        playUiLatch();
-        handleHudAction(item.id);
-      }
+      ev.preventDefault();
+      playUiLatch();
+      handleMenuNav("confirm");
     }
   });
 }
@@ -1653,10 +1807,10 @@ function syncOverlay(): void {
   }
 
   if (label === "restart" && lastLabel === "game") {
-    if (autoSolve && !solvePending) {
+    if (autoSolve && !solveFeeder?.pending && !solveFeeder?.queue.length && !solveFeeder?.held) {
       stopAutoSolve("Auto-solve failed");
     }
-    if (!solvePending) {
+    if (!solveFeeder?.pending) {
       rumble(180, 0.6, 0.4);
       commitTape(false, stage?.levelNumber ?? lastLevelNum);
     }
@@ -1763,11 +1917,11 @@ function syncOverlay(): void {
     }
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
     applyPlayTint();
+    applyBlockHue();
     if (playing) {
       tickSolve();
       pollGamepad(stage);
       syncHelpText();
-      applyBlockHue();
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);
       blocksWereIdle = idle;
@@ -1804,6 +1958,7 @@ function syncOverlay(): void {
     }
   }
 
+  applyBlockHue();
   bindMenuPad();
   capturePadRebind();
   if (extraView === "finish") {
@@ -1847,7 +2002,12 @@ declare global {
     startBloxorzShell?: () => void;
     GAME_VERSION?: string;
     __bloxSetMouseOver?: (hz: number) => void;
-    AdobeAn?: { getComposition: (id: string) => { getLibrary: () => LibCtor } };
+    AdobeAn?: {
+      getComposition: (id: string) => {
+        getLibrary: () => LibCtor;
+        getSpriteSheet?: () => Record<string, SpriteSheetLike>;
+      };
+    };
     createjs?: {
       Sound?: {
         volume: number;
@@ -1876,11 +2036,13 @@ export function startBloxorzShell(): void {
   if (window.stage && !hud) {
     hud = new ExtraHud(window.stage as { addChild: (c: unknown) => void });
     hud.onAction = handleHudAction;
-    hud.makeMascot = () => {
+    const makeSpin = (): ReturnType<NonNullable<ExtraHud["makeMascot"]>> => {
       const Spin = adobeLib()?.spinna;
       if (!Spin) return null;
       return new Spin() as never;
     };
+    hud.makeMascot = makeSpin;
+    hud.makePreview = makeSpin;
     hud.makeClip = (name: ClipName) => {
       if (name === "Block") return null;
       try {
@@ -1897,6 +2059,7 @@ export function startBloxorzShell(): void {
     parkCreateJsMenu();
     setMouseOverRate(5);
     applyLooks();
+    applyBlockHue();
     const sel = $("image_select") as HTMLSelectElement | null;
     if (sel) sel.value = currentTheme();
   }

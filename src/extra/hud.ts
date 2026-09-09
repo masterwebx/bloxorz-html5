@@ -193,13 +193,14 @@ function text(str: string, x: number, y: number, size: number, color?: string, a
   return t;
 }
 
-function hitRow(label: string, x: number, y: number, size: number, fn: () => void, disabled = false, minW = 220): HudNode {
+function hitRow(label: string, x: number, y: number, size: number, fn: () => void, disabled = false, minW = 220, focused = false): HudNode {
   const theme = paint();
   const row = new createjs.Container();
   row.x = x;
   row.y = y;
-  const t = text(label, 0, 0, size, disabled ? theme.muted : theme.ink);
+  const t = text(label, 0, 0, size, disabled ? theme.muted : focused ? theme.hot : theme.ink);
   t.mouseEnabled = false;
+  if (focused && !disabled) glow(t, true, theme);
   const w = Math.max(minW, (t.getMeasuredWidth?.() || label.length * size * 0.62) + 24);
   const h = Math.max(22, size + 10);
   const area = new createjs.Shape();
@@ -219,8 +220,8 @@ function hitRow(label: string, x: number, y: number, size: number, fn: () => voi
       glow(t, true, theme);
     });
     area.addEventListener("mouseout", () => {
-      t.color = ink;
-      glow(t, false, theme);
+      t.color = focused ? hot : ink;
+      glow(t, focused, theme);
     });
   }
   row.addChild(area);
@@ -305,6 +306,9 @@ export class ExtraHud {
   onAction: (act: string) => void = () => undefined;
   makeMascot: (() => HudNode | null) | null = null;
   makeClip: ((name: ClipName) => HudNode | null) | null = null;
+  makePreview: (() => HudNode | null) | null = null;
+  focusId = "";
+  private preview: HudNode | null = null;
 
   constructor(stage: { addChild: (c: unknown) => void }) {
     this.root = new createjs.Container();
@@ -337,6 +341,10 @@ export class ExtraHud {
     for (const n of nodes) this.layer.addChild(n);
   }
 
+  private act(id: string, label: string, x: number, y: number, size: number, disabled = false, minW = 220): HudNode {
+    return hitRow(label, x, y, size, () => this.onAction(id), disabled, minW, this.focusId === id);
+  }
+
   private placeMascot(brandWidth: number, brandX: number, brandY: number): void {
     if (!this.mascot && this.makeMascot) this.mascot = this.makeMascot();
     if (!this.mascot) return;
@@ -354,6 +362,21 @@ export class ExtraHud {
     if (!this.mascot) return;
     this.mascot.visible = false;
     if (this.mascot.parent === this.root) this.root.removeChild?.(this.mascot);
+  }
+
+  private placePreview(x: number, y: number): void {
+    if (!this.preview && this.makePreview) this.preview = this.makePreview();
+    if (!this.preview) {
+      this.add(blockPreview(x, y, 0));
+      return;
+    }
+    this.preview.visible = true;
+    this.preview.mouseEnabled = false;
+    this.preview.scaleX = 0.34;
+    this.preview.scaleY = 0.34;
+    this.preview.x = x;
+    this.preview.y = y + 36;
+    this.add(this.preview);
   }
 
   drawHome(title: string, items: MenuItem[], cursor: number, animate = false): void {
@@ -405,15 +428,15 @@ export class ExtraHud {
     this.hideMascot();
     this.add(text("What should we call you?", 40, 70, 18));
     this.add(fieldBox(40, 128, 240));
-    this.add(hitRow("Continue", 40, 168, 13, () => this.onAction("name-continue"), false, 120));
-    this.add(hitRow("Stay anonymous", 160, 168, 13, () => this.onAction("skip-name"), false, 160));
+    this.add(this.act("name-continue", "Continue", 40, 168, 13, false, 120));
+    this.add(this.act("skip-name", "Stay anonymous", 160, 168, 13, false, 160));
   }
 
   drawCredits(): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("back"), false, 80));
+    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("Credits", 275, 28, 20, theme.ink, "center"));
     this.add(text("Bloxorz — Damien Clarke / DX Interactive, 2007.", 40, 80, 11, theme.muted));
     this.add(text("Playfield: Coolmath Animate HTML5 export.", 40, 102, 11, theme.muted));
@@ -424,26 +447,26 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("back"), false, 80));
+    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("Load Stage", 275, 28, 20, theme.ink, "center"));
     this.add(text("Campaign passcode, six digits.", 40, 80, 11, theme.muted));
     this.add(fieldBox(40, 114, 160));
     if (error) this.add(text(error, 40, 150, 11, "#ff8a8a"));
-    this.add(hitRow("Load", 40, 180, 13, () => this.onAction("load-go"), false, 80));
+    this.add(this.act("load-go", "Load", 40, 180, 13, false, 80));
   }
 
   drawLoadStages(): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("back"), false, 80));
+    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("Load Stage", 275, 28, 20, theme.ink, "center"));
     this.add(text("Jump to a campaign stage.", 40, 54, 11, theme.muted));
     for (let i = 1; i <= 33; i++) {
       const col = (i - 1) % 11;
       const row = Math.floor((i - 1) / 11);
       const n = String(i).padStart(2, "0");
-      this.add(hitRow(n, 40 + col * 42, 86 + row * 28, 13, () => this.onAction("dev:" + i), false, 36));
+      this.add(this.act("dev:" + i, n, 40 + col * 42, 86 + row * 28, 13, false, 36));
     }
   }
 
@@ -461,52 +484,48 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 8, 12, () => this.onAction("back"), false, 80));
+    this.add(this.act("back", "Back", 24, 8, 12, false, 80));
     this.add(text("Settings", 275, 8, 16, theme.ink, "center"));
     this.add(text("Name", 40, 34, 12));
     this.add(fieldBox(100, 32, 220));
-    this.add(text("Music", 40, 62, 12));
+    this.add(text("Music", 40, 62, 12, this.focusId === "music" ? theme.hot : theme.ink));
     this.add(slider(100, 62, 140, opts.music, (v) => this.onAction("music:" + v.toFixed(2))));
     this.add(text(Math.round(opts.music * 100) + "%", 300, 62, 11, theme.muted));
-    this.add(text("SFX", 40, 84, 12));
+    this.add(text("SFX", 40, 84, 12, this.focusId === "sfx" ? theme.hot : theme.ink));
     this.add(slider(100, 84, 140, opts.sfx, (v) => this.onAction("sfx:" + v.toFixed(2))));
     this.add(text(Math.round(opts.sfx * 100) + "%", 300, 84, 11, theme.muted));
-    this.add(hitRow(opts.rumble ? "> Rumble  On" : "  Rumble  Off", 40, 106, 12, () => this.onAction("toggle-rumble"), false, 200));
-    this.add(
-      hitRow(opts.showTimer ? "> Speedrun timer  On" : "  Speedrun timer  Off", 40, 126, 12, () => this.onAction("toggle-timer"), false, 240),
-    );
+    this.add(this.act("toggle-rumble", opts.rumble ? "> Rumble  On" : "  Rumble  Off", 40, 106, 12, false, 200));
+    this.add(this.act("toggle-timer", opts.showTimer ? "> Speedrun timer  On" : "  Speedrun timer  Off", 40, 126, 12, false, 240));
     this.add(text("Theme", 40, 146, 12));
     (["original", "gray", "holiday"] as const).forEach((th, i) => {
       const mark = opts.theme === th ? "> " : "  ";
-      this.add(hitRow(mark + th, 110 + i * 110, 146, 12, () => this.onAction("theme:" + th), false, 100));
+      this.add(this.act("theme:" + th, mark + th, 110 + i * 110, 146, 12, false, 100));
     });
-    this.add(
-      hitRow(opts.themeBg ? "> Theme background  On" : "  Theme background  Off", 40, 166, 12, () => this.onAction("toggle-theme-bg"), false, 260),
-    );
-    this.add(text("Backdrop tint", 40, 188, 12));
+    this.add(this.act("toggle-theme-bg", opts.themeBg ? "> Theme background  On" : "  Theme background  Off", 40, 166, 12, false, 260));
+    this.add(text("Backdrop tint", 40, 188, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
     this.add(slider(160, 188, 120, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
     this.add(swatch(300, 190, opts.bgHue, opts.bgTint));
-    this.add(text("Backdrop hue", 40, 210, 12));
+    this.add(text("Backdrop hue", 40, 210, 12, this.focusId === "bghue" ? theme.hot : theme.ink));
     this.add(slider(160, 210, 120, opts.bgHue / 360, (v) => this.onAction("bghue:" + Math.round(v * 360))));
     this.add(text(String(Math.round(opts.bgHue)), 300, 210, 11, theme.muted));
-    this.add(text("Block hue", 40, 232, 12));
+    this.add(text("Block hue", 40, 232, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
     this.add(slider(160, 232, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
     this.add(swatch(300, 234, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
-    this.add(blockPreview(360, 214, opts.blockHue));
-    this.add(hitRow("Remap controls", 40, 256, 12, () => this.onAction("remap"), false, 180));
+    this.placePreview(392, 188);
+    this.add(this.act("remap", "Remap controls", 40, 256, 12, false, 180));
   }
 
   drawRemap(rows: { id: string; label: string; bind: string }[], waiting: string | null): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 12, 12, () => this.onAction("settings"), false, 80));
+    this.add(this.act("settings", "Back", 24, 12, 12, false, 80));
     this.add(text("Remap controls", 275, 12, 18, theme.ink, "center"));
     this.add(text(waiting ? "Press a key or pad button for " + waiting + "…" : "Click a row, then press a key or pad button.", 40, 40, 11, theme.muted));
     rows.forEach((row, i) => {
       const y = 68 + i * 22;
       const mark = waiting === row.id ? "> " : "  ";
-      this.add(hitRow(`${mark}${row.label}`, 40, y, 12, () => this.onAction("rebind:" + row.id), false, 200));
+      this.add(this.act("rebind:" + row.id, `${mark}${row.label}`, 40, y, 12, false, 200));
       this.add(text(row.bind, 320, y, 12, theme.muted));
     });
   }
@@ -524,8 +543,8 @@ export class ExtraHud {
     this.add(text("Congratulations", 275, 28, 20, theme.ink, "center"));
     this.add(text("You cleared the run.", 275, 56, 12, theme.muted, "center"));
     this.add(text("Moves  " + opts.moves + "    Falls  " + opts.falls + "    Attempts  " + opts.fails, 275, 82, 12, theme.ink, "center"));
-    this.add(hitRow(opts.showStats ? "> Hide Stats" : "  Show Stats", 40, 104, 12, () => this.onAction("toggle-stats"), false, 160));
-    this.add(hitRow("Menu", 230, 104, 12, () => this.onAction("back"), false, 90));
+    this.add(this.act("toggle-stats", opts.showStats ? "> Hide Stats" : "  Show Stats", 40, 104, 12, false, 160));
+    this.add(this.act("back", "Menu", 230, 104, 12, false, 90));
     if (opts.showStats) {
       if (!opts.rows.length) this.add(text("No per-stage times recorded.", 40, 140, 11, theme.muted));
       opts.rows.slice(0, 6).forEach((row, i) => {
@@ -539,21 +558,21 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("back"), false, 80));
+    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("Puzzles", 275, 28, 20, theme.ink, "center"));
     this.add(text("Select Difficulty.", 40, 58, 13));
     (["easy", "medium", "hard", "insane"] as const).forEach((d, i) => {
       const mark = d === diff ? "> " : "  ";
-      this.add(hitRow(mark + d, 40 + i * 120, 86, 12, () => this.onAction("diff:" + d), false, 100));
+      this.add(this.act("diff:" + d, mark + d, 40 + i * 120, 86, 12, false, 100));
     });
     this.add(text(difficultyHint(diff as "easy" | "medium" | "hard" | "insane"), 40, 118, 11, theme.muted));
-    this.add(hitRow("Play Daily", 40, 146, 13, () => this.onAction("puzzle-daily"), false, 140));
+    this.add(this.act("puzzle-daily", "Play Daily", 40, 146, 13, false, 140));
     this.add(text("Stages", 40, 178, 12));
     [1, 5, 10].forEach((n, i) => {
       const mark = n === count ? "> " : "  ";
-      this.add(hitRow(mark + String(n), 120 + i * 70, 178, 12, () => this.onAction("len:" + n), false, 50));
+      this.add(this.act("len:" + n, mark + String(n), 120 + i * 70, 178, 12, false, 50));
     });
-    this.add(hitRow("Start Seeded Run", 40, 220, 13, () => this.onAction("puzzle-run"), false, 180));
+    this.add(this.act("puzzle-run", "Start Seeded Run", 40, 220, 13, false, 180));
   }
 
   drawHistory(opts: {
@@ -563,11 +582,9 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("back"), false, 80));
+    this.add(this.act("back", "Back", 24, 16, 12, false, 80));
     this.add(text("History", 275, 16, 18, theme.ink, "center"));
-    this.add(
-      hitRow(opts.seeGhosts ? "> See ghosts  On" : "  See ghosts  Off", 320, 16, 11, () => this.onAction("toggle-ghosts"), false, 180),
-    );
+    this.add(this.act("toggle-ghosts", opts.seeGhosts ? "> See ghosts  On" : "  See ghosts  Off", 320, 16, 11, false, 180));
     if (!opts.rows.length) {
       this.add(text("No finished stages yet. Clear a stage to record it here.", 40, 80, 12, theme.muted));
       return;
@@ -576,17 +593,18 @@ export class ExtraHud {
       const y = 52 + i * 36;
       this.add(text(row.title, 40, y, 11));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      if (row.replay) this.add(hitRow("Replay", 420, y, 11, row.replay, false, 80));
+      if (row.replay) this.add(this.act("replay:" + i, "Replay", 420, y, 11, false, 80));
     });
   }
 
-  drawCreatorHub(title: string, items: MenuItem[]): void {
+  drawCreatorHub(title: string, items: MenuItem[], cursor = 0): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
     this.add(text(title, 40, 70, 20));
     items.forEach((item, i) => {
-      this.add(hitRow(item.label, 40, 118 + i * 28, 15, () => this.onAction(item.id), !!item.disabled, 220));
+      const mark = i === cursor ? "> " : "  ";
+      this.add(hitRow(mark + item.label, 40, 118 + i * 28, 15, () => this.onAction(item.id), !!item.disabled, 220));
     });
     this.add(text("Paint a stage, or play a share code.", 40, 220, 11, theme.muted));
   }
@@ -595,7 +613,7 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction(backId), false, 80));
+    this.add(this.act(backId, "Back", 24, 16, 12, false, 80));
     this.add(text(title, 275, 18, 18, theme.ink, "center"));
     if (!rows.length) {
       this.add(text(empty, 40, 80, 12, theme.muted));
@@ -605,7 +623,8 @@ export class ExtraHud {
       const y = 54 + i * 30;
       this.add(text(row.title, 40, y, 12));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      this.add(hitRow("Open", 430, y, 11, row.play, false, 70));
+      const openId = backId === "creator-make" ? "manage:" + i : "offline:" + i;
+      this.add(this.act(openId, "Open", 430, y, 11, false, 70));
     });
   }
 
@@ -624,10 +643,10 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 10, 6, 12, () => this.onAction("creator-make"), false, 56));
+    this.add(this.act("creator-make", "Back", 10, 6, 12, false, 56));
     this.add(text("Stage Creator", 72, 8, 15));
     this.add(text(opts.badge, 250, 10, 11, theme.green));
-    this.add(hitRow("Test", 490, 6, 12, () => this.onAction("creator-test"), false, 50));
+    this.add(this.act("creator-test", "Test", 490, 6, 12, false, 50));
 
     this.board = new createjs.Container();
     this.refreshCreatorBoard(opts);
@@ -658,18 +677,18 @@ export class ExtraHud {
       const mark = opts.tool === tool.id ? "> " : "  ";
       const icon = this.toolClip(tool.id, 372, y);
       if (icon) this.add(icon);
-      this.add(hitRow(mark + tool.label, 392, y, 11, () => this.onAction("tool:" + tool.id), false, 150));
+      this.add(this.act("tool:" + tool.id, mark + tool.label, 392, y, 11, false, 150));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, 248, 10, theme.muted));
-    this.add(hitRow("New", 10, 266, 11, () => this.onAction("creator-new"), false, 40));
-    this.add(hitRow("Clear", 56, 266, 11, () => this.onAction("creator-clear"), false, 48));
-    this.add(hitRow("Undo", 112, 266, 11, () => this.onAction("creator-undo"), !opts.canUndo, 44));
-    this.add(hitRow("Redo", 164, 266, 11, () => this.onAction("creator-redo"), !opts.canRedo, 44));
-    this.add(hitRow("Save", 216, 266, 11, () => this.onAction("creator-save"), !opts.canSave, 44));
-    this.add(hitRow("Copy Seed", 268, 266, 11, () => this.onAction("creator-copy"), false, 88));
-    this.add(hitRow("Enter Code", 364, 266, 11, () => this.onAction("creator-load"), false, 96));
-    this.add(hitRow("Online", 468, 266, 11, () => this.onAction("online"), false, 64));
+    this.add(this.act("creator-new", "New", 10, 266, 11, false, 40));
+    this.add(this.act("creator-clear", "Clear", 56, 266, 11, false, 48));
+    this.add(this.act("creator-undo", "Undo", 112, 266, 11, !opts.canUndo, 44));
+    this.add(this.act("creator-redo", "Redo", 164, 266, 11, !opts.canRedo, 44));
+    this.add(this.act("creator-save", "Save", 216, 266, 11, !opts.canSave, 44));
+    this.add(this.act("creator-copy", "Copy Seed", 268, 266, 11, false, 88));
+    this.add(this.act("creator-load", "Enter Code", 364, 266, 11, false, 96));
+    this.add(this.act("online", "Online", 468, 266, 11, false, 64));
   }
 
   refreshCreatorBoard(opts: {
@@ -752,14 +771,14 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("creator-play"), false, 80));
+    this.add(this.act("creator-play", "Back", 24, 16, 12, false, 80));
     this.add(text("Online Stages", 275, 18, 18, theme.ink, "center"));
     if (status) this.add(text(status, 40, 80, 12, theme.muted));
     rows.slice(0, 7).forEach((row, i) => {
       const y = 54 + i * 30;
       this.add(text(row.title, 40, y, 12));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
-      this.add(hitRow("Play", 430, y, 11, row.play, false, 70));
+      this.add(this.act("online-play:" + i, "Play", 430, y, 11, false, 70));
     });
   }
 

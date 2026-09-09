@@ -49,3 +49,46 @@ export function rustFaces(hue: number): { top: string; left: string; right: stri
 export function cssRgb(rgb: [number, number, number]): string {
   return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
 }
+
+export interface FrameBackup {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  original: ImageData;
+}
+
+export function makeImageData(data: Uint8ClampedArray, width: number, height: number): ImageData {
+  if (typeof ImageData === "function") {
+    return new ImageData(data as unknown as ImageDataArray, width, height);
+  }
+  return { data, width, height, colorSpace: "srgb" } as ImageData;
+}
+
+export function bakeFrameBackup(frame: FrameBackup, hue: number): ImageData {
+  const data = new Uint8ClampedArray(frame.original.data);
+  bakeHueIntoPixels(data, hue);
+  return makeImageData(data, frame.width, frame.height);
+}
+
+/** Animate sprite names that are the rust block itself — not shadows or UI. */
+export const BLOCK_SPRITE_RE = /^blocka(fall|land|shrink|small)?\d+$/;
+
+export function isBlockSpriteName(name: string): boolean {
+  return BLOCK_SPRITE_RE.test(name);
+}
+
+export function frameIndexFromCtorSource(source: string): number | null {
+  const m = source.match(/gotoAndStop\((\d+)\)/);
+  return m ? Number(m[1]) : null;
+}
+
+export function collectBlockFrameIndexes(lib: Record<string, unknown>): number[] {
+  const indexes = new Set<number>();
+  for (const [name, value] of Object.entries(lib)) {
+    if (!isBlockSpriteName(name)) continue;
+    const idx = frameIndexFromCtorSource(String(value));
+    if (idx !== null) indexes.add(idx);
+  }
+  return [...indexes].sort((a, b) => a - b);
+}
