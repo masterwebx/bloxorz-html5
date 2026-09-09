@@ -75,6 +75,10 @@ body.has-theme-media #canvas {
 	z-index: 30;
 }
 
+.hud-dd.is-open {
+	z-index: 50;
+}
+
 .hud-dd-btn,
 #hud-theme-upload-btn {
 	box-sizing: border-box;
@@ -143,6 +147,11 @@ body.has-theme-media #canvas {
 	width: 28%;
 }
 
+#hud-theme-select .hud-dd-menu {
+	top: auto;
+	bottom: 100%;
+}
+
 #hud-locale-select {
 	left: 36%;
 	top: 51.5%;
@@ -150,6 +159,8 @@ body.has-theme-media #canvas {
 }
 
 #hud-theme-upload-btn {
+	position: absolute;
+	z-index: 30;
 	left: 66%;
 	top: 51.5%;
 	width: 22%;
