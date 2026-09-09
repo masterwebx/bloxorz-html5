@@ -6,6 +6,9 @@
 	<meta charset="UTF-8">
 	<meta name="authoring-tool" content="Adobe_Animate_CC">
 	<title>bloxorz</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
 	<link href="default.css" rel="stylesheet" type="text/css">
 	<link href="shell.css" rel="stylesheet" type="text/css">
 	<link href="extra.css" rel="stylesheet" type="text/css">
@@ -271,6 +274,29 @@
 							<button type="button" data-act="legacy">Legacy mode</button>
 							<button type="button" id="extra-dev-btn" data-act="dev" hidden>Dev tools</button>
 						</nav>
+					</section>
+					<section id="extra-load" class="panel extra-scroll" hidden>
+						<button type="button" data-act="back">Back</button>
+						<h1>Load Stage</h1>
+						<p class="hint">Enter a campaign passcode from the original 33 stages.</p>
+						<input id="load-code" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000">
+						<p id="load-error" class="hint" hidden></p>
+						<button type="button" data-act="load-go">Load</button>
+					</section>
+					<section id="extra-credits" class="panel extra-scroll" hidden>
+						<button type="button" data-act="back">Back</button>
+						<h1>Credits</h1>
+						<p class="hint">Bloxorz was created by Damien Clarke / DX Interactive (21 June 2007).</p>
+						<p class="hint">The rolling stage is Coolmath’s Adobe Animate HTML5 export. Nathan Spencer added the desktop shell, timer, and themes.</p>
+						<p class="hint">This extra app sits around that playfield. We do not redraw the block.</p>
+						<button type="button" data-act="back">Back</button>
+					</section>
+					<section id="extra-finish" class="panel extra-scroll" hidden>
+						<h1>Congratulations</h1>
+						<p class="hint">You cleared the run.</p>
+						<p class="hint">Moves: <span id="finish-moves">0</span></p>
+						<p class="hint">Falls: <span id="finish-fails">0</span></p>
+						<button type="button" data-act="back">Menu</button>
 					</section>
 					<section id="extra-settings" class="panel extra-scroll" hidden>
 						<h1>Settings</h1>

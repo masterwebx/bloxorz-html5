@@ -27,14 +27,14 @@ Remote `upstream` should stay pointed at Spencer’s repo.
 - TypeScript in `src/extra/` is the solver, editor, seeds, generator, history. It does not draw the block.
 - Music stays **menu-only**; in-game is clonks.
 - Stage size stays **550×300**. Extra UI sits over that canvas.
-- Version on the menu reads `window.GAME_VERSION` from `src/version.js` (**2.2.0**), bottom-right.
+- Version on the menu reads `window.GAME_VERSION` from `src/version.js` (**2.3.0**), bottom-right.
 
 ## Play modes
 
 `localStorage` `bloxorz-play-mode`:
 
-- **Extra** (default) — HTML overlay on the CreateJS main menu. Vanilla bitmap buttons are hidden and driven from the overlay. Name → `NAMEORZ`. **Legacy mode** reloads vanilla.
-- **Legacy** — vanilla Cybernate. **EXIT LEGACY MODE** at the bottom of the main menu reloads extra.
+- **Extra** (default) — the app chrome. Opaque Orbitron UI owns the screen. Coolmath splash, bitmap menu, instructions, credits clip, and stage-title cards are skipped. CreateJS only runs while a stage is in play. **Legacy mode** reloads vanilla.
+- **Legacy** — vanilla Cybernate including Coolmath chrome. **EXIT LEGACY MODE** at the bottom of that menu reloads extra.
 
 ## What shipped
 

@@ -4,9 +4,9 @@
 	right: 10px;
 	bottom: 8px;
 	z-index: 8;
-	font: 11px/1.2 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-	letter-spacing: 0.08em;
-	color: rgba(255, 248, 232, 0.92);
+	font: 700 11px/1.2 Orbitron, sans-serif;
+	letter-spacing: 0.12em;
+	color: rgba(255, 196, 120, 0.95);
 	text-shadow: 0 1px 2px #000;
 	pointer-events: none;
 }
@@ -17,6 +17,10 @@
 	inset: 0;
 	z-index: 4;
 	pointer-events: auto;
+	background:
+		radial-gradient(ellipse at 20% 0%, rgba(255, 120, 40, 0.18), transparent 50%),
+		linear-gradient(180deg, #140c08 0%, #070604 100%);
+	font-family: Orbitron, sans-serif;
 }
 
 #extra-shell.is-open {
@@ -26,30 +30,29 @@
 #extra-shell .panel {
 	position: absolute;
 	inset: 0;
+	box-sizing: border-box;
+	padding: 22px 24px 32px;
 }
 
 #extra-shell h1 {
-	margin: 0;
-	font: 700 28px/1 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-	letter-spacing: 0.14em;
-	color: #fff8e8;
-	text-shadow: 0 0 12px rgba(255, 140, 40, 0.85), 0 1px 0 #000;
+	margin: 0 0 14px;
+	font: 700 28px/1.05 Orbitron, sans-serif;
+	letter-spacing: 0.16em;
+	color: #ffc37a;
+	text-shadow: 0 0 18px rgba(255, 140, 40, 0.55);
 }
 
 #extra-brand {
-	position: absolute;
-	left: 6%;
-	right: 6%;
-	top: 14%;
-	text-align: center;
+	position: static;
+	text-align: left;
 }
 
 #extra-shell p.hint {
 	margin: 0 0 12px;
-	max-width: 320px;
-	font: 13px/1.4 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-	color: rgba(255, 248, 232, 0.86);
-	text-shadow: 0 1px 2px #000;
+	max-width: 420px;
+	font: 500 12px/1.45 Orbitron, sans-serif;
+	letter-spacing: 0.04em;
+	color: rgba(255, 210, 160, 0.78);
 }
 
 #extra-name,
@@ -58,8 +61,6 @@
 	flex-direction: column;
 	align-items: flex-start;
 	justify-content: center;
-	padding: 8% 10% 12%;
-	background: linear-gradient(90deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.18) 70%, transparent 100%);
 }
 
 #extra-name[hidden],
@@ -69,13 +70,12 @@
 }
 
 #extra-shell .menu {
-	position: absolute;
-	left: 36%;
-	top: 57%;
+	position: static;
+	margin: 8px 0 0;
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 3px;
+	gap: 6px;
 }
 
 #extra-shell button,
@@ -86,9 +86,10 @@
 	padding: 0;
 	margin: 0;
 	cursor: pointer;
-	font: 700 13px/1.45 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-	color: #fff8e8;
-	text-shadow: 0 0 10px rgba(255, 150, 40, 0.7), 0 1px 2px #000;
+	font: 700 13px/1.45 Orbitron, sans-serif;
+	letter-spacing: 0.08em;
+	color: #ffe6c4;
+	text-shadow: 0 0 10px rgba(255, 150, 40, 0.45);
 	pointer-events: auto;
 }
 
@@ -111,7 +112,7 @@
 	width: min(260px, 70%);
 	margin: 8px 0 14px;
 	padding: 8px 10px;
-	font: 16px/1.2 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	font: 500 15px/1.2 Orbitron, sans-serif;
 	color: #fff8ee;
 	background: #28140c;
 	border: 1px solid rgba(255, 196, 120, 0.45);
@@ -122,8 +123,8 @@
 	display: flex;
 	flex-wrap: wrap;
 	gap: 14px;
-	font: 13px/1.4 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-	color: rgba(255, 248, 232, 0.85);
+	font: 500 12px/1.4 Orbitron, sans-serif;
+	color: rgba(255, 210, 160, 0.85);
 }
 
 #exit-legacy {
@@ -142,10 +143,5 @@
 @media (max-width: 640px) {
 	#extra-shell h1 {
 		font-size: 22px;
-	}
-
-	#extra-shell .menu,
-	#exit-legacy {
-		left: 10%;
 	}
 }

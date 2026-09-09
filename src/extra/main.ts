@@ -26,7 +26,7 @@ import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import type { WalkCmd } from "./walkthrough";
 
-type Screen = "name" | "home" | "settings" | "creator" | "puzzles" | "history" | "dev" | "auto";
+type Screen = "name" | "home" | "settings" | "creator" | "puzzles" | "history" | "dev" | "load" | "credits" | "finish" | "auto";
 type PlayKind = "campaign" | "custom";
 
 type PlaySession = {
@@ -47,7 +47,7 @@ type StageLike = {
 const MODE_KEY = "bloxorz-play-mode";
 const NAME_KEY = "bloxorz-player-name";
 const VANILLA_BUTTONS = ["startNewGame", "resumeGame", "loadStage", "toggleSound", "credits"];
-const PANELS: Screen[] = ["name", "home", "settings", "creator", "puzzles", "history", "dev"];
+const PANELS: Screen[] = ["name", "home", "settings", "creator", "puzzles", "history", "dev", "load", "credits", "finish"];
 const KEY_CMD: Record<string, TapeCmd> = {
   ArrowUp: "up",
   ArrowDown: "down",
@@ -116,6 +116,36 @@ function setName(name: string): void {
   }
 }
 
+function savedLevel(): number {
+  try {
+    const n = Number(window.localStorage.getItem("level"));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setPlayfieldVisible(on: boolean): void {
+  const canvas = document.getElementById("canvas");
+  if (canvas) canvas.style.visibility = on ? "visible" : "hidden";
+}
+
+function parkCreateJsMenu(): void {
+  const root = window.exportRoot as {
+    currentLabel?: string;
+    splash?: { visible: boolean };
+    gotoAndStop?: (l: string) => void;
+    menu?: { currentFrame: number; gotoAndStop: (n: number) => void };
+  } | undefined;
+  const st = window.stage as StageLike | undefined;
+  if (!root || !st) return;
+  st.doneIntro = true;
+  if (root.splash) root.splash.visible = false;
+  if (root.currentLabel !== "menu") root.gotoAndStop?.("menu");
+  if (root.menu && root.menu.currentFrame !== 133) root.menu.gotoAndStop(133);
+  setVanillaButtonsVisible(false);
+}
+
 function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean; dispatchEvent: (e: string) => void }> | null {
   const root = window.exportRoot as { menu?: Record<string, { visible?: boolean; mouseEnabled?: boolean; dispatchEvent: (e: string) => void }> } | undefined;
   return root?.menu ?? null;
@@ -144,14 +174,6 @@ function setVanillaButtonsVisible(visible: boolean): void {
     const btn = menu[name] as { visible?: boolean } | undefined;
     if (btn) btn.visible = visible;
   }
-}
-
-function clickVanilla(name: string): void {
-  const menu = findMenu();
-  const btn = menu?.[name] as { visible: boolean; dispatchEvent: (e: unknown) => void } | undefined;
-  if (!btn) return;
-  btn.visible = true;
-  btn.dispatchEvent("click");
 }
 
 function wrapGetLevels(): void {
@@ -191,9 +213,7 @@ function paintExtraMenu(): void {
   const title = $("extra-brand");
   if (title) title.textContent = brandName(name);
   const resume = $("extra-resume") as HTMLButtonElement | null;
-  const menu = findMenu();
-  const canResume = !!(menu && (menu.resumeGame as { mouseEnabled?: boolean } | undefined)?.mouseEnabled);
-  if (resume) resume.disabled = !canResume;
+  if (resume) resume.disabled = savedLevel() < 1;
   const sound = $("extra-sound");
   if (sound) sound.textContent = (window.createjs?.Sound?.volume ?? 1) === 1 ? "Sound: On" : "Sound: Off";
   const dev = $("extra-dev-btn");
@@ -208,15 +228,20 @@ function returnToMenu(): void {
   root?.menu?.gotoAndStop(133);
 }
 
+function beginPlay(levelNumber: number, session: PlaySession): void {
+  playSession = session;
+  extraView = "auto";
+  const stage = window.stage as StageLike | undefined;
+  if (stage) stage.levelNumber = levelNumber;
+  (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
+  show($("extra-shell"), false);
+  setPlayfieldVisible(true);
+  window.exportRoot?.gotoAndPlay?.("game");
+}
+
 function startCustom(defs: LevelDef[], returnTo: Screen, title?: string): void {
   if (!defs.length) return;
-  playSession = { kind: "custom", defs, returnTo, record: returnTo !== "creator", title };
-  const stage = window.stage as StageLike | undefined;
-  if (stage) stage.levelNumber = 1;
-  (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(1);
-  extraView = "auto";
-  show($("extra-shell"), false);
-  window.exportRoot?.gotoAndPlay?.("stagetitle");
+  beginPlay(1, { kind: "custom", defs, returnTo, record: returnTo !== "creator", title });
 }
 
 function cmdToCode(cmd: WalkCmd): string {
@@ -381,11 +406,7 @@ function renderDev(): void {
     btn.type = "button";
     btn.textContent = String(i).padStart(2, "0");
     btn.addEventListener("click", () => {
-      playSession = { kind: "campaign", defs: [], returnTo: "dev", record: false };
-      const stage = window.stage as StageLike | undefined;
-      if (stage) stage.levelNumber = i;
-      (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(i);
-      window.exportRoot?.gotoAndPlay?.("stagetitle");
+      beginPlay(i, { kind: "campaign", defs: [], returnTo: "dev", record: false });
     });
     list.appendChild(btn);
   }
@@ -417,6 +438,43 @@ function playDraft(): void {
     return;
   }
   startCustom([structuredClone(draft)], "creator");
+}
+
+function loadPasscode(): void {
+  const field = $("load-code") as HTMLInputElement | null;
+  const err = $("load-error");
+  const value = ((field?.value || "") + "").replace(/\D/g, "").slice(0, 6);
+  if (field) field.value = value;
+  if (value.length !== 6) {
+    if (err) {
+      err.hidden = false;
+      err.textContent = "Enter a 6-digit passcode.";
+    }
+    return;
+  }
+  const codes = (window as unknown as { getLevelCodes?: () => string[] }).getLevelCodes?.() || [];
+  const index = codes.indexOf(value);
+  if (index === -1) {
+    if (err) {
+      err.hidden = false;
+      err.textContent = "That passcode is not a campaign stage.";
+    }
+    return;
+  }
+  if (err) err.hidden = true;
+  beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true });
+}
+
+function showFinish(): void {
+  const moves = $("finish-moves");
+  const fails = $("finish-fails");
+  const st = window.stage as StageLike & { totalMoves?: number; totalFalls?: number } | undefined;
+  if (moves) moves.textContent = String(st?.totalMoves ?? 0);
+  if (fails) fails.textContent = String(st?.totalFalls ?? 0);
+  parkCreateJsMenu();
+  setPlayfieldVisible(false);
+  show($("extra-shell"), true);
+  openPanel("finish");
 }
 
 function loadShare(): void {
@@ -461,41 +519,44 @@ function syncOverlay(): void {
   const exitBtn = $("exit-legacy");
   const version = $("build-version");
   const ingame = $("extra-ingame");
-  const main = onMainMenu();
   const label = currentLabel();
-  const playing = label === "game" || label === "stagetitle" || label === "instructions" || label === "restart";
+  const playing = label === "game" || label === "restart";
 
-  if (version) version.style.display = main ? "block" : "none";
+  if (version) version.style.display = isLegacy() ? (onMainMenu() ? "block" : "none") : playing ? "none" : "block";
 
   if (label === "restart" && lastLabel === "game") rumble(180, 0.6, 0.4);
-  if (label === "finish" && playSession?.kind === "custom") {
-    beaten = playSession.returnTo === "creator" ? true : beaten;
-    if (run && playSession.record) {
+
+  if (label === "finish" && !isLegacy() && lastLabel !== "finish") {
+    beaten = playSession?.returnTo === "creator" ? true : beaten;
+    if (run && playSession?.record) {
       run.complete = true;
       run.totalTimeMs = Date.now() - run.at;
       saveRun(run);
       run = null;
     }
-    const back = playSession.returnTo;
-    playSession = null;
-    returnToMenu();
-    openPanel(back === "auto" ? "home" : back);
+    const back = playSession?.returnTo;
+    playSession = playSession ? { ...playSession, returnTo: back || "home" } : null;
     lastLabel = label;
+    if (back === "creator" || back === "puzzles" || back === "history") {
+      parkCreateJsMenu();
+      setPlayfieldVisible(false);
+      show(extra, true);
+      openPanel(back);
+      playSession = null;
+      return;
+    }
+    showFinish();
+    playSession = null;
     return;
-  }
-  if (label === "finish" && run) {
-    run.complete = true;
-    run.totalTimeMs = Date.now() - run.at;
-    saveRun(run);
-    run = null;
   }
   lastLabel = label;
 
   if (isLegacy()) {
     extraView = "auto";
     show(extra, false);
+    setPlayfieldVisible(true);
     setVanillaButtonsVisible(true);
-    show(exitBtn, main);
+    show(exitBtn, onMainMenu());
     show(ingame, false);
     return;
   }
@@ -506,31 +567,23 @@ function syncOverlay(): void {
 
   if (playing) {
     show(extra, false);
-    setVanillaButtonsVisible(true);
+    setPlayfieldVisible(true);
     tickSolve();
     pollGamepad(window.stage as StageLike, false);
     return;
   }
 
-  if (!main) {
-    show(extra, false);
-    setVanillaButtonsVisible(true);
-    return;
-  }
-
+  parkCreateJsMenu();
+  setPlayfieldVisible(false);
+  show(extra, true);
+  paintExtraMenu();
+  if (extraView === "finish") return;
   if (playSession?.returnTo && extraView === "auto") {
     const back = playSession.returnTo;
     playSession = null;
-    setVanillaButtonsVisible(false);
-    show(extra, true);
     openPanel(back);
-    paintExtraMenu();
     return;
   }
-
-  setVanillaButtonsVisible(false);
-  show(extra, true);
-  paintExtraMenu();
   if (!getName()) {
     if (extraView !== "name") openPanel("name");
   } else if (extraView === "auto" || extraView === "name") {
@@ -551,7 +604,6 @@ function bind(): void {
     if (!btn || btn.disabled) return;
     const act = btn.getAttribute("data-act");
     if (act === "start") {
-      playSession = { kind: "campaign", defs: [], returnTo: "home", record: true };
       run = {
         id: `${Date.now()}`,
         at: Date.now(),
@@ -562,13 +614,17 @@ function bind(): void {
         complete: false,
         levels: [],
       };
-      clickVanilla("startNewGame");
-    } else if (act === "resume") clickVanilla("resumeGame");
-    else if (act === "load") clickVanilla("loadStage");
+      beginPlay(1, { kind: "campaign", defs: [], returnTo: "home", record: true });
+    } else if (act === "resume") {
+      const n = savedLevel();
+      if (!n) return;
+      beginPlay(n, { kind: "campaign", defs: [], returnTo: "home", record: true });
+    } else if (act === "load") openPanel("load");
+    else if (act === "load-go") loadPasscode();
     else if (act === "sound") {
       window.stage?.toggleSound?.();
       paintExtraMenu();
-    } else if (act === "credits") clickVanilla("credits");
+    } else if (act === "credits") openPanel("credits");
     else if (act === "legacy") {
       setMode("legacy");
       window.location.reload();
@@ -666,7 +722,13 @@ function bind(): void {
 
 declare global {
   interface Window {
-    exportRoot?: { currentLabel?: string; menu?: { currentFrame: number; gotoAndStop: (n: number) => void }; gotoAndPlay?: (l: string) => void; gotoAndStop?: (l: string) => void };
+    exportRoot?: {
+      currentLabel?: string;
+      splash?: { visible: boolean };
+      menu?: { currentFrame: number; gotoAndStop: (n: number) => void };
+      gotoAndPlay?: (l: string) => void;
+      gotoAndStop?: (l: string) => void;
+    };
     stage?: StageLike & { toggleSound?: () => void };
     startBloxorzShell?: () => void;
     GAME_VERSION?: string;
@@ -681,9 +743,10 @@ declare const createjs: {
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.2.0");
+    if (version) version.textContent = "v" + (window.GAME_VERSION || "2.3.0");
   wrapGetLevels();
   bind();
+  if (!isLegacy()) parkCreateJsMenu();
   createjs.Ticker?.addEventListener("tick", syncOverlay);
   syncOverlay();
 }
