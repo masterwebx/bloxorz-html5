@@ -226,6 +226,8 @@ let animateHome = false;
 let undoStack: LevelDef[] = [];
 let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
+let lastTintKey = "";
+let helpTextKey = "";
 let lastFinished: RunRecord | null = null;
 let showStats = false;
 let beatBanner = "";
@@ -1695,6 +1697,8 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   lastLevelNum = levelNumber;
   overlayMode = "run";
   playLaunching = true;
+  helpTextKey = "";
+  lastTintKey = "";
   enterPlayVisuals();
   hushPlayAudio();
   unlockAudio();
@@ -1891,7 +1895,35 @@ function beatCurrentStage(): void {
   window.exportRoot?.gotoAndPlay?.("restart");
 }
 
+function cacheStaticWorldTiles(): void {
+  const world = window.stage?.bloxWorld as
+    | {
+        tiles?: {
+          type?: string;
+          cache?: (x: number, y: number, w: number, h: number) => void;
+          nominalBounds?: { x: number; y: number; width: number; height: number };
+        }[];
+        __bloxTileCache?: boolean;
+      }
+    | null
+    | undefined;
+  if (!world?.tiles?.length || world.__bloxTileCache) return;
+  world.__bloxTileCache = true;
+  for (const tile of world.tiles) {
+    if (tile.type !== "b" || !tile.cache) continue;
+    const b = tile.nominalBounds;
+    const x = (b?.x ?? -48) - 8;
+    const y = (b?.y ?? -40) - 8;
+    const w = (b?.width ?? 96) + 16;
+    const h = (b?.height ?? 80) + 16;
+    tile.cache(x, y, w, h);
+  }
+}
+
 function syncHelpText(): void {
+  const key = `${!!playSession?.classicRun}|${window.stage?.levelNumber ?? 0}`;
+  if (helpTextKey === key) return;
+  helpTextKey = key;
   const classicFirst =
     !!playSession?.classicRun && playSession.kind === "campaign" && (window.stage?.levelNumber ?? 0) === 1;
   const gc = window.stage?.gameContainer as {
@@ -1916,17 +1948,22 @@ function applyPlayTint(): void {
   } | undefined;
   const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
   if (!gc?.addChildAt || !cjs?.Shape) return;
+  const s = loadSettings();
+  const key = `${s.bgTint}|${s.bgHue}`;
   let overlay = gc.__bloxTint;
-  if (!overlay || !gc.children?.includes(overlay)) {
+  const missing = !overlay || !gc.children?.includes(overlay);
+  if (!missing && key === lastTintKey) return;
+  lastTintKey = key;
+  if (missing) {
     overlay = new cjs.Shape();
     overlay.mouseEnabled = false;
     gc.addChildAt(overlay, 1);
     gc.__bloxTint = overlay;
-  } else if (gc.setChildIndex) {
+  } else if (overlay && gc.setChildIndex) {
     const top = Math.max(0, (gc.numChildren ?? gc.children?.length ?? 1) - 1);
     gc.setChildIndex(overlay, Math.min(1, top));
   }
-  const s = loadSettings();
+  if (!overlay) return;
   overlay.graphics.clear();
   if (s.bgTint > 0.01) {
     overlay.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(0, 0, 550, 300);
@@ -2453,6 +2490,7 @@ function syncOverlay(): void {
       if (isPauseMenuOpen()) pollPauseMenuPad();
       else pollGamepad(stage, togglePauseMenu);
       if (!playSession) return;
+      cacheStaticWorldTiles();
       syncHelpText();
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);

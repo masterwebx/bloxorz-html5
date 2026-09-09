@@ -667,7 +667,8 @@ function tryPacked(rng: () => number, seed: string, difficulty: Difficulty): Puz
 
 /**
  * Every cell of the 15×10 board is a tile. Six 5×5 rooms snake through
- * gated off-bridges so Daily / hard gauntlets actually use the whole stage.
+ * gated off-bridges so Daily can use the whole stage. Gauntlet uses packed
+ * rooms instead — 150 Tile movieclips hitch the Coolmath renderer.
  */
 function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): Puzzle | null {
   const rw = 5;
@@ -913,11 +914,12 @@ export function generateRun(seed: string, difficulty: Difficulty, count: number)
   const opts = GAUNTLET_QUALITY[difficulty];
   return Array.from({ length: n }, (_, i) => {
     const tag = `${seed}#${i}`;
-    const rng = mulberry32(hashSeed(`gfull:${difficulty}:${tag}`));
-    const full = tryFullBoard(rng, tag, difficulty);
-    if (full && full.solutionLen >= Math.min(28, opts.minMoves)) return full;
+    const rng = mulberry32(hashSeed(`gplay:${difficulty}:${tag}`));
     const packed = tryPacked(rng, `${tag}:p`, difficulty);
     if (packed) return packed;
+    const islands = 3 + (i % 3);
+    const slots = trySlots(rng, `${tag}:s`, difficulty, islands, i % 2 === 0);
+    if (slots) return slots;
     return generateQualityPuzzle(tag, opts, difficulty);
   });
 }
