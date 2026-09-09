@@ -13106,12 +13106,12 @@
     }
     switch (img_key) {
       case "holiday":
-        return "/themes/holiday/atlas.png";
+        return "themes/holiday/atlas.png";
       case "gray":
-        return "/themes/gray/atlas.png";
+        return "themes/gray/atlas.png";
       case "original":
       default:
-        return "/themes/original/atlas.png";
+        return "themes/original/atlas.png";
     }
   }
   lib.properties = {

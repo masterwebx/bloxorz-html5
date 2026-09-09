@@ -78,10 +78,10 @@ export function localesReady(): boolean {
 
 export async function loadExtraLocales(): Promise<void> {
   try {
-    const idx = (await fetch("/translations/index.json").then((r) => (r.ok ? r.json() : []))) as string[];
+    const idx = (await fetch("translations/index.json").then((r) => (r.ok ? r.json() : []))) as string[];
     for (const id of idx) {
       if (packs.has(id)) continue;
-      const dict = (await fetch(`/translations/${id}.json`).then((r) => (r.ok ? r.json() : null))) as Dict | null;
+      const dict = (await fetch(`translations/${id}.json`).then((r) => (r.ok ? r.json() : null))) as Dict | null;
       if (dict) registerLocale(id, dict);
     }
   } catch {

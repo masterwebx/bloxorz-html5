@@ -219,6 +219,48 @@ function saveAchievements(s: AchStats): void {
   store().setItem(KEY, JSON.stringify(s));
 }
 
+export const REC_PAGE = 6;
+
+export type RecRow = { id: string; label: string; meta: string };
+
+function fmtPlayMs(ms: number): string {
+  const sec = Math.floor(Math.max(0, ms) / 1000);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m ${String(sec % 60).padStart(2, "0")}s`;
+  return `${sec}s`;
+}
+
+export function recordRows(scroll = 0, page = REC_PAGE, s = loadAchievements()): RecRow[] {
+  const cleared = s.campaign.filter((b) => b.cleared).length;
+  const noFall = s.campaign.filter((b) => b.noFall).length;
+  const all: RecRow[] = [
+    { id: "unique", label: "records.unique", meta: String(s.unique.length) },
+    { id: "campaign", label: "records.campaign", meta: `${cleared} / 33` },
+    { id: "campaignNoFall", label: "records.campaignNoFall", meta: String(noFall) },
+    { id: "wins", label: "records.wins", meta: String(s.wins) },
+    { id: "moves", label: "records.moves", meta: String(s.moves) },
+    { id: "falls", label: "records.falls", meta: String(s.falls) },
+    { id: "playTime", label: "records.playTime", meta: fmtPlayMs(s.playMs) },
+    { id: "daily", label: "records.daily", meta: String(s.daily.length) },
+    { id: "streak", label: "records.streak", meta: String(s.dailyStreak) },
+    { id: "bestStreak", label: "records.bestStreak", meta: String(s.dailyBestStreak) },
+    { id: "seeded", label: "records.seeded", meta: String(s.seeded.length) },
+    { id: "gauntlet", label: "records.gauntlet", meta: String(s.gauntletRuns) },
+    { id: "custom", label: "records.custom", meta: String(s.custom.length) },
+    { id: "swaps", label: "records.swaps", meta: String(s.swaps) },
+    { id: "screenshots", label: "records.screenshots", meta: String(s.screenshots) },
+    { id: "ghosts", label: "records.ghosts", meta: String(s.ghostWatches) },
+    { id: "themes", label: "records.themes", meta: String(Object.keys(s.themes).length) },
+  ];
+  return all.slice(scroll, scroll + page);
+}
+
+export function recordCount(): number {
+  return recordRows(0, 99).length;
+}
+
 export function padAch(n: number): string {
   return String(n).padStart(3, "0");
 }

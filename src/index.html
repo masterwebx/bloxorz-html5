@@ -32,7 +32,7 @@
 			var link = document.createElement("link");
 			link.rel = "preload";
 			link.as = "image";
-			link.href = "/themes/" + theme + "/atlas.png";
+			link.href = "themes/" + theme + "/atlas.png";
 			document.head.appendChild(link);
 		})();
 	</script>
@@ -196,8 +196,20 @@
 			return url.toString();
 		}
 
-		function isSoundSrc(src) {
-			return /\.(mp3|wav|ogg)(\?|$)/i.test(src || "");
+		function atlasSrc(theme) {
+			var t = theme || "original";
+			if (t !== "gray" && t !== "holiday") t = "original";
+			return "themes/" + t + "/atlas.png";
+		}
+
+		function loadScript(src) {
+			return new Promise(function (resolve, reject) {
+				var el = document.createElement("script");
+				el.src = src;
+				el.onload = function () { resolve(); };
+				el.onerror = function () { reject(new Error(src)); };
+				document.head.appendChild(el);
+			});
 		}
 
 		function init() {
@@ -213,30 +225,62 @@
 			if (versionEl) {
 				versionEl.textContent = "v" + (window.GAME_VERSION || "2.5.0");
 			}
+			var wanted = getThemeFromUrl() || getStoredTheme();
+			var atlas = new Image();
+			var atlasReady = new Promise(function (resolve, reject) {
+				atlas.onload = function () { resolve(atlas); };
+				atlas.onerror = function () {
+					if (atlas.getAttribute("data-fallback") === "1") {
+						reject(new Error("atlas"));
+						return;
+					}
+					atlas.setAttribute("data-fallback", "1");
+					atlas.src = "themes/original/atlas.png";
+				};
+			});
+			atlas.src = atlasSrc(wanted);
+			Promise.all([
+				atlasReady,
+				loadScript("code.jquery.com/jquery-2.2.4.min.js").then(function () {
+					return loadScript("components/sdk/anwidget.js");
+				}).then(function () {
+					return Promise.all([
+						loadScript("components/ui/src/textinput.js"),
+						loadScript("components/ui/src/css.js"),
+					]);
+				}),
+			]).then(function (parts) {
+				startWithAtlas(parts[0]);
+				loadDeferredAssets();
+			}).catch(function () {
+				atlasReady.then(startWithAtlas).catch(function () {});
+			});
+		}
+
+		function startWithAtlas(img) {
+			var comp = AdobeAn.getComposition("FE31B685947E79408F0C8768D6EC8517");
+			var images = comp.getImages();
+			images["bloxorz_atlas_"] = img;
+			handleComplete({
+				target: {
+					getResult: function (id) {
+						return images[id];
+					}
+				}
+			}, comp);
+		}
+
+		function loadDeferredAssets() {
 			var comp = AdobeAn.getComposition("FE31B685947E79408F0C8768D6EC8517");
 			var lib = comp.getLibrary();
-			var all = lib.properties.manifest || [];
-			var urgent = [];
-			var later = [];
-			for (var i = 0; i < all.length; i++) {
-				if (isSoundSrc(all[i].src)) later.push(all[i]);
-				else urgent.push(all[i]);
-			}
-			var loader = new createjs.LoadQueue(false);
-			loader.installPlugin(createjs.Sound);
-			loader.addEventListener("fileload", function (evt) {
-				handleFileLoad(evt, comp);
+			var later = (lib.properties.manifest || []).filter(function (item) {
+				return /\.(mp3|wav|ogg)(\?|$)/i.test(item.src || "");
 			});
-			loader.addEventListener("error", function () {});
-			loader.addEventListener("complete", function (evt) {
-				handleComplete(evt, comp);
-				if (!later.length) return;
-				var bg = new createjs.LoadQueue(false);
-				bg.installPlugin(createjs.Sound);
-				bg.addEventListener("error", function () {});
-				bg.loadManifest(later);
-			});
-			loader.loadManifest(urgent);
+			if (!later.length) return;
+			var bg = new createjs.LoadQueue(false);
+			bg.installPlugin(createjs.Sound);
+			bg.addEventListener("error", function () {});
+			bg.loadManifest(later);
 		}
 
 		function handleFileLoad(evt, comp) {
@@ -252,8 +296,10 @@
 			var queue = evt.target;
 			var ssMetadata = lib.ssMetadata;
 			for (i = 0; i < ssMetadata.length; i++) {
+				var sheetImg = queue.getResult(ssMetadata[i].name);
+				if (!sheetImg) return;
 				ss[ssMetadata[i].name] = new createjs.SpriteSheet({
-					"images": [queue.getResult(ssMetadata[i].name)],
+					"images": [sheetImg],
 					"frames": ssMetadata[i].frames
 				});
 			}

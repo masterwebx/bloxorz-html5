@@ -10,6 +10,7 @@ import {
   noteCopiedSeed,
   noteFall,
   noteWin,
+  recordRows,
   padAch,
   parMoves,
   setAchievementsStorage,
@@ -77,6 +78,15 @@ describe("achievements", () => {
     const rows = achievementRows(0, 6);
     expect(rows[0]?.unlocked).toBe(true);
     expect(rows[0]?.label).toContain("#001");
+  });
+
+  it("lists campaign and play records", () => {
+    setAchievementsStorage(memoryStore());
+    const rows = recordRows(0, 99);
+    expect(rows.length).toBeGreaterThan(8);
+    expect(rows.find((row) => row.id === "unique")?.meta).toBe("0");
+    expect(rows.find((row) => row.id === "campaign")?.meta).toBe("0 / 33");
+    expect(rows.find((row) => row.id === "playTime")?.meta).toBe("0s");
   });
 
   it("counts a fall and does not treat no-swap stages as requiring swap", () => {

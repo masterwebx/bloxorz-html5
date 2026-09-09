@@ -83,8 +83,11 @@ import { ExtraHud, canBillboard, type MenuItem } from "./hud";
 import {
   ACH_COUNT,
   ACH_PAGE,
+  REC_PAGE,
   achievementRows,
   hasAchievementMenu,
+  recordCount,
+  recordRows,
   hintTokens,
   noteCopiedSeed,
   noteFall,
@@ -121,6 +124,7 @@ type Screen =
   | "puzzles-gauntlet"
   | "history"
   | "achievements"
+  | "records"
   | "load"
   | "credits"
   | "finish"
@@ -278,9 +282,9 @@ const NAME_KEY = "bloxorz-player-name";
 const LIST_PAGE = 6;
 const LIST_HISTORY = 5;
 const ATLAS_SRC: Record<string, string> = {
-  original: "/themes/original/atlas.png",
-  gray: "/themes/gray/atlas.png",
-  holiday: "/themes/holiday/atlas.png",
+  original: "themes/original/atlas.png",
+  gray: "themes/gray/atlas.png",
+  holiday: "themes/holiday/atlas.png",
 };
 const VANILLA_BUTTONS = ["startNewGame", "resumeGame", "loadStage", "toggleSound", "credits"];
 const KEY_CMD: Record<string, TapeCmd> = {
@@ -650,7 +654,7 @@ function applyThemeMedia(): void {
     ? pack.background.src.startsWith("/") || pack.background.src.startsWith("blob:") || pack.background.src.startsWith("http")
       ? pack.background.src
       : pack.builtin
-        ? `/themes/${pack.id}/${pack.background.src}`
+        ? `themes/${pack.id}/${pack.background.src}`
         : pack.files?.[pack.background.src] ?? ""
     : "";
   const kind = pack.background.type;
@@ -1471,6 +1475,7 @@ function homeItems(): MenuItem[] {
     { id: "creator", label: t("menu.creator") },
     { id: "puzzles", label: t("menu.puzzles") },
     { id: "history", label: t("menu.history") },
+    { id: "records", label: t("menu.records") },
   ];
   if (hasAchievementMenu()) items.push({ id: "achievements", label: t("menu.achievements") });
   items.push({ id: "credits", label: t("menu.credits") }, { id: "settings", label: t("menu.settings") });
@@ -1552,6 +1557,9 @@ function navItems(): NavItem[] {
       { id: "toggle-ghosts" },
       ...rows.filter((rec) => rec.cmds.length).map((_, i) => ({ id: "replay:" + (listScroll + i) })),
     ];
+  }
+  if (extraView === "records") {
+    return [{ id: "back" }, ...recordRows(listScroll, REC_PAGE).map((row) => ({ id: "rec:" + row.id }))];
   }
   if (extraView === "achievements") {
     return [
@@ -1716,6 +1724,19 @@ function moveNav(dir: 1 | -1): void {
     if (dir === -1 && menuCursor <= 2 && listScroll > 0) {
       listScroll -= 1;
       menuCursor = 2;
+      return;
+    }
+  }
+  if (extraView === "records") {
+    const maxScroll = Math.max(0, recordCount() - REC_PAGE);
+    if (dir === 1 && menuCursor >= navItems().length - 1 && listScroll < maxScroll) {
+      listScroll += 1;
+      menuCursor = navItems().length - 1;
+      return;
+    }
+    if (dir === -1 && menuCursor <= 1 && listScroll > 0) {
+      listScroll -= 1;
+      menuCursor = 1;
       return;
     }
   }
@@ -1910,6 +1931,16 @@ function paintHud(): void {
         };
       }),
     });
+  } else if (extraView === "records") {
+    const total = recordCount();
+    const maxScroll = Math.max(0, total - REC_PAGE);
+    if (listScroll > maxScroll) listScroll = maxScroll;
+    hud.drawRecords({
+      rows: recordRows(listScroll, REC_PAGE).map((row) => ({ label: t(row.label), meta: row.meta })),
+      scroll: listScroll,
+      total,
+      pageSize: REC_PAGE,
+    });
   } else if (extraView === "achievements") {
     const maxScroll = Math.max(0, ACH_COUNT - ACH_PAGE);
     if (listScroll > maxScroll) listScroll = maxScroll;
@@ -1987,7 +2018,7 @@ function openPanel(name: Screen): void {
   lastHudPaint = "";
   if (name === "home") animateHome = true;
   if (name === "load") loadError = "";
-  if (name === "creator-manage" || name === "creator-saved" || name === "history" || name === "achievements") listScroll = 0;
+  if (name === "creator-manage" || name === "creator-saved" || name === "history" || name === "achievements" || name === "records") listScroll = 0;
   if (name === "creator-edit") {
     editCursor = { x: draft.spawn[0], y: draft.spawn[1] };
     editorPaintHeld = false;
@@ -2341,6 +2372,7 @@ function handleHudAction(act: string): void {
   else if (act === "puzzles-seeded") openPanel("puzzles-seeded");
   else if (act === "puzzles-gauntlet") openPanel("puzzles-gauntlet");
   else if (act === "history") openPanel("history");
+  else if (act === "records") openPanel("records");
   else if (act === "achievements") openPanel("achievements");
   else if (act === "skip-name") {
     if (!getName()) setName("BLOX");
@@ -3651,6 +3683,15 @@ function bind(): void {
     (ev) => {
       if (extraView === "history") {
         const max = Math.max(0, loadFinishedStages().length - LIST_HISTORY);
+        if (!max) return;
+        ev.preventDefault();
+        listScroll = Math.max(0, Math.min(max, listScroll + (ev.deltaY > 0 ? 1 : -1)));
+        markHudDirty();
+        paintHud();
+        return;
+      }
+      if (extraView === "records") {
+        const max = Math.max(0, recordCount() - REC_PAGE);
         if (!max) return;
         ev.preventDefault();
         listScroll = Math.max(0, Math.min(max, listScroll + (ev.deltaY > 0 ? 1 : -1)));

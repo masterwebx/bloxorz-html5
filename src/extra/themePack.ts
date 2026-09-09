@@ -137,27 +137,36 @@ export function isHdTheme(id = currentId): boolean {
   return getTheme(id).hd;
 }
 
+export function themeFileUrl(id: string, file: string): string {
+  if (!file) return "";
+  if (file.startsWith("blob:") || file.startsWith("data:") || file.startsWith("http")) return file;
+  const rel = file.replace(/^\/+/, "");
+  if (rel.startsWith("themes/")) return rel;
+  return `themes/${id}/${rel}`;
+}
+
 export function atlasUrlFor(id: string): string {
   const pack = getTheme(id);
-  if (pack.atlas?.startsWith("blob:") || pack.atlas?.startsWith("data:") || pack.atlas?.startsWith("/")) return pack.atlas;
+  if (pack.atlas?.startsWith("blob:") || pack.atlas?.startsWith("data:") || pack.atlas?.startsWith("http")) return pack.atlas;
   if (pack.atlas && pack.files?.[pack.atlas]) return pack.files[pack.atlas]!;
   if (pack.atlas && pack.files) {
     const hit = Object.entries(pack.files).find(([k]) => k.endsWith("/" + pack.atlas) || k === pack.atlas);
     if (hit) return hit[1];
   }
-  if (pack.atlas && pack.builtin) return `/themes/${pack.id}/${pack.atlas}`;
-  if (id === "gray") return "/themes/gray/atlas.png";
-  if (id === "holiday") return "/themes/holiday/atlas.png";
-  if (id === "solid3d") return "/themes/solid3d/atlas.png";
-  return "/themes/original/atlas.png";
+  if (pack.atlas && pack.builtin) return themeFileUrl(pack.id, pack.atlas);
+  if (id === "gray") return "themes/gray/atlas.png";
+  if (id === "holiday") return "themes/holiday/atlas.png";
+  if (id === "solid3d") return "themes/solid3d/atlas.png";
+  return "themes/original/atlas.png";
 }
 
 export function mediaUrlFor(pack: ThemePack): string | null {
   const src = pack.background.src;
   if (!src) return null;
-  if (src.startsWith("blob:") || src.startsWith("data:") || src.startsWith("/") || src.startsWith("http")) return src;
+  if (src.startsWith("blob:") || src.startsWith("data:") || src.startsWith("http")) return src;
+  if (src.startsWith("/")) return src.replace(/^\/+/, "");
   if (pack.files?.[src]) return pack.files[src]!;
-  if (pack.builtin) return `/themes/${pack.id}/${src}`;
+  if (pack.builtin) return themeFileUrl(pack.id, src);
   return null;
 }
 
@@ -166,16 +175,16 @@ export function themeSoundUrl(id: string): string | null {
   if (id === "Music" || id === "music") {
     const src = pack.audio.music;
     if (!src) return null;
-    if (src.startsWith("blob:") || src.startsWith("/") || src.startsWith("http")) return src;
+    if (src.startsWith("blob:") || src.startsWith("http") || src.startsWith("themes/")) return src;
     if (pack.files?.[src]) return pack.files[src]!;
-    if (pack.builtin) return `/themes/${pack.id}/${src}`;
+    if (pack.builtin) return themeFileUrl(pack.id, src);
     return null;
   }
   const src = pack.audio.sfx?.[id];
   if (!src) return null;
-  if (src.startsWith("blob:") || src.startsWith("/") || src.startsWith("http")) return src;
+  if (src.startsWith("blob:") || src.startsWith("http") || src.startsWith("themes/")) return src;
   if (pack.files?.[src]) return pack.files[src]!;
-  if (pack.builtin) return `/themes/${pack.id}/${src}`;
+  if (pack.builtin) return themeFileUrl(pack.id, src);
   return null;
 }
 
@@ -262,14 +271,14 @@ function registerStored(row: StoredPack): ThemePack | null {
 export async function bootThemes(saved?: string | null): Promise<string> {
   seedBuiltins();
   try {
-    const idx = (await fetch("/themes/index.json").then((r) => (r.ok ? r.json() : []))) as string[];
+    const idx = (await fetch("themes/index.json").then((r) => (r.ok ? r.json() : []))) as string[];
     for (const id of idx) {
       if (packs.has(id) || id.startsWith("_")) continue;
-      const raw = (await fetch(`/themes/${id}/theme.json`).then((r) => (r.ok ? r.json() : null))) as RawTheme | null;
+      const raw = (await fetch(`themes/${id}/theme.json`).then((r) => (r.ok ? r.json() : null))) as RawTheme | null;
       if (!raw) continue;
       const pack = normalizePack(raw, id, true);
-      if (pack.atlas && !pack.atlas.startsWith("/") && !pack.atlas.startsWith("http")) {
-        pack.atlas = `/themes/${id}/${pack.atlas}`;
+      if (pack.atlas && !pack.atlas.startsWith("blob:") && !pack.atlas.startsWith("http") && !pack.atlas.startsWith("themes/")) {
+        pack.atlas = themeFileUrl(id, pack.atlas);
       }
       packs.set(pack.id, pack);
     }
@@ -296,8 +305,10 @@ export async function installThemeZip(buffer: ArrayBuffer): Promise<ThemePack> {
   }
   const pack = normalizePack(raw, raw.id || "custom", false);
   await idbPut(pack.id, { json: raw, files: stored });
-  const live = registerStored({ json: raw, files: stored });
-  return live ?? pack;
+  const live = registerStored({ json: raw, files: stored }) ?? pack;
+  const hasAtlas = Object.keys(stored).some((k) => /(^|\/)atlas\.png$/i.test(k));
+  if (!hasAtlas) live.atlas = atlasUrlFor("original");
+  return live;
 }
 
 export { DEFAULT_PAINT };

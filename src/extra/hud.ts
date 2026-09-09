@@ -423,6 +423,37 @@ export class ExtraHud {
     this.add(this.act("skip-name", t("name.skip"), 160, 168, 13, false, 160));
   }
 
+  drawRecords(opts: {
+    rows: { label: string; meta: string }[];
+    scroll: number;
+    total: number;
+    pageSize: number;
+  }): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(this.act("back", t("common.back"), 24, 8, 12, false, 80));
+    this.add(text(t("records.title"), 275, 8, 16, theme.ink, "center"));
+    opts.rows.forEach((row, i) => {
+      const y = 48 + i * 38;
+      this.add(text(row.label, 24, y, 13, theme.ink));
+      this.add(text(row.meta, 40, y + 16, 9, theme.muted));
+    });
+    if (opts.total > opts.pageSize) {
+      const trackH = 228;
+      const trackX = 528;
+      const trackY = 48;
+      const bar = new createjs.Shape();
+      bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
+      const thumbH = Math.max(18, trackH * (opts.pageSize / opts.total));
+      const max = Math.max(1, opts.total - opts.pageSize);
+      const thumbY = trackY + (trackH - thumbH) * (opts.scroll / max);
+      bar.graphics.beginFill(theme.fill).drawRect(trackX, thumbY, 6, thumbH);
+      bar.mouseEnabled = false;
+      this.add(bar);
+    }
+  }
+
   drawAchievements(opts: {
     tokens: number;
     have: number;
