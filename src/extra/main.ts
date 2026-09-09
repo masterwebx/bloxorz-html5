@@ -46,6 +46,8 @@ import {
   normalizeTheme,
   prettyKey,
   saveSettings,
+  setMobilePad,
+  setRotateScreen,
   type Action,
   type ThemeId,
 } from "./settings";
@@ -55,7 +57,7 @@ import type { LevelDef } from "./types";
 import { ExtraHud, type MenuItem } from "./hud";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
 import type { ClipName } from "./coolmathBoard";
-import { registerServiceWorker, TouchChrome } from "./touchPad";
+import { looksLikeMobile, registerServiceWorker, TouchChrome } from "./touchPad";
 
 type Screen =
   | "splash"
@@ -76,6 +78,7 @@ type Screen =
   | "load"
   | "credits"
   | "finish"
+  | "mobile-ask"
   | "auto";
 
 type PlayCard = "classic" | "custom" | "daily" | "seeded" | "gauntlet";
@@ -629,6 +632,7 @@ function navItems(): NavItem[] {
   const s = loadSettings();
   if (extraView === "splash") return [{ id: "splash-continue" }];
   if (extraView === "name") return [{ id: "name-continue" }, { id: "skip-name" }];
+  if (extraView === "mobile-ask") return [{ id: "mobile-pad-on" }, { id: "mobile-pad-off" }];
   if (extraView === "home") return homeItems();
   if (extraView === "credits") return [{ id: "back" }];
   if (extraView === "load") {
@@ -643,7 +647,9 @@ function navItems(): NavItem[] {
       { id: "music", adjust: (d) => handleHudAction("music:" + clampStep(s.music, d * 0.1, 0, 1).toFixed(2)) },
       { id: "sfx", adjust: (d) => handleHudAction("sfx:" + clampStep(s.sfx, d * 0.1, 0, 1).toFixed(2)) },
       { id: "toggle-rumble" },
+      { id: "toggle-mobile-pad" },
       { id: "toggle-timer" },
+      ...(s.mobilePad ? [{ id: "toggle-rotate" }] : []),
       { id: "theme:original" },
       { id: "theme:gray" },
       { id: "theme:holiday" },
@@ -797,6 +803,8 @@ function hudKey(): string {
     getName(),
     String(s.rumble),
     String(s.showTimer),
+    String(s.mobilePad),
+    String(s.rotateScreen),
     String(s.themeBg),
     String(s.bgTint),
     String(s.bgHue),
@@ -855,6 +863,7 @@ function paintHud(): void {
     hud.drawName();
     placeHudInput(true, "7.3%", "42.5%", "43%", "NAME", getName(), NAME_MAX);
   } else if (extraView === "credits") hud.drawCredits();
+  else if (extraView === "mobile-ask") hud.drawMobileAsk();
   else if (extraView === "load") {
     if (cachedDev) {
       hud.drawLoadStages();
@@ -866,6 +875,8 @@ function paintHud(): void {
     hud.drawSettings({
       rumble: s.rumble,
       showTimer: s.showTimer,
+      mobilePad: s.mobilePad,
+      rotateScreen: s.rotateScreen,
       themeBg: s.themeBg,
       music: s.music,
       sfx: s.sfx,
@@ -1021,6 +1032,36 @@ function rawCampaignDefs(): LevelDef[] {
   return raw.map((level, i) => createJsToDef(level as ReturnType<typeof defToCreateJs>, i));
 }
 
+function shouldAskMobilePad(): boolean {
+  const s = loadSettings();
+  if (s.mobilePadChoice === "on" || s.mobilePadChoice === "off") return false;
+  return looksLikeMobile();
+}
+
+function afterIdentity(): void {
+  if (shouldAskMobilePad()) openPanel("mobile-ask");
+  else openPanel("home");
+}
+
+function chooseMobilePad(on: boolean): void {
+  setMobilePad(on);
+  touchChrome?.sync();
+  openPanel("home");
+}
+
+function toggleRotateScreen(): void {
+  setRotateScreen(!loadSettings().rotateScreen);
+  try {
+    void screen.orientation?.unlock?.();
+  } catch {
+    /* standalone iOS stays portrait; CSS rotate covers that */
+  }
+  lastHudPaint = "";
+  touchChrome?.sync();
+  markHudDirty();
+  paintHud();
+}
+
 function dismissSplash(): void {
   if (splashDone) return;
   splashDone = true;
@@ -1029,10 +1070,14 @@ function dismissSplash(): void {
     ensureMenuMusic();
   });
   if (!getName()) openPanel("name");
-  else openPanel("home");
+  else afterIdentity();
 }
 
 function goBack(): void {
+  if (extraView === "mobile-ask") {
+    chooseMobilePad(false);
+    return;
+  }
   if (extraView === "settings") {
     const typed = hudInput()?.value.trim();
     if (typed) setName(typed);
@@ -1128,12 +1173,24 @@ function handleHudAction(act: string): void {
   else if (act === "history") openPanel("history");
   else if (act === "skip-name") {
     if (!getName()) setName("BLOX");
-    openPanel("home");
+    afterIdentity();
   } else if (act === "name-continue") {
     const next = hudInput()?.value.trim();
     if (!next) return;
     setName(next);
-    openPanel("home");
+    afterIdentity();
+  } else if (act === "mobile-pad-on") {
+    chooseMobilePad(true);
+  } else if (act === "mobile-pad-off") {
+    chooseMobilePad(false);
+  } else if (act === "toggle-mobile-pad") {
+    setMobilePad(!loadSettings().mobilePad);
+    lastHudPaint = "";
+    touchChrome?.sync();
+    markHudDirty();
+    paintHud();
+  } else if (act === "toggle-rotate") {
+    toggleRotateScreen();
   } else if (act === "toggle-rumble") {
     const s = loadSettings();
     s.rumble = !s.rumble;
@@ -1885,6 +1942,42 @@ function capturePadRebind(): void {
   prevPadButtons = held;
 }
 
+function instructionClip(): {
+  play?: () => void;
+  gotoAndPlay?: (n: string | number) => void;
+  currentFrame?: number;
+  paused?: boolean;
+} | undefined {
+  return window.exportRoot?.inst;
+}
+
+function advanceInstructions(dir: 1 | -1 | 0): void {
+  const inst = instructionClip();
+  if (!inst?.play) return;
+  if (inst.paused === false) return;
+  const frame = inst.currentFrame ?? 0;
+  if (dir === 0) {
+    inst.gotoAndPlay?.("skip");
+    return;
+  }
+  if (dir < 0) {
+    if (frame <= 20) {
+      quitPlay();
+      return;
+    }
+    inst.gotoAndPlay?.(Math.max(0, frame - 30));
+    return;
+  }
+  inst.play();
+}
+
+function pollInstructionsPad(): void {
+  for (const ev of pollMenuPad()) {
+    if (ev === "confirm" || ev === "right" || ev === "down") advanceInstructions(1);
+    else if (ev === "back" || ev === "left" || ev === "up") advanceInstructions(-1);
+  }
+}
+
 function bindMenuPad(): void {
   for (const ev of pollMenuPad()) handleMenuNav(ev);
 }
@@ -1988,6 +2081,19 @@ function bind(): void {
     if (extraView === "splash") {
       ev.preventDefault();
       dismissSplash();
+      return;
+    }
+
+    if (currentLabel() === "instructions") {
+      ev.preventDefault();
+      const act = actionFromCode(ev.code);
+      if (act === "confirm" || ev.key === "Enter" || ev.key === " " || ev.key === "ArrowRight" || ev.key === "ArrowDown") {
+        advanceInstructions(1);
+      } else if (act === "back" || ev.key === "Escape" || ev.key === "Backspace" || ev.key === "ArrowLeft" || ev.key === "ArrowUp") {
+        advanceInstructions(-1);
+      } else if (act === "pause") {
+        advanceInstructions(0);
+      }
       return;
     }
 
@@ -2169,6 +2275,7 @@ function syncOverlay(): void {
     }
     hookWorldQuit();
     touchChrome?.sync(playing);
+    if (label === "instructions") pollInstructionsPad();
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
     applyPlayTint();
     applyBlockHue();
@@ -2243,6 +2350,9 @@ function syncOverlay(): void {
   } else if (!getName()) {
     if (extraView !== "name") openPanel("name");
     else paintHud();
+  } else if (shouldAskMobilePad() && (extraView === "auto" || extraView === "name" || extraView === "mobile-ask")) {
+    if (extraView !== "mobile-ask") openPanel("mobile-ask");
+    else paintHud();
   } else if (extraView === "auto" || extraView === "name") {
     openPanel("home");
   } else {
@@ -2264,6 +2374,12 @@ declare global {
       gotoAndPlay?: (l: string) => void;
       gotoAndStop?: (l: string) => void;
       stagetitle?: { visible?: boolean };
+      inst?: {
+        play?: () => void;
+        gotoAndPlay?: (n: string | number) => void;
+        currentFrame?: number;
+        paused?: boolean;
+      };
     };
     stage?: StageLike;
     startBloxorzShell?: () => void;
@@ -2295,7 +2411,7 @@ declare global {
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.8.0");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "1.0.0");
   refreshNameCache();
   gateSoundPlay();
   wrapGetLevels();
@@ -2312,6 +2428,7 @@ export function startBloxorzShell(): void {
       },
       up: (code) => window.stage?.triggerKeyUp?.({ code }),
       pause: quitPlay,
+      rotate: toggleRotateScreen,
     });
     registerServiceWorker();
   }

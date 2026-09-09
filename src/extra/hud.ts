@@ -401,8 +401,9 @@ export class ExtraHud {
     items.forEach((item, i) => {
       const prefix = i === cursor && !item.disabled ? "> " : "  ";
       const targetX = 40;
+      const fromX = i % 2 === 0 ? -180 : 580;
       const y = 70 + i * (wantsVirtualPad() ? 24 : 20);
-      const row = hitRow(prefix + item.label, animate ? -160 : targetX, y, wantsVirtualPad() ? 15 : 13, () => this.onAction(item.id), !!item.disabled, 260);
+      const row = hitRow(prefix + item.label, animate ? fromX : targetX, y, wantsVirtualPad() ? 15 : 13, () => this.onAction(item.id), !!item.disabled, 260);
       this.add(row);
       rows.push(row);
     });
@@ -482,9 +483,23 @@ export class ExtraHud {
     }
   }
 
+  drawMobileAsk(): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(text("On-screen controls", 275, 36, 20, theme.ink, "center"));
+    this.add(text("This looks like a phone. Put a D-pad under the", 275, 80, 12, theme.muted, "center"));
+    this.add(text("stage for move and split? Best in portrait.", 275, 100, 12, theme.muted, "center"));
+    this.add(this.act("mobile-pad-on", "Enable", 40, 150, 16, false, 160));
+    this.add(this.act("mobile-pad-off", "Not now", 230, 150, 16, false, 160));
+    this.add(text("You can change this later in Settings.", 275, 220, 11, theme.muted, "center"));
+  }
+
   drawSettings(opts: {
     rumble: boolean;
     showTimer: boolean;
+    mobilePad: boolean;
+    rotateScreen: boolean;
     themeBg: boolean;
     music: number;
     sfx: number;
@@ -506,8 +521,12 @@ export class ExtraHud {
     this.add(text("SFX", 40, 84, 12, this.focusId === "sfx" ? theme.hot : theme.ink));
     this.add(slider(100, 84, 140, opts.sfx, (v) => this.onAction("sfx:" + v.toFixed(2))));
     this.add(text(Math.round(opts.sfx * 100) + "%", 300, 84, 11, theme.muted));
-    this.add(this.act("toggle-rumble", opts.rumble ? "> Rumble  On" : "  Rumble  Off", 40, 106, 12, false, 200));
+    this.add(this.act("toggle-rumble", opts.rumble ? "> Rumble  On" : "  Rumble  Off", 40, 106, 12, false, 150));
+    this.add(this.act("toggle-mobile-pad", opts.mobilePad ? "> Mobile pad  On" : "  Mobile pad  Off", 250, 106, 12, false, 180));
     this.add(this.act("toggle-timer", opts.showTimer ? "> Speedrun timer  On" : "  Speedrun timer  Off", 40, 126, 12, false, 240));
+    if (opts.mobilePad) {
+      this.add(this.act("toggle-rotate", opts.rotateScreen ? "> Rotate screen  On" : "  Rotate screen  Off", 300, 126, 12, false, 220));
+    }
     this.add(text("Theme", 40, 146, 12));
     (["original", "gray", "holiday"] as const).forEach((th, i) => {
       const mark = opts.theme === th ? "> " : "  ";

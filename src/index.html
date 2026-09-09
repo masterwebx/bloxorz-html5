@@ -236,6 +236,7 @@
 </head>
 
 <body onload="init();">
+	<div id="app-shell">
 	<div id="screen-split">
 		<div id="side_panel">
 			<select id="image_select" onchange="change_image()">
@@ -291,9 +292,11 @@
 			<button type="button" class="tp-btn tp-down" data-dir="down" aria-label="Down">▼</button>
 		</div>
 		<div class="tp-cluster tp-actions">
-			<button type="button" class="tp-btn tp-swap" data-act="swap">SWAP</button>
+			<button type="button" class="tp-btn tp-swap" data-act="swap">SPLIT</button>
+			<button type="button" class="tp-btn tp-rotate" data-act="rotate">ROTATE</button>
 			<button type="button" class="tp-btn tp-menu" data-act="pause">MENU</button>
 		</div>
+	</div>
 	</div>
 	<div id="install-hint" hidden>
 		<p>Install Bloxorz as an app and play in portrait — the stage sits on top, the gamepad underneath. Landscape in the browser is too tight.</p>

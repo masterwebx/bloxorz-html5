@@ -23,11 +23,16 @@ export const ACTION_LABEL: Record<Action, string> = {
 
 export type ThemeId = "original" | "gray" | "holiday";
 
+export type MobilePadChoice = "" | "on" | "off";
+
 export interface Settings {
   music: number;
   sfx: number;
   rumble: boolean;
   showTimer: boolean;
+  mobilePad: boolean;
+  mobilePadChoice: MobilePadChoice;
+  rotateScreen: boolean;
   themeBg: boolean;
   bgTint: number;
   bgHue: number;
@@ -42,6 +47,9 @@ const DEFAULTS: Settings = {
   sfx: 0.9,
   rumble: true,
   showTimer: true,
+  mobilePad: false,
+  mobilePadChoice: "",
+  rotateScreen: false,
   themeBg: true,
   bgTint: 0,
   bgHue: 28,
@@ -88,6 +96,9 @@ export function loadSettings(): Settings {
       sfx: clamp01(parsed.sfx ?? DEFAULTS.sfx),
       rumble: parsed.rumble !== false,
       showTimer: parsed.showTimer !== false,
+      mobilePad: parsed.mobilePad === true,
+      mobilePadChoice: parsed.mobilePadChoice === "on" || parsed.mobilePadChoice === "off" ? parsed.mobilePadChoice : "",
+      rotateScreen: parsed.rotateScreen === true,
       themeBg: parsed.themeBg !== false,
       bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
@@ -106,6 +117,21 @@ export function loadSettings(): Settings {
 export function saveSettings(s: Settings): void {
   settingsCache = s;
   localStorage.setItem(KEY, JSON.stringify(s));
+}
+
+export function setMobilePad(on: boolean): Settings {
+  const s = loadSettings();
+  s.mobilePad = on;
+  s.mobilePadChoice = on ? "on" : "off";
+  saveSettings(s);
+  return s;
+}
+
+export function setRotateScreen(on: boolean): Settings {
+  const s = loadSettings();
+  s.rotateScreen = on;
+  saveSettings(s);
+  return s;
 }
 
 export function invalidateSettingsCache(): void {

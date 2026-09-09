@@ -1,9 +1,9 @@
 {
   "name": "Bloxorz",
   "short_name": "Bloxorz",
-  "description": "Roll the block. Portrait play with a gamepad under the stage.",
+  "description": "Roll the block. Portrait play with a gamepad under the stage, or rotate the screen in the app.",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#000000",
   "theme_color": "#000000",
   "start_url": "./",

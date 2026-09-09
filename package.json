@@ -1,7 +1,7 @@
 {
   "name": "bloxorz-html5",
   "private": true,
-  "version": "2.8.6",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host --port 4398",

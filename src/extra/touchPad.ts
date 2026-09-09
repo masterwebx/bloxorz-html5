@@ -1,9 +1,12 @@
+import { loadSettings } from "./settings";
+
 export type TouchDir = "up" | "down" | "left" | "right";
 
 export type TouchPadHandlers = {
   down: (code: string) => void;
   up: (code: string) => void;
   pause: () => void;
+  rotate: () => void;
 };
 
 const DIR_CODE: Record<TouchDir, string> = {
@@ -39,8 +42,23 @@ export function isPortrait(): boolean {
   }
 }
 
+export function looksLikeMobile(ua = typeof navigator !== "undefined" ? navigator.userAgent : ""): boolean {
+  if (isCoarsePointer() || isPhoneViewport()) return true;
+  return /Mobi|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+}
+
+/** Larger HUD hits when the on-screen pad is on, or the window is phone-sized. */
 export function wantsVirtualPad(): boolean {
-  return isCoarsePointer() && isPhoneViewport();
+  try {
+    if (loadSettings().mobilePad) return true;
+  } catch {
+    /* ignore */
+  }
+  return isPhoneViewport();
+}
+
+export function showVirtualPad(enabled: boolean, playing: boolean): boolean {
+  return enabled && playing;
 }
 
 type Held = { code: string; el: HTMLElement };
@@ -51,10 +69,12 @@ export class TouchChrome {
   private landscape: HTMLElement | null = null;
   private held = new Map<number, Held>();
   private deferred: { prompt: () => Promise<void> } | null = null;
+  private playing = false;
   private handlers: TouchPadHandlers = {
     down: () => undefined,
     up: () => undefined,
     pause: () => undefined,
+    rotate: () => undefined,
   };
 
   mount(handlers: TouchPadHandlers): void {
@@ -67,23 +87,30 @@ export class TouchChrome {
     window.addEventListener("beforeinstallprompt", (ev) => {
       ev.preventDefault();
       this.deferred = ev as unknown as { prompt: () => Promise<void> };
-      this.sync(false);
+      this.sync();
     });
-    window.addEventListener("resize", () => this.sync(false));
-    window.addEventListener("orientationchange", () => this.sync(false));
+    window.addEventListener("resize", () => this.sync());
+    window.addEventListener("orientationchange", () => this.sync());
   }
 
-  sync(playing: boolean): void {
-    const mobile = wantsVirtualPad();
+  sync(playing?: boolean): void {
+    if (typeof playing === "boolean") this.playing = playing;
+    const enabled = loadSettings().mobilePad;
+    const phone = isPhoneViewport();
     const portrait = isPortrait();
-    document.body.classList.toggle("is-mobile", mobile);
+    const device = isCoarsePointer() || looksLikeMobile();
+    document.body.classList.toggle("is-mobile", phone || enabled);
     document.body.classList.toggle("is-portrait", portrait);
-    document.body.classList.toggle("is-playing", playing);
-    if (this.pad) this.pad.hidden = !(mobile && portrait && playing);
-    if (this.landscape) this.landscape.hidden = !(mobile && !portrait);
+    document.body.classList.toggle("is-playing", this.playing);
+    document.body.classList.toggle("is-pad-on", enabled);
+    const rotate = enabled && loadSettings().rotateScreen;
+    const wasRotated = document.body.classList.contains("is-rotated");
+    document.body.classList.toggle("is-rotated", rotate);
+    if (wasRotated !== rotate) window.dispatchEvent(new Event("resize"));
+    if (this.pad) this.pad.hidden = !showVirtualPad(enabled, this.playing);
+    if (this.landscape) this.landscape.hidden = true;
     if (this.install) {
-      const hide = !mobile || this.installDismissed() || playing;
-      this.install.hidden = hide;
+      this.install.hidden = !device || enabled || this.installDismissed() || this.playing;
     }
   }
 
@@ -107,7 +134,7 @@ export class TouchChrome {
       if (hint) {
         hint.hidden = false;
         hint.textContent = ios
-          ? "Share → Add to Home Screen. Portrait locks the gamepad under the stage."
+          ? "Share → Add to Home Screen. Portrait keeps the stage on top and the pad underneath."
           : "Use the browser menu → Install app / Add to Home Screen.";
       }
     });
@@ -132,6 +159,10 @@ export class TouchChrome {
         const act = el.dataset.act;
         if (act === "pause") {
           this.handlers.pause();
+          return;
+        }
+        if (act === "rotate") {
+          this.handlers.rotate();
           return;
         }
         const code = this.codeFor(el);
