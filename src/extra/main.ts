@@ -570,17 +570,18 @@ function paintHud(): void {
           return {
             title: `${title} · ${rec.player} · ${rec.moves} moves`,
             meta: new Date(rec.at).toLocaleString(),
-            replay: rec.cmds.length
-              ? () => {
-                  const defs = rawCampaignDefs();
-                  const def = defs[(rec.stage || 1) - 1];
-                  if (def) {
-                    startCustom([def], "history");
-                    solvePending = rec.cmds;
-                    solveArm = 8;
+            replay:
+              rec.cmds.length && (!rec.title || rec.title.startsWith("Stage"))
+                ? () => {
+                    const defs = rawCampaignDefs();
+                    const def = defs[(rec.stage || 1) - 1];
+                    if (def) {
+                      startCustom([def], "history");
+                      solvePending = rec.cmds;
+                      solveArm = 8;
+                    }
                   }
-                }
-              : undefined,
+                : undefined,
           };
         }),
     });
