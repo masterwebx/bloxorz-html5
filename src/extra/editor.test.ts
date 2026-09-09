@@ -88,6 +88,13 @@ describe("reverse seeds", () => {
     expect(stageId(back!)).toBe(stageId(def));
   });
 
+  it("beats any playable draft with BFS, not a canned route", () => {
+    const def = emptyDraft();
+    const solved = solveLevel(def, 80_000);
+    expect(solved.ok).toBe(true);
+    expect(solved.cmds.length).toBeGreaterThan(0);
+  });
+
   it("lets the solver beat a custom split stage after destinations are set", () => {
     const def = emptyDraft();
     const state = newPaintState("split");

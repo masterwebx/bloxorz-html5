@@ -12,7 +12,7 @@ import {
 import { createJsToDef, defToCreateJs } from "./convert";
 import { dailySeed, generatePuzzle, generateRun, type Difficulty } from "./generate";
 import { actionFromCode, pollGamepad, pollMenuPad, rumble } from "./gamepad";
-import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, stopMenuMusic, unlockAudio } from "./audio";
+import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopMenuMusic, unlockAudio } from "./audio";
 import { fetchOnlineStages } from "./community";
 import {
   loadFinishedStages,
@@ -53,6 +53,11 @@ type Screen =
   | "settings"
   | "remap"
   | "creator"
+  | "creator-make"
+  | "creator-play"
+  | "creator-edit"
+  | "creator-manage"
+  | "creator-offline"
   | "puzzles"
   | "history"
   | "load"
@@ -100,6 +105,7 @@ type LibCtor = {
   stoneexit_v2?: new () => unknown;
   stone2_v2?: new () => unknown;
   Block?: new () => { gotoAndStop?: (n: string | number) => void };
+  Tile?: new () => { gotoAndStop?: (n: string | number) => void };
 };
 
 const MODE_KEY = "bloxorz-play-mode";
@@ -162,6 +168,7 @@ let showStats = false;
 let solvePending: WalkCmd[] | null = null;
 let solveArm = 0;
 let beatBanner = "";
+let autoSolve = false;
 let onlineRows: { title: string; meta: string; play: () => void }[] = [];
 let onlineStatus = "";
 let modalKind: "code" | "seed" | null = null;
@@ -577,6 +584,7 @@ function paintHud(): void {
                     const def = defs[(rec.stage || 1) - 1];
                     if (def) {
                       startCustom([def], "history");
+                      autoSolve = true;
                       solvePending = rec.cmds;
                       solveArm = 8;
                     }
@@ -588,6 +596,53 @@ function paintHud(): void {
   } else if (extraView === "online") {
     hud.drawOnline(onlineRows, onlineStatus);
   } else if (extraView === "creator") {
+    hud.drawCreatorHub("Stage Creator", [
+      { id: "creator-make", label: "Create" },
+      { id: "creator-play", label: "Play" },
+      { id: "back", label: "Back" },
+    ]);
+  } else if (extraView === "creator-make") {
+    hud.drawCreatorHub("Create", [
+      { id: "creator-new-stage", label: "New Stage" },
+      { id: "creator-manage", label: "Manage" },
+      { id: "creator", label: "Back" },
+    ]);
+  } else if (extraView === "creator-play") {
+    hud.drawCreatorHub("Play", [
+      { id: "creator-load", label: "Enter Code" },
+      { id: "creator-offline", label: "Offline" },
+      { id: "online", label: "Online" },
+      { id: "creator", label: "Back" },
+    ]);
+  } else if (extraView === "creator-manage") {
+    hud.drawCreatorList(
+      "Manage",
+      listSaved().map((row) => ({
+        title: row.name,
+        meta: row.author + " · " + row.seed,
+        play: () => {
+          draft = structuredClone(row.def);
+          beaten = true;
+          paint = newPaintState();
+          scheduleBeatCheck();
+          openPanel("creator-edit");
+        },
+      })),
+      "No saved stages yet. Paint one and Save.",
+      "creator-make",
+    );
+  } else if (extraView === "creator-offline") {
+    hud.drawCreatorList(
+      "Offline",
+      listSaved().map((row) => ({
+        title: row.name,
+        meta: row.author + " · " + row.seed,
+        play: () => startCustom([structuredClone(row.def)], "creator-play", row.name),
+      })),
+      "No offline stages saved.",
+      "creator-play",
+    );
+  } else if (extraView === "creator-edit") {
     const issue = isPlayable(draft);
     hud.drawCreator({
       tiles: draft.tiles,
@@ -610,7 +665,7 @@ function openPanel(name: Screen): void {
   lastHudPaint = "";
   if (name === "home") animateHome = true;
   if (name === "load") loadError = "";
-  if (name === "creator") scheduleBeatCheck();
+  if (name === "creator-edit") scheduleBeatCheck();
   if (name !== "remap") rebindAction = null;
   paintHud();
 }
@@ -634,9 +689,42 @@ function rawCampaignDefs(): LevelDef[] {
 function dismissSplash(): void {
   if (splashDone) return;
   splashDone = true;
-  unlockAudio(() => ensureMenuMusic());
+  unlockAudio(() => {
+    setMenuMusicAllowed(true);
+    ensureMenuMusic();
+  });
   if (!getName()) openPanel("name");
   else openPanel("home");
+}
+
+function goBack(): void {
+  if (extraView === "settings") {
+    const typed = hudInput()?.value.trim();
+    if (typed) setName(typed);
+    openPanel("home");
+    return;
+  }
+  if (extraView === "remap") {
+    openPanel("settings");
+    return;
+  }
+  if (extraView === "creator-edit") {
+    openPanel("creator-make");
+    return;
+  }
+  if (extraView === "creator-make" || extraView === "creator-play") {
+    openPanel("creator");
+    return;
+  }
+  if (extraView === "creator-manage") {
+    openPanel("creator-make");
+    return;
+  }
+  if (extraView === "creator-offline" || extraView === "online") {
+    openPanel("creator-play");
+    return;
+  }
+  openPanel("home");
 }
 
 function persistWonStage(stageNo: number): void {
@@ -683,14 +771,20 @@ function handleHudAction(act: string): void {
     window.location.reload();
   } else if (act === "settings") openPanel("settings");
   else if (act === "remap") openPanel("remap");
-  else if (act === "back") {
-    if (extraView === "settings") {
-      const typed = hudInput()?.value.trim();
-      if (typed) setName(typed);
-    }
-    openPanel("home");
-  }
+  else if (act === "back") goBack();
   else if (act === "creator") openPanel("creator");
+  else if (act === "creator-make") openPanel("creator-make");
+  else if (act === "creator-play") openPanel("creator-play");
+  else if (act === "creator-new-stage") {
+    draft = emptyDraft();
+    beaten = false;
+    paint = newPaintState();
+    undoStack = [];
+    redoStack = [];
+    scheduleBeatCheck();
+    openPanel("creator-edit");
+  } else if (act === "creator-manage") openPanel("creator-manage");
+  else if (act === "creator-offline") openPanel("creator-offline");
   else if (act === "puzzles") openPanel("puzzles");
   else if (act === "history") openPanel("history");
   else if (act === "skip-name") {
@@ -934,8 +1028,7 @@ function submitModal(): void {
     paint = newPaintState();
     paint.hint = "Loaded share code.";
     scheduleBeatCheck();
-    markHudDirty();
-    paintHud();
+    openPanel("creator-edit");
     return;
   }
   if (kind === "seed") {
@@ -979,6 +1072,16 @@ function playDef(): LevelDef | null {
   return rawCampaignDefs()[n - 1] ?? null;
 }
 
+function startMenuAudio(): void {
+  setMenuMusicAllowed(true);
+  ensureMenuMusic();
+}
+
+function hushPlayAudio(): void {
+  setMenuMusicAllowed(false);
+  stopMenuMusic();
+}
+
 function showFinish(): void {
   overlayMode = "";
   menuParked = false;
@@ -987,7 +1090,7 @@ function showFinish(): void {
   hud?.setVisible(true);
   raiseHud();
   openPanel("finish");
-  ensureMenuMusic();
+  startMenuAudio();
   overlayMode = "menu";
 }
 
@@ -998,7 +1101,7 @@ function returnToMenu(): void {
   menuParked = false;
   parkCreateJsMenu();
   setMouseOverRate(5);
-  ensureMenuMusic();
+  startMenuAudio();
   overlayMode = "menu";
 }
 
@@ -1009,8 +1112,8 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   lastLevelNum = levelNumber;
   overlayMode = "";
   enterPlayVisuals();
+  hushPlayAudio();
   unlockAudio();
-  stopMenuMusic();
   const stage = window.stage;
   if (stage?.menuMusic) {
     stage.menuMusic.stop?.();
@@ -1026,7 +1129,7 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
 
 function startCustom(defs: LevelDef[], returnTo: Screen, title?: string): void {
   if (!defs.length) return;
-  beginPlay(1, { kind: "custom", defs, returnTo, record: returnTo !== "creator", classicRun: false, title });
+  beginPlay(1, { kind: "custom", defs, returnTo, record: returnTo !== "creator-edit", classicRun: false, title });
 }
 
 function cmdToCode(cmd: WalkCmd): string {
@@ -1057,18 +1160,33 @@ function blocksIdle(): boolean {
 }
 
 function solveCmdsForCurrent(): WalkCmd[] | null {
+  const def = playDef();
+  if (def) {
+    const result = solveLevel(def, 250_000);
+    if (result.ok && result.cmds.length) return result.cmds;
+  }
   const n = window.stage?.levelNumber ?? 1;
   if (!playSession?.defs.length && CAMPAIGN_WALKTHROUGH[n - 1]) {
     return expandWalkthrough(CAMPAIGN_WALKTHROUGH[n - 1]);
   }
-  const def = playDef();
-  if (!def) return null;
-  const result = solveLevel(def, 250_000);
-  return result.ok && result.cmds.length ? result.cmds : null;
+  return null;
+}
+
+function stopAutoSolve(banner = ""): void {
+  autoSolve = false;
+  solvePending = null;
+  solveQueue = [];
+  if (solveCode) window.stage?.triggerKeyUp?.({ code: solveCode });
+  solveCode = "";
+  solveHold = 0;
+  solveArm = 0;
+  beatBanner = banner;
+  lastHudPaint = "";
 }
 
 function tickSolve(): void {
   const stage = window.stage;
+  if (!autoSolve) return;
   if (currentLabel() !== "game") return;
   if (!stage?.triggerKeyDown) return;
 
@@ -1082,7 +1200,7 @@ function tickSolve(): void {
     solvePending = null;
     beatBanner = "Auto-solve";
     lastHudPaint = "";
-    hud?.drawInGameDev(beatBanner);
+    hud?.drawInGameDev(beatBanner, true);
   }
 
   if (solveCode) {
@@ -1116,14 +1234,20 @@ function tickSolve(): void {
 }
 
 function beatCurrentStage(): void {
+  if (autoSolve) {
+    stopAutoSolve("");
+    hud?.drawInGameDev("", false);
+    return;
+  }
   const cmds = solveCmdsForCurrent();
   if (!cmds?.length) {
     beatBanner = "No solution found";
-    hud?.drawInGameDev(beatBanner);
+    hud?.drawInGameDev(beatBanner, false);
     return;
   }
+  autoSolve = true;
   beatBanner = "Auto-solve";
-  hud?.drawInGameDev(beatBanner);
+  hud?.drawInGameDev(beatBanner, true);
   solvePending = cmds;
   solveQueue = [];
   solveCode = "";
@@ -1264,7 +1388,7 @@ function playDraft(): void {
     paintHud();
     return;
   }
-  startCustom([structuredClone(draft)], "creator");
+  startCustom([structuredClone(draft)], "creator-edit");
 }
 
 function loadPasscode(): void {
@@ -1307,7 +1431,7 @@ function bindMenuPad(): void {
     } else if (ev === "confirm" && extraView === "splash") {
       dismissSplash();
     } else if (ev === "back" && extraView !== "name" && extraView !== "auto" && extraView !== "splash") {
-      openPanel(extraView === "remap" ? "settings" : "home");
+      goBack();
     }
   }
 }
@@ -1319,9 +1443,8 @@ function bind(): void {
   const unlock = (): void => {
     unlockAudio(() => {
       const label = currentLabel();
-      if (!isLegacy() && label !== "game" && label !== "restart" && label !== "stagetitle" && label !== "instructions") {
-        ensureMenuMusic();
-      }
+      const playing = label === "game" || label === "restart" || label === "stagetitle" || label === "instructions";
+      if (!isLegacy() && !playing && !playSession) startMenuAudio();
     });
   };
   $("hud-modal-ok")?.addEventListener("click", () => submitModal());
@@ -1405,7 +1528,7 @@ function bind(): void {
     }
 
     if (ev.key === "Escape" && extraView !== "home" && extraView !== "name" && extraView !== "auto") {
-      openPanel(extraView === "remap" ? "settings" : "home");
+      goBack();
       return;
     }
     if (extraView !== "home") return;
@@ -1446,6 +1569,9 @@ function syncOverlay(): void {
   }
 
   if (label === "restart" && lastLabel === "game") {
+    if (autoSolve && !solvePending) {
+      stopAutoSolve("Auto-solve failed");
+    }
     if (!solvePending) {
       rumble(180, 0.6, 0.4);
       commitTape(false, stage?.levelNumber ?? lastLevelNum);
@@ -1456,12 +1582,14 @@ function syncOverlay(): void {
     if (lastLevelNum > 0 && stage.levelNumber > lastLevelNum) {
       commitTape(true, lastLevelNum);
       persistWonStage(lastLevelNum);
+      if (autoSolve) stopAutoSolve("");
     }
     lastLevelNum = stage.levelNumber;
   }
 
   if (label === "finish" && !isLegacy() && lastLabel !== "finish") {
-    beaten = playSession?.returnTo === "creator" ? true : beaten;
+    if (autoSolve) stopAutoSolve("");
+    beaten = playSession?.returnTo === "creator-edit" ? true : beaten;
     if (tape.length) {
       commitTape(true, lastLevelNum || stage?.levelNumber || 1);
       persistWonStage(lastLevelNum || stage?.levelNumber || 1);
@@ -1479,7 +1607,16 @@ function syncOverlay(): void {
     lastLabel = label;
     overlayMode = "";
     menuParked = false;
-    if (back === "creator" || back === "puzzles" || back === "history" || back === "load" || back === "online") {
+    if (
+      back === "creator" ||
+      back === "creator-edit" ||
+      back === "creator-play" ||
+      back === "creator-make" ||
+      back === "puzzles" ||
+      back === "history" ||
+      back === "load" ||
+      back === "online"
+    ) {
       parkCreateJsMenu();
       setExportRootMouse(false);
       setMouseOverRate(5);
@@ -1487,7 +1624,7 @@ function syncOverlay(): void {
       hud?.setVisible(true);
       raiseHud();
       openPanel(back);
-      ensureMenuMusic();
+      startMenuAudio();
       overlayMode = "menu";
       return;
     }
@@ -1534,6 +1671,7 @@ function syncOverlay(): void {
   if (inRun) {
     if (overlayMode !== "run") {
       overlayMode = "run";
+      hushPlayAudio();
       enterPlayVisuals();
       raiseHud();
     }
@@ -1549,9 +1687,9 @@ function syncOverlay(): void {
           hud?.setVisible(true);
           raiseHud();
         }
-        if (lastHudPaint !== "ingame:" + beatBanner) {
-          lastHudPaint = "ingame:" + beatBanner;
-          hud?.drawInGameDev(beatBanner);
+        if (lastHudPaint !== "ingame:" + beatBanner + String(autoSolve)) {
+          lastHudPaint = "ingame:" + beatBanner + String(autoSolve);
+          hud?.drawInGameDev(beatBanner, autoSolve);
         }
       } else if (hud?.root.visible) {
         hud?.setVisible(false);
@@ -1569,7 +1707,7 @@ function syncOverlay(): void {
     setMouseOverRate(5);
     hud?.setVisible(true);
     raiseHud();
-    ensureMenuMusic();
+    startMenuAudio();
     if (extraView === "home") {
       animateHome = true;
       markHudDirty();
@@ -1653,11 +1791,15 @@ export function startBloxorzShell(): void {
       if (!Spin) return null;
       return new Spin() as never;
     };
-    hud.makeClip = (name: ClipName) => {
-      const lib = adobeLib() as unknown as Record<string, new () => unknown>;
-      const Ctor = lib?.[name];
-      if (!Ctor) return null;
-      return new Ctor() as never;
+    hud.makeClip = (name: ClipName | "Tile") => {
+      try {
+        const lib = adobeLib() as unknown as Record<string, new () => unknown>;
+        const Ctor = lib?.[name];
+        if (!Ctor) return null;
+        return new Ctor() as never;
+      } catch {
+        return null;
+      }
     };
   }
   if (!isLegacy()) {

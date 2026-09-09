@@ -29,6 +29,19 @@ export const BOARD_SCALE = Math.min(
 export const BOARD_OX = BOARD_VIEW.x - SRC_MIN_X * BOARD_SCALE;
 export const BOARD_OY = BOARD_VIEW.y - SRC_MIN_Y * BOARD_SCALE;
 
+export const TILE_LABEL: Record<string, string> = {
+  b: "normalblock",
+  s: "softswitch",
+  h: "hardswitch",
+  l: "doorblockl",
+  k: "doorblockl",
+  r: "doorblockr",
+  q: "doorblockr",
+  e: "endblock",
+  v: "splitswitch",
+  f: "fallblock",
+};
+
 export type ClipName =
   | "metal_v2"
   | "metal_v3"

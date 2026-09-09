@@ -13,8 +13,10 @@ let unlocked = false;
 let ctxReady = false;
 let origPlay: ((...args: unknown[]) => SoundInst) | null = null;
 let menuMusic: SoundInst = null;
+let musicInsts: NonNullable<SoundInst>[] = [];
 let queued: PlayArgs[] = [];
 let whooshOnce = false;
+let allowMenuMusic = false;
 
 function isMusicId(id: unknown): boolean {
   return id === "Music" || id === "music";
@@ -51,12 +53,19 @@ function audioContext(): { resume?: () => Promise<unknown>; state?: string } | u
 
 function playNow(args: PlayArgs): SoundInst {
   if (!origPlay) return null;
+  if (isMusicId(args[0])) {
+    if (!allowMenuMusic) return null;
+    stopTrackedMusic();
+  }
   const inst = origPlay(...args);
   if (inst && typeof inst === "object") {
     const s = loadSettings();
     inst.volume = isMusicId(args[0]) ? s.music : s.sfx;
+    if (isMusicId(args[0])) {
+      menuMusic = inst;
+      musicInsts.push(inst);
+    }
   }
-  if (isMusicId(args[0])) menuMusic = inst;
   return inst;
 }
 
@@ -64,6 +73,7 @@ function flushQueue(): void {
   const pending = queued;
   queued = [];
   for (const args of pending) {
+    if (isMusicId(args[0]) && !allowMenuMusic) continue;
     if (isMusicId(args[0]) && musicAlive()) continue;
     playNow(args);
   }
@@ -83,7 +93,6 @@ function markReady(): void {
   if (cjs?.Sound) cjs.Sound.volume = 1;
   applyVolumes();
   flushQueue();
-  ensureMenuMusic();
 }
 
 /** Resume WebAudio, then flush any Click / Latch / Music that arrived on the first gesture. */
@@ -112,7 +121,13 @@ export function unlockAudio(after?: () => void): boolean {
   return first;
 }
 
+export function setMenuMusicAllowed(on: boolean): void {
+  allowMenuMusic = on;
+  if (!on) stopMenuMusic();
+}
+
 export function ensureMenuMusic(): void {
+  if (!allowMenuMusic) return;
   if (!origPlay) gateSoundPlay();
   const s = loadSettings();
   if (s.music <= 0) {
@@ -127,14 +142,24 @@ export function ensureMenuMusic(): void {
     menuMusic!.volume = s.music;
     return;
   }
-  menuMusic = null;
   playNow(["Music", { loop: -1 }]);
 }
 
-export function stopMenuMusic(): void {
+function stopTrackedMusic(): void {
+  for (const inst of musicInsts) inst.stop?.();
   menuMusic?.stop?.();
+  musicInsts = [];
   menuMusic = null;
+}
+
+export function stopMenuMusic(): void {
+  stopTrackedMusic();
   queued = queued.filter((args) => !isMusicId(args[0]));
+  const stage = (window as unknown as { stage?: { menuMusic?: SoundInst } }).stage;
+  if (stage?.menuMusic) {
+    stage.menuMusic.stop?.();
+    stage.menuMusic = null;
+  }
 }
 
 export function applyVolumes(): void {

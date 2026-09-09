@@ -5,6 +5,7 @@ import {
   BOARD_SCALE,
   BOARD_VIEW,
   CLIP_OFFSET,
+  TILE_LABEL,
   clipForTile,
   gamePos,
   pickBoardCell,
@@ -12,6 +13,7 @@ import {
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
 import { difficultyHint } from "./generate";
+import { DEFAULT_ISO, TILE_FACE, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
 import { currentTheme, type ThemeId } from "./settings";
 
 declare const createjs: {
@@ -305,7 +307,8 @@ export class ExtraHud {
   private mascot: HudNode | null = null;
   onAction: (act: string) => void = () => undefined;
   makeMascot: (() => HudNode | null) | null = null;
-  makeClip: ((name: ClipName) => HudNode | null) | null = null;
+  makeClip: ((name: ClipName | "Tile") => HudNode | null) | null = null;
+  private useIsoBoard = true;
 
   constructor(stage: { addChild: (c: unknown) => void }) {
     this.root = new createjs.Container();
@@ -580,6 +583,35 @@ export class ExtraHud {
     });
   }
 
+  drawCreatorHub(title: string, items: MenuItem[]): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(text(title, 40, 70, 20));
+    items.forEach((item, i) => {
+      this.add(hitRow(item.label, 40, 118 + i * 28, 15, () => this.onAction(item.id), !!item.disabled, 220));
+    });
+    this.add(text("Paint a stage, or play a share code.", 40, 220, 11, theme.muted));
+  }
+
+  drawCreatorList(title: string, rows: { title: string; meta: string; play: () => void }[], empty: string, backId: string): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(hitRow("Back", 24, 16, 12, () => this.onAction(backId), false, 80));
+    this.add(text(title, 275, 18, 18, theme.ink, "center"));
+    if (!rows.length) {
+      this.add(text(empty, 40, 80, 12, theme.muted));
+      return;
+    }
+    rows.slice(0, 7).forEach((row, i) => {
+      const y = 54 + i * 30;
+      this.add(text(row.title, 40, y, 12));
+      this.add(text(row.meta, 40, y + 14, 10, theme.muted));
+      this.add(hitRow("Open", 430, y, 11, row.play, false, 70));
+    });
+  }
+
   drawCreator(opts: {
     tiles: string[];
     spawn: [number, number];
@@ -595,7 +627,7 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 10, 6, 12, () => this.onAction("back"), false, 56));
+    this.add(hitRow("Back", 10, 6, 12, () => this.onAction("creator-make"), false, 56));
     this.add(text("Stage Creator", 72, 8, 15));
     this.add(text(opts.badge, 250, 10, 11, theme.green));
     this.add(hitRow("Test", 490, 6, 12, () => this.onAction("creator-test"), false, 50));
@@ -611,7 +643,7 @@ export class ExtraHud {
     const cellOf = (ev?: unknown): { x: number; y: number } | null => {
       const e = ev as { localX?: number; localY?: number };
       if (typeof e?.localX !== "number" || typeof e?.localY !== "number") return null;
-      return pickBoardCell(e.localX, e.localY);
+      return this.useIsoBoard ? pickIsoCell(e.localX, e.localY, DEFAULT_ISO) : pickBoardCell(e.localX, e.localY);
     };
     hit.addEventListener("mousedown", (ev?: unknown) => {
       const c = cellOf(ev);
@@ -650,6 +682,8 @@ export class ExtraHud {
   }): void {
     if (!this.board) return;
     this.board.removeAllChildren();
+    const mesh = new createjs.Shape();
+    mesh.mouseEnabled = false;
     const world = new createjs.Container();
     world.x = BOARD_OX;
     world.y = BOARD_OY;
@@ -658,54 +692,77 @@ export class ExtraHud {
     world.mouseEnabled = false;
     const cells: { x: number; y: number; ch: string }[] = [];
     for (let y = 0; y < 10; y++) {
-      for (let x = 0; x < 15; x++) {
-        cells.push({ x, y, ch: opts.tiles[y]?.[x] ?? " " });
-      }
+      for (let x = 0; x < 15; x++) cells.push({ x, y, ch: opts.tiles[y]?.[x] ?? " " });
     }
     cells.sort((a, b) => a.y - a.x - (b.y - b.x));
+    let placed = 0;
+    let painted = 0;
     for (const cell of cells) {
-      const spec = clipForTile(cell.ch);
-      const [px, py] = gamePos(cell.x, cell.y);
-      if (!spec) {
-        const ghost = new createjs.Shape();
-        ghost.graphics.beginFill("rgba(255,255,255,0.05)").beginStroke("rgba(255,255,255,0.12)").setStrokeStyle(1)
-          .moveTo(px - 8, py + 2).lineTo(px + 16, py - 4).lineTo(px + 28, py + 10).lineTo(px + 4, py + 16).lineTo(px - 8, py + 2);
-        ghost.mouseEnabled = false;
-        world.addChild(ghost);
-        continue;
+      if (cell.ch !== " ") painted++;
+      const clip = this.tryTileClip(cell.ch);
+      if (clip) {
+        const [px, py] = gamePos(cell.x, cell.y);
+        const spec = clipForTile(cell.ch);
+        const [ox, oy] = spec ? CLIP_OFFSET[spec.name] : [0, 0];
+        clip.x = px + ox;
+        clip.y = py + oy;
+        clip.mouseEnabled = false;
+        if (spec && spec.dim < 1) (clip as HudNode & { alpha?: number }).alpha = spec.dim;
+        world.addChild(clip);
+        placed++;
+      } else {
+        drawIsoTile(mesh, cell.x, cell.y, cell.ch, DEFAULT_ISO);
       }
-      const clip = this.makeClip?.(spec.name);
-      if (!clip) continue;
-      const [ox, oy] = CLIP_OFFSET[spec.name];
-      clip.x = px + ox;
-      clip.y = py + oy;
-      clip.mouseEnabled = false;
-      if (spec.dim < 1) clip.scaleX = clip.scaleY = 1;
-      (clip as HudNode & { alpha?: number }).alpha = spec.dim;
-      world.addChild(clip);
     }
-    const [sx, sy] = gamePos(opts.spawn[0], opts.spawn[1]);
-    const block = this.makeClip?.("Block");
-    if (block) {
-      const [ox, oy] = CLIP_OFFSET.Block;
-      block.x = sx + ox;
-      block.y = sy + oy;
+    this.useIsoBoard = placed < painted || painted === 0;
+    if (this.useIsoBoard) {
+      this.board.addChild(mesh);
+      const spawn = isoCenter(opts.spawn[0], opts.spawn[1], DEFAULT_ISO);
+      const block = new createjs.Shape();
+      block.graphics.beginFill("#ff7a18").drawRect(-5, -14, 10, 16);
+      block.x = spawn.x;
+      block.y = spawn.y;
       block.mouseEnabled = false;
-      (block as HudNode & { gotoAndStop?: (n: string | number) => void }).gotoAndStop?.("up");
-      world.addChild(block);
-    } else {
-      const fallback = new createjs.Shape();
-      fallback.graphics.beginFill("#ff7a18").drawRect(-6, -16, 12, 18);
-      fallback.x = sx;
-      fallback.y = sy;
-      fallback.mouseEnabled = false;
-      world.addChild(fallback);
+      this.board.addChild(block);
+      for (const mark of opts.marks) {
+        const p = isoCenter(mark.x, mark.y, DEFAULT_ISO);
+        this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
+      }
+      return;
     }
     this.board.addChild(world);
+    const [sx, sy] = gamePos(opts.spawn[0], opts.spawn[1]);
+    const block = new createjs.Shape();
+    block.graphics.beginFill("#ff7a18").drawRect(-6, -16, 12, 18);
+    block.x = sx;
+    block.y = sy;
+    block.mouseEnabled = false;
+    world.addChild(block);
     for (const mark of opts.marks) {
       const [mx, my] = gamePos(mark.x, mark.y);
-      const label = text(mark.label, BOARD_OX + mx * BOARD_SCALE, BOARD_OY + (my - 18) * BOARD_SCALE, 9, "#fff");
-      this.board.addChild(label);
+      this.board.addChild(text(mark.label, BOARD_OX + mx * BOARD_SCALE, BOARD_OY + (my - 18) * BOARD_SCALE, 9, "#fff"));
+    }
+  }
+
+  private tryTileClip(ch: string): HudNode | null {
+    if (ch === " ") return null;
+    const label = TILE_LABEL[ch];
+    try {
+      const tile = this.makeClip?.("Tile") as (HudNode & { gotoAndStop?: (n: string | number) => void; stop?: () => void }) | null;
+      if (tile?.gotoAndStop && label) {
+        tile.gotoAndStop(label);
+        tile.stop?.();
+        return tile;
+      }
+    } catch {
+      /* fall through */
+    }
+    const spec = clipForTile(ch);
+    if (!spec) return null;
+    try {
+      return this.makeClip?.(spec.name) ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -732,7 +789,7 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("creator"), false, 80));
+    this.add(hitRow("Back", 24, 16, 12, () => this.onAction("creator-play"), false, 80));
     this.add(text("Online Stages", 275, 18, 18, theme.ink, "center"));
     if (status) this.add(text(status, 40, 80, 12, theme.muted));
     rows.slice(0, 7).forEach((row, i) => {
@@ -743,13 +800,28 @@ export class ExtraHud {
     });
   }
 
-  drawInGameDev(banner = ""): void {
+  drawInGameDev(banner = "", autoSolve = false): void {
     this.clear();
     this.hideMascot();
-    this.add(hitRow("Beat stage for me", 12, 30, 11, () => this.onAction("dev-beat"), false, 160));
+    this.add(hitRow(autoSolve ? "Stop auto-solve" : "Beat stage for me", 12, 30, 11, () => this.onAction("dev-beat"), false, 160));
     this.add(hitRow("Dev menu", 12, 50, 11, () => this.onAction("dev-menu"), false, 120));
     if (banner) this.add(text(banner, 12, 72, 11, paint().green));
   }
+}
+
+function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMetrics): void {
+  const face = TILE_FACE[ch] || TILE_FACE[" "];
+  const a = isoPt(x, y, m);
+  const b = isoPt(x + 1, y, m);
+  const c = isoPt(x + 1, y + 1, m);
+  const d = isoPt(x, y + 1, m);
+  const h = ch === " " ? 0 : 5 * m.s;
+  if (h > 0) {
+    shape.graphics.beginFill(face.left).moveTo(a.x, a.y).lineTo(d.x, d.y).lineTo(d.x, d.y + h).lineTo(a.x, a.y + h).endFill();
+    shape.graphics.beginFill(face.right).moveTo(d.x, d.y).lineTo(c.x, c.y).lineTo(c.x, c.y + h).lineTo(d.x, d.y + h).endFill();
+  }
+  shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(0.8)
+    .moveTo(a.x, a.y - h).lineTo(b.x, b.y - h).lineTo(c.x, c.y - h).lineTo(d.x, d.y - h).lineTo(a.x, a.y - h).endFill();
 }
 
 function swatch(x: number, y: number, hue: number, amt: number): HudShape {
