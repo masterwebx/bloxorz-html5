@@ -64,12 +64,18 @@ const DEFAULTS: Settings = {
 const KEY = "bloxorz-settings-v1";
 export const NAME_MAX = 10;
 
+let settingsCache: Settings | null = null;
+
 export function loadSettings(): Settings {
+  if (settingsCache) return settingsCache;
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return structuredClone(DEFAULTS);
+    if (!raw) {
+      settingsCache = structuredClone(DEFAULTS);
+      return settingsCache;
+    }
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return {
+    settingsCache = {
       music: clamp01(parsed.music ?? DEFAULTS.music),
       sfx: clamp01(parsed.sfx ?? DEFAULTS.sfx),
       rumble: parsed.rumble !== false,
@@ -78,13 +84,20 @@ export function loadSettings(): Settings {
       keys: { ...DEFAULTS.keys, ...parsed.keys },
       pads: { ...DEFAULTS.pads, ...parsed.pads },
     };
+    return settingsCache;
   } catch {
-    return structuredClone(DEFAULTS);
+    settingsCache = structuredClone(DEFAULTS);
+    return settingsCache;
   }
 }
 
 export function saveSettings(s: Settings): void {
+  settingsCache = s;
   localStorage.setItem(KEY, JSON.stringify(s));
+}
+
+export function invalidateSettingsCache(): void {
+  settingsCache = null;
 }
 
 function clamp01(n: number): number {

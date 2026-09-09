@@ -114,11 +114,43 @@ let origGetLevels: (() => unknown[]) | null = null;
 let hud: ExtraHud | null = null;
 let homeCursor = 0;
 let loadError = "";
-let lastHud = "";
+let hudDirty = true;
+let lastHudPaint = "";
 let bound = false;
 let sky: SkyClip | null = null;
 let rootParked = false;
+let menuParked = false;
 let rebindAction: Action | null = null;
+let overlayMode: "legacy" | "run" | "menu" | "" = "";
+let sidePanelOn: boolean | null = null;
+let versionHidden: boolean | null = null;
+let mouseOverHz = -1;
+let cachedName = "";
+let cachedDev = false;
+let nameRead = false;
+/** Authored CreateJS fps (RAF-synced). Keep tick-based delays in sync. */
+const TICK_SCALE = 1;
+
+function markHudDirty(): void {
+  hudDirty = true;
+}
+
+function refreshNameCache(): void {
+  try {
+    cachedName = (localStorage.getItem(NAME_KEY) || "").trim().slice(0, NAME_MAX);
+  } catch {
+    cachedName = "";
+  }
+  cachedDev = isDevName(cachedName);
+  nameRead = true;
+}
+
+function setMouseOverRate(hz: number): void {
+  if (mouseOverHz === hz) return;
+  mouseOverHz = hz;
+  const fn = (window as unknown as { __bloxSetMouseOver?: (n: number) => void }).__bloxSetMouseOver;
+  fn?.(hz);
+}
 
 function $(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -141,11 +173,8 @@ function setMode(mode: string): void {
 }
 
 function getName(): string {
-  try {
-    return (localStorage.getItem(NAME_KEY) || "").trim().slice(0, NAME_MAX);
-  } catch {
-    return "";
-  }
+  if (!nameRead) refreshNameCache();
+  return cachedName;
 }
 
 function setName(name: string): void {
@@ -155,6 +184,9 @@ function setName(name: string): void {
     const s = loadSettings();
     s.playerName = next;
     saveSettings(s);
+    cachedName = next;
+    cachedDev = isDevName(next);
+    nameRead = true;
   } catch {
     /* ignore */
   }
@@ -207,7 +239,9 @@ function showGameSky(on: boolean): void {
   if (box) box.visible = !on;
 }
 
-function syncSidePanel(playing: boolean): void {
+function syncSidePanel(show: boolean): void {
+  if (sidePanelOn === show && !isLegacy()) return;
+  sidePanelOn = show;
   const panel = $("side_panel");
   const split = $("screen-split");
   if (!panel) return;
@@ -221,13 +255,14 @@ function syncSidePanel(playing: boolean): void {
   }
   const sel = $("image_select");
   if (sel) sel.style.display = "none";
-  const show = playing && !!playSession?.classicRun && loadSettings().showTimer;
   panel.classList.toggle("is-open", show);
   panel.style.display = show ? "" : "none";
   split?.classList.toggle("has-timer", show);
 }
 
 function parkCreateJsMenu(): void {
+  if (menuParked) return;
+  menuParked = true;
   const root = window.exportRoot;
   const st = window.stage;
   if (!root || !st) return;
@@ -240,10 +275,19 @@ function parkCreateJsMenu(): void {
     st.menuMusic.stop?.();
     st.menuMusic = null;
   }
-  stopMenuMusic();
   setVanillaButtonsVisible(false);
   showGameSky(true);
   syncSidePanel(false);
+}
+
+function enterPlayVisuals(): void {
+  menuParked = false;
+  showGameSky(false);
+  setExportRootMouse(true);
+  setMouseOverRate(0);
+  hud?.parkForPlay();
+  placeHudInput(false, "0", "0", "0", "", "");
+  sidePanelOn = null;
 }
 
 function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean }> | null {
@@ -373,9 +417,14 @@ function raiseHud(): void {
 
 function paintHud(): void {
   if (!hud) return;
+  if (!hudDirty) return;
   const key = hudKey();
-  if (key === lastHud) return;
-  lastHud = key;
+  if (key === lastHudPaint) {
+    hudDirty = false;
+    return;
+  }
+  lastHudPaint = key;
+  hudDirty = false;
   placeHudInput(false, "0", "0", "0", "", "");
   const s = loadSettings();
   if (extraView === "home") hud.drawHome(brandName(getName()), homeItems(), homeCursor);
@@ -384,7 +433,7 @@ function paintHud(): void {
     placeHudInput(true, "7.3%", "42.5%", "43%", "NAME", getName(), NAME_MAX);
   } else if (extraView === "credits") hud.drawCredits();
   else if (extraView === "load") {
-    if (isDevName(getName())) {
+    if (cachedDev) {
       hud.drawLoadStages();
     } else {
       hud.drawLoadPasscode(loadError);
@@ -450,7 +499,8 @@ function paintHud(): void {
 
 function openPanel(name: Screen): void {
   extraView = name;
-  lastHud = "";
+  markHudDirty();
+  lastHudPaint = "";
   if (name === "load") loadError = "";
   if (name === "creator") scheduleBeatCheck();
   if (name !== "remap") rebindAction = null;
@@ -513,13 +563,13 @@ function handleHudAction(act: string): void {
     const s = loadSettings();
     s.rumble = !s.rumble;
     saveSettings(s);
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act === "toggle-timer") {
     const s = loadSettings();
     s.showTimer = !s.showTimer;
     saveSettings(s);
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act.startsWith("music:")) {
     const s = loadSettings();
@@ -527,20 +577,20 @@ function handleHudAction(act: string): void {
     saveSettings(s);
     applyVolumes();
     ensureMenuMusic();
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act.startsWith("sfx:")) {
     const s = loadSettings();
     s.sfx = Number(act.slice(4));
     saveSettings(s);
     applyVolumes();
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)));
   } else if (act.startsWith("rebind:")) {
     rebindAction = act.slice(7) as Action;
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act === "creator-test") playDraft();
   else if (act === "creator-save") saveDraft();
@@ -549,7 +599,7 @@ function handleHudAction(act: string): void {
     beaten = false;
     paint = newPaintState();
     scheduleBeatCheck();
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act === "creator-load") loadShare();
   else if (act.startsWith("tool:")) {
@@ -557,22 +607,22 @@ function handleHudAction(act: string): void {
     paint.splitStep = 0;
     paint.splitAt = null;
     paint.linkFrom = null;
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act.startsWith("paint:")) {
     const parts = act.split(":");
     paintEditorCell(draft, Number(parts[1]), Number(parts[2]), paint);
     beaten = false;
     scheduleBeatCheck();
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act.startsWith("diff:")) {
     puzzleDiff = act.slice(5) as Difficulty;
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act.startsWith("len:")) {
     puzzleCount = Number(act.slice(4));
-    lastHud = "";
+    markHudDirty();
     paintHud();
   } else if (act.startsWith("dev:")) {
     beginPlay(Number(act.slice(4)), { kind: "campaign", defs: [], returnTo: "load", record: false, classicRun: false });
@@ -593,11 +643,27 @@ function handleHudAction(act: string): void {
   }
 }
 
+function showFinish(): void {
+  overlayMode = "";
+  menuParked = false;
+  parkCreateJsMenu();
+  setMouseOverRate(5);
+  hud?.setVisible(true);
+  raiseHud();
+  openPanel("finish");
+  ensureMenuMusic();
+  overlayMode = "menu";
+}
+
 function returnToMenu(): void {
   const stage = window.stage;
   if (stage) stage.doneIntro = true;
+  overlayMode = "";
+  menuParked = false;
   parkCreateJsMenu();
+  setMouseOverRate(5);
   ensureMenuMusic();
+  overlayMode = "menu";
 }
 
 function beginPlay(levelNumber: number, session: PlaySession): void {
@@ -605,10 +671,8 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   extraView = "auto";
   tape = [];
   lastLevelNum = levelNumber;
-  lastHud = "";
-  hud?.setVisible(false);
-  placeHudInput(false, "0", "0", "0", "", "");
-  showGameSky(false);
+  overlayMode = "";
+  enterPlayVisuals();
   unlockAudio();
   stopMenuMusic();
   const stage = window.stage;
@@ -618,7 +682,7 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   }
   if (stage) stage.levelNumber = levelNumber;
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
-  syncSidePanel(true);
+  syncSidePanel(!!session.classicRun && loadSettings().showTimer);
   window.exportRoot?.gotoAndPlay?.("game");
 }
 
@@ -637,7 +701,7 @@ function cmdToCode(cmd: WalkCmd): string {
 
 function enqueueSolve(cmds: WalkCmd[]): void {
   solveQueue = cmds.slice();
-  solveHold = 12;
+  solveHold = Math.round(12 * TICK_SCALE);
 }
 
 function tickSolve(): void {
@@ -645,14 +709,14 @@ function tickSolve(): void {
   if (!stage?.triggerKeyDown || currentLabel() !== "game") return;
   if (solveHold > 0) {
     solveHold--;
-    if (solveHold === 8 && solveCode) stage.triggerKeyUp?.({ code: solveCode });
+    if (solveHold === Math.round(8 * TICK_SCALE) && solveCode) stage.triggerKeyUp?.({ code: solveCode });
     return;
   }
   const cmd = solveQueue.shift();
   if (!cmd) return;
   solveCode = cmdToCode(cmd);
   stage.triggerKeyDown({ code: solveCode });
-  solveHold = cmd === "swap" ? 10 : 18;
+  solveHold = Math.round((cmd === "swap" ? 10 : 18) * TICK_SCALE);
 }
 
 function beatCurrentStage(): void {
@@ -694,7 +758,7 @@ function scheduleBeatCheck(): void {
     if (issue) beatLabel = issue;
     else beatLabel = checkBeatable(draft) ? "CAN BE BEAT" : "IMPOSSIBLE";
     if (extraView === "creator") {
-      lastHud = "";
+      markHudDirty();
       paintHud();
     }
   }, 200);
@@ -716,7 +780,7 @@ function saveDraft(): void {
   };
   saveStage(saved);
   paint.hint = `Saved ${saved.seed}. ${encodeSeed(draft)}`;
-  lastHud = "";
+  markHudDirty();
   paintHud();
 }
 
@@ -724,7 +788,7 @@ function playDraft(): void {
   const issue = isPlayable(draft);
   if (issue) {
     paint.hint = issue;
-    lastHud = "";
+    markHudDirty();
     paintHud();
     return;
   }
@@ -737,7 +801,7 @@ function loadPasscode(): void {
   if (field) field.value = value;
   if (value.length !== 6) {
     loadError = "Enter a 6-digit passcode.";
-    lastHud = "";
+    markHudDirty();
     paintHud();
     return;
   }
@@ -745,7 +809,7 @@ function loadPasscode(): void {
   const index = codes.indexOf(value);
   if (index === -1) {
     loadError = "That passcode is not a campaign stage.";
-    lastHud = "";
+    markHudDirty();
     paintHud();
     return;
   }
@@ -753,19 +817,12 @@ function loadPasscode(): void {
   beginPlay(index + 1, { kind: "campaign", defs: [], returnTo: "home", record: true, classicRun: false });
 }
 
-function showFinish(): void {
-  parkCreateJsMenu();
-  hud?.setVisible(true);
-  openPanel("finish");
-  ensureMenuMusic();
-}
-
 function loadShare(): void {
   const field = hudInput();
   const def = parseShare(field?.value || "", listSaved());
   if (!def) {
     paint.hint = "Could not read that code. Use BXS- / BXS. / BX1.";
-    lastHud = "";
+    markHudDirty();
     paintHud();
     return;
   }
@@ -774,7 +831,7 @@ function loadShare(): void {
   paint = newPaintState();
   paint.hint = "Loaded share code.";
   scheduleBeatCheck();
-  lastHud = "";
+  markHudDirty();
   paintHud();
 }
 
@@ -783,11 +840,11 @@ function bindMenuPad(): void {
     if (extraView === "home") {
       if (ev === "up") {
         moveHome(-1);
-        lastHud = "";
+        markHudDirty();
         paintHud();
       } else if (ev === "down") {
         moveHome(1);
-        lastHud = "";
+        markHudDirty();
         paintHud();
       } else if (ev === "confirm") {
         const item = homeItems()[homeCursor];
@@ -839,7 +896,7 @@ function bind(): void {
       s.keys[rebindAction] = ev.code === "Space" ? "Space" : ev.code;
       saveSettings(s);
       rebindAction = null;
-      lastHud = "";
+      markHudDirty();
       paintHud();
       return;
     }
@@ -869,11 +926,11 @@ function bind(): void {
     if (extraView !== "home") return;
     if (ev.key === "ArrowDown") {
       moveHome(1);
-      lastHud = "";
+      markHudDirty();
       paintHud();
     } else if (ev.key === "ArrowUp") {
       moveHome(-1);
-      lastHud = "";
+      markHudDirty();
       paintHud();
     } else if (ev.key === "Enter") {
       const item = homeItems()[homeCursor];
@@ -886,17 +943,26 @@ function syncOverlay(): void {
   const exitBtn = $("exit-legacy");
   const version = $("build-version");
   const label = currentLabel();
-  const playing = label === "game" || label === "restart";
   const stage = window.stage;
+  const inRun =
+    !!playSession &&
+    (label === "game" || label === "restart" || label === "stagetitle" || label === "instructions");
+  const playing = label === "game" || label === "restart";
 
-  if (version) version.style.display = playing ? "none" : "block";
+  if (version) {
+    const hide = inRun;
+    if (versionHidden !== hide) {
+      versionHidden = hide;
+      version.style.display = hide ? "none" : "block";
+    }
+  }
 
   if (label === "restart" && lastLabel === "game") {
     rumble(180, 0.6, 0.4);
     commitTape(false, stage?.levelNumber ?? lastLevelNum);
   }
 
-  if (playing && stage) {
+  if ((playing || label === "stagetitle") && stage) {
     if (lastLevelNum > 0 && stage.levelNumber > lastLevelNum) commitTape(true, lastLevelNum);
     lastLevelNum = stage.levelNumber;
   }
@@ -913,58 +979,85 @@ function syncOverlay(): void {
     }
     const back = playSession?.returnTo;
     lastLabel = label;
+    overlayMode = "";
+    menuParked = false;
     if (back === "creator" || back === "puzzles" || back === "history" || back === "load") {
       parkCreateJsMenu();
       setExportRootMouse(false);
+      setMouseOverRate(5);
       playSession = null;
       hud?.setVisible(true);
+      raiseHud();
       openPanel(back);
       ensureMenuMusic();
+      overlayMode = "menu";
       return;
     }
     playSession = null;
     showFinish();
+    overlayMode = "menu";
     return;
   }
   lastLabel = label;
 
   if (isLegacy()) {
-    extraView = "auto";
-    hud?.setVisible(false);
-    placeHudInput(false, "0", "0", "0", "", "");
-    showGameSky(false);
-    setExportRootMouse(true);
-    setVanillaButtonsVisible(true);
+    if (overlayMode !== "legacy") {
+      overlayMode = "legacy";
+      extraView = "auto";
+      hud?.parkForPlay();
+      placeHudInput(false, "0", "0", "0", "", "");
+      menuParked = false;
+      showGameSky(false);
+      setExportRootMouse(true);
+      setVanillaButtonsVisible(true);
+      setMouseOverRate(0);
+      sidePanelOn = null;
+      syncSidePanel(true);
+    }
     show(exitBtn, onMainMenu());
-    syncSidePanel(true);
     return;
   }
 
   show(exitBtn, false);
-  raiseHud();
 
-  if (playing) {
-    showGameSky(false);
-    setExportRootMouse(true);
-    tickSolve();
-    pollGamepad(stage);
-    syncSidePanel(true);
-    if (isDevName(getName())) {
-      hud?.setVisible(true);
-      if (lastHud !== "ingame") {
-        lastHud = "ingame";
-        hud?.drawInGameDev();
+  if (inRun) {
+    if (overlayMode !== "run") {
+      overlayMode = "run";
+      enterPlayVisuals();
+      raiseHud();
+    }
+    syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
+    if (playing) {
+      tickSolve();
+      pollGamepad(stage);
+      if (cachedDev) {
+        if (!hud?.root.visible) {
+          hud?.setVisible(true);
+          raiseHud();
+        }
+        if (lastHudPaint !== "ingame") {
+          lastHudPaint = "ingame";
+          hud?.drawInGameDev();
+        }
+      } else if (hud?.root.visible) {
+        hud?.setVisible(false);
       }
-    } else {
+    } else if (hud?.root.visible) {
       hud?.setVisible(false);
-      placeHudInput(false, "0", "0", "0", "", "");
     }
     return;
   }
 
-  parkCreateJsMenu();
-  setExportRootMouse(false);
-  hud?.setVisible(true);
+  if (overlayMode !== "menu") {
+    overlayMode = "menu";
+    parkCreateJsMenu();
+    setExportRootMouse(false);
+    setMouseOverRate(5);
+    hud?.setVisible(true);
+    raiseHud();
+    ensureMenuMusic();
+  }
+
   bindMenuPad();
   if (extraView === "finish") {
     paintHud();
@@ -974,7 +1067,6 @@ function syncOverlay(): void {
     const back = playSession.returnTo;
     playSession = null;
     openPanel(back);
-    ensureMenuMusic();
     return;
   }
   if (!getName()) {
@@ -982,7 +1074,6 @@ function syncOverlay(): void {
     else paintHud();
   } else if (extraView === "auto" || extraView === "name") {
     openPanel("home");
-    ensureMenuMusic();
   } else {
     paintHud();
   }
@@ -992,6 +1083,7 @@ declare global {
   interface Window {
     exportRoot?: {
       currentLabel?: string;
+      framerate?: number | null;
       splash?: { visible: boolean; stop?: () => void };
       menu?: {
         currentFrame: number;
@@ -1004,6 +1096,7 @@ declare global {
     stage?: StageLike;
     startBloxorzShell?: () => void;
     GAME_VERSION?: string;
+    __bloxSetMouseOver?: (hz: number) => void;
     AdobeAn?: { getComposition: (id: string) => { getLibrary: () => LibCtor } };
     createjs?: {
       Sound?: {
@@ -1012,14 +1105,21 @@ declare global {
         activePlugin?: { context?: { resume?: () => Promise<unknown> } };
       };
       WebAudioPlugin?: { context?: { resume?: () => Promise<unknown> } };
-      Ticker?: { addEventListener: (n: string, fn: () => void) => void };
+      Ticker?: {
+        addEventListener: (n: string, fn: () => void) => void;
+        setFPS?: (n: number) => void;
+        timingMode?: string;
+        RAF_SYNCHED?: string;
+        framerate?: number;
+      };
     };
   }
 }
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.5.0");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "2.6.0");
+  refreshNameCache();
   gateSoundPlay();
   wrapGetLevels();
   bind();
@@ -1034,6 +1134,7 @@ export function startBloxorzShell(): void {
   }
   if (!isLegacy()) {
     parkCreateJsMenu();
+    setMouseOverRate(5);
     const sel = $("image_select") as HTMLSelectElement | null;
     if (sel) sel.value = currentTheme();
   }
