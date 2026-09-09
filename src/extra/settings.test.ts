@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  hueRgb,
   invalidateSettingsCache,
   loadSettings,
   setMobilePad,
@@ -60,5 +61,15 @@ describe("mobile settings", () => {
     expect(loadSettings().rotateScreen).toBe(true);
     setRotateScreen(false);
     expect(loadSettings().rotateScreen).toBe(false);
+  });
+
+  it("turns backdrop hue into RGB for the in-game sky filter", () => {
+    const red = hueRgb(0);
+    expect(red[0]).toBeGreaterThan(red[1]);
+    expect(red[0]).toBeGreaterThan(red[2]);
+    const green = hueRgb(120);
+    expect(green[1]).toBeGreaterThan(green[0]);
+    const blue = hueRgb(240);
+    expect(blue[2]).toBeGreaterThan(blue[0]);
   });
 });

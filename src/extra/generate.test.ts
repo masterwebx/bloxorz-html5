@@ -17,10 +17,10 @@ import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthr
 import type { LevelDef } from "./types";
 
 describe("puzzle difficulty copy", () => {
-  it("describes difficulty by move count and used obstacles", () => {
+  it("describes difficulty by required switches and move count", () => {
     expect(difficultyHint("easy")).toContain("moves");
-    expect(difficultyHint("easy")).toContain("obstacles");
-    expect(difficultyHint("insane")).toMatch(/85/);
+    expect(difficultyHint("easy")).toContain("switches");
+    expect(difficultyHint("insane")).toMatch(/36/);
   });
 });
 
@@ -145,9 +145,10 @@ describe("seeded generator", () => {
     expect(run[0].def.tiles.join("")).not.toBe(run[1].def.tiles.join(""));
   });
 
-  it("fills the whole 15×10 board for a full-board puzzle", () => {
+  it("fills most of the 15×10 board and leaves unused walls empty", () => {
     const p = generateFullBoard("fill-check");
-    expect(filledCellCount(p.def.tiles)).toBe(150);
+    expect(filledCellCount(p.def.tiles)).toBeGreaterThanOrEqual(120);
+    expect(p.def.tiles.join("")).toContain(" ");
     expect(p.def.tiles.some((row) => row.includes("e"))).toBe(true);
   });
 

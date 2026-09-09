@@ -9,13 +9,7 @@ var pausedElapsed = 0;
 function setCurrentLevel(levelNumber) {
   currentLevel = levelNumber;
   currentLevelCell = stageTimeCells[currentLevel] || null;
-  let current_level_row = document.getElementById(`stage${currentLevel}`);
-  if (current_level_row)
-    current_level_row.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-      inline: "nearest",
-    });
+  highlightCurrentStage();
 
   if (timerActive) {
     UpdateTable();
@@ -43,6 +37,14 @@ function EnsureTable() {
 
   tableInitialized = true;
   currentLevelCell = stageTimeCells[currentLevel] || null;
+  highlightCurrentStage();
+}
+
+function highlightCurrentStage() {
+  var rows = document.querySelectorAll("#timeRows tr");
+  for (var i = 0; i < rows.length; i++) {
+    rows[i].classList.toggle("is-current", rows[i].id === "stage" + currentLevel);
+  }
 }
 
 function ResetTimer() {
@@ -61,6 +63,7 @@ function ResetTimer() {
   }
 
   currentLevelCell = stageTimeCells[currentLevel] || null;
+  highlightCurrentStage();
   UpdateTable();
 }
 

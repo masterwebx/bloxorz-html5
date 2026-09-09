@@ -603,7 +603,7 @@ export class ExtraHud {
     this.add(card);
     this.add(text("DAILY PUZZLE", 40, 56, 22, theme.ink));
     this.add(text(date, 40, 86, 14, theme.muted));
-    this.add(text("Full 15×10 board. Same brutal stage for everyone today.", 40, 110, 12, theme.muted));
+    this.add(text("Same gated stage for everyone today. The switches are the route.", 40, 110, 12, theme.muted));
     this.add(this.act("puzzle-daily", "Play Daily", 40, 142, 16, false, 200));
     this.add(this.act("puzzles-seeded", "Seeded", 40, 208, 14, false, 140));
     this.add(this.act("puzzles-gauntlet", "Gauntlet", 200, 208, 14, false, 140));
@@ -619,7 +619,7 @@ export class ExtraHud {
     this.add(text("Play this seed, or type another.", 40, 80, 12, theme.muted));
     this.add(fieldBox(40, 112, 280));
     this.add(this.act("puzzle-seed-go", "Play", 40, 154, 14, false, 100));
-    this.add(text("Same seed, same map. Built to need the switches.", 40, 200, 11, theme.muted));
+    this.add(text("Same seed, same map. If a switch is on the board, you need it.", 40, 200, 11, theme.muted));
   }
 
   drawGauntlet(diff: string): void {

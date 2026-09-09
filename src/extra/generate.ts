@@ -16,6 +16,7 @@ export interface Puzzle {
 export interface QualityOpts {
   minMoves: number;
   minUsed: number;
+  minRequired: number;
   attempts: number;
   bfs: number;
 }
@@ -28,23 +29,24 @@ const BAND: Record<Difficulty, { min: number; max: number; tiles: [number, numbe
 };
 
 export const QUALITY: Record<Difficulty, QualityOpts> = {
-  easy: { minMoves: 8, minUsed: 2, attempts: 24, bfs: 80_000 },
-  medium: { minMoves: 14, minUsed: 4, attempts: 32, bfs: 80_000 },
-  hard: { minMoves: 20, minUsed: 6, attempts: 40, bfs: 100_000 },
-  insane: { minMoves: 26, minUsed: 8, attempts: 48, bfs: 120_000 },
+  easy: { minMoves: 8, minUsed: 2, minRequired: 0, attempts: 24, bfs: 80_000 },
+  medium: { minMoves: 14, minUsed: 4, minRequired: 1, attempts: 32, bfs: 80_000 },
+  hard: { minMoves: 20, minUsed: 6, minRequired: 2, attempts: 40, bfs: 100_000 },
+  insane: { minMoves: 26, minUsed: 8, minRequired: 3, attempts: 48, bfs: 120_000 },
 };
 
-/** Gauntlet floors are ~10× the old casual QUALITY bands (8 / 14 / 20 / 26). */
+/** Gauntlet floors: required switches first. Move count is a floor, not the puzzle. */
 export const GAUNTLET_QUALITY: Record<Difficulty, QualityOpts> = {
-  easy: { minMoves: 40, minUsed: 12, attempts: 8, bfs: 120_000 },
-  medium: { minMoves: 55, minUsed: 16, attempts: 8, bfs: 140_000 },
-  hard: { minMoves: 70, minUsed: 20, attempts: 10, bfs: 160_000 },
-  insane: { minMoves: 85, minUsed: 24, attempts: 10, bfs: 180_000 },
+  easy: { minMoves: 16, minUsed: 6, minRequired: 2, attempts: 10, bfs: 120_000 },
+  medium: { minMoves: 22, minUsed: 8, minRequired: 3, attempts: 10, bfs: 140_000 },
+  hard: { minMoves: 28, minUsed: 10, minRequired: 4, attempts: 12, bfs: 160_000 },
+  insane: { minMoves: 36, minUsed: 12, minRequired: 4, attempts: 12, bfs: 180_000 },
 };
 
-export const DAILY_OPTS: QualityOpts = { minMoves: 80, minUsed: 24, attempts: 12, bfs: 200_000 };
-export const SEEDED_OPTS: QualityOpts = { minMoves: 28, minUsed: 10, attempts: 12, bfs: 140_000 };
+export const DAILY_OPTS: QualityOpts = { minMoves: 24, minUsed: 10, minRequired: 4, attempts: 10, bfs: 200_000 };
+export const SEEDED_OPTS: QualityOpts = { minMoves: 20, minUsed: 8, minRequired: 3, attempts: 12, bfs: 140_000 };
 export const GAUNTLET_LEN = 5;
+export const HARD_BFS = 80_000;
 
 const OBSTACLE_CH = "shfvlkrq";
 
@@ -171,6 +173,69 @@ export function tightenPuzzle(p: Puzzle, bfs: number): Puzzle {
   };
 }
 
+/** Stone the switches and drop their defs. Off bridges stay off. */
+export function stripAllSwitches(def: LevelDef): LevelDef {
+  let next = clonePuzzleDef(def);
+  for (const sw of [...(next.switches ?? [])]) next = withoutSwitch(next, sw);
+  next.switches = [];
+  return next;
+}
+
+/** True when the map is solvable, and the exit is unreachable if every switch is ignored. */
+export function isSwitchGated(def: LevelDef, bfs: number): boolean {
+  if (!(def.switches ?? []).length) return false;
+  if (!solveLevel(def, bfs).ok) return false;
+  return !solveLevel(stripAllSwitches(def), bfs).ok;
+}
+
+export function requiredSwitches(def: LevelDef, bfs: number, knownSolvable = false): SwitchDef[] {
+  if (!knownSolvable && !solveLevel(def, bfs).ok) return [];
+  return (def.switches ?? []).filter((sw) => !solveLevel(withoutSwitch(def, sw), bfs).ok);
+}
+
+export interface PuzzleAssess {
+  solvable: boolean;
+  solutionLen: number;
+  switchCount: number;
+  requiredCount: number;
+  gated: boolean;
+}
+
+export function assessPuzzle(def: LevelDef, bfs: number): PuzzleAssess {
+  const solved = solveLevel(def, bfs);
+  const switchCount = (def.switches ?? []).length;
+  if (!solved.ok || !solved.cmds.length) {
+    return { solvable: false, solutionLen: 0, switchCount, requiredCount: 0, gated: false };
+  }
+  const gated = isSwitchGated(def, bfs);
+  const requiredCount = gated ? requiredSwitches(def, bfs, true).length : 0;
+  return {
+    solvable: true,
+    solutionLen: solved.cmds.length,
+    switchCount,
+    requiredCount,
+    gated,
+  };
+}
+
+export function meetsHardness(assess: PuzzleAssess, opts: Pick<QualityOpts, "minMoves" | "minRequired">): boolean {
+  return assess.solvable && assess.gated && assess.requiredCount >= opts.minRequired && assess.solutionLen >= opts.minMoves;
+}
+
+/** Every switch on the board is a real gate — no decorative pads, no walk-around. */
+export function meetsSwitchGate(assess: PuzzleAssess, minRequired: number): boolean {
+  return (
+    assess.solvable &&
+    assess.gated &&
+    assess.requiredCount >= minRequired &&
+    assess.requiredCount === assess.switchCount
+  );
+}
+
+export function isStrictHard(assess: PuzzleAssess, opts: Pick<QualityOpts, "minMoves" | "minRequired">): boolean {
+  return meetsSwitchGate(assess, opts.minRequired) && assess.solutionLen >= opts.minMoves;
+}
+
 export function hashSeed(text: string): number {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -285,9 +350,9 @@ function packDef(
   };
 }
 
-function scorePuzzle(len: number, used: number, opts: QualityOpts): number {
-  const meet = (len >= opts.minMoves ? 4000 : 0) + (used >= opts.minUsed ? 4000 : 0);
-  return meet + len * 4 + used * 5;
+function scorePuzzle(len: number, used: number, opts: QualityOpts, required = 0, gated = false): number {
+  const meet = (len >= opts.minMoves ? 4000 : 0) + (used >= opts.minUsed ? 2000 : 0) + (required >= opts.minRequired ? 5000 : 0);
+  return meet + (gated ? 8000 : 0) + required * 900 + len * 4 + used * 3;
 }
 
 function finishPuzzle(
@@ -738,9 +803,47 @@ function tryPacked(rng: () => number, seed: string, difficulty: Difficulty): Puz
   return finishPuzzle(def, seed, difficulty, 200_000);
 }
 
+type RoomEdge = {
+  r1: number;
+  c1: number;
+  r2: number;
+  c2: number;
+  cells: [number, number][];
+};
+
+function fullBoardEdges(): RoomEdge[] {
+  const rw = 5;
+  const rh = 5;
+  const edges: RoomEdge[] = [];
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 2; c++) {
+      const xGate = (c + 1) * rw;
+      const y0 = r * rh;
+      const cells: [number, number][] = [];
+      for (let k = 0; k < rh; k++) cells.push([xGate, y0 + k]);
+      edges.push({ r1: r, c1: c, r2: r, c2: c + 1, cells });
+    }
+  }
+  for (let c = 0; c < 3; c++) {
+    const yGate = rh;
+    const x0 = c * rw;
+    const cells: [number, number][] = [];
+    for (let k = 0; k < rw; k++) cells.push([x0 + k, yGate]);
+    edges.push({ r1: 0, c1: c, r2: 1, c2: c, cells });
+  }
+  return edges;
+}
+
+function edgeForRooms(edges: RoomEdge[], a: [number, number], b: [number, number]): RoomEdge | undefined {
+  return edges.find(
+    (e) =>
+      (e.r1 === a[0] && e.c1 === a[1] && e.r2 === b[0] && e.c2 === b[1]) ||
+      (e.r1 === b[0] && e.c1 === b[1] && e.r2 === a[0] && e.c2 === a[1]),
+  );
+}
+
 /**
- * Every cell of the 15×10 board is a tile. Six 5×5 rooms snake through
- * gated off-bridges so Daily / gauntlet can use the whole stage.
+ * Six 5×5 rooms. Unused walls stay empty so you cannot walk around the gates.
  */
 function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): Puzzle | null {
   const rw = 5;
@@ -748,6 +851,11 @@ function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): 
   const grid = emptyGrid();
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) grid[y][x] = "b";
+  }
+
+  const edges = fullBoardEdges();
+  for (const edge of edges) {
+    for (const [x, y] of edge.cells) grid[y][x] = " ";
   }
 
   const snake: [number, number][] =
@@ -774,36 +882,28 @@ function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): 
     const x0 = c * rw;
     const y0 = r * rh;
     for (let y = 0; y < rh; y++) {
-      for (let x = 0; x < rw; x++) cells.push([x0 + x, y0 + y]);
+      for (let x = 0; x < rw; x++) {
+        const ch = grid[y0 + y][x0 + x];
+        if (ch === "b" || ch === "f" || ch === "s") cells.push([x0 + x, y0 + y]);
+      }
     }
     return cells;
   };
 
   const switches: SwitchDef[] = [];
   for (let i = 0; i < snake.length - 1; i++) {
-    const [r1, c1] = snake[i];
-    const [r2, c2] = snake[i + 1];
+    const a = snake[i];
+    const b = snake[i + 1];
+    const edge = edgeForRooms(edges, a, b);
+    if (!edge) return null;
     const kind = rng() < 0.5 ? "l" : "r";
     const targets: SwitchDef["bridges"] = [];
-    if (r1 === r2) {
-      const left = Math.min(c1, c2);
-      const xGate = (left + 1) * rw;
-      const y0 = r1 * rh;
-      for (let k = 0; k < rh; k++) {
-        grid[y0 + k][xGate] = kind;
-        targets.push({ x: xGate, y: y0 + k, mode: "on" });
-      }
-    } else {
-      const top = Math.min(r1, r2);
-      const yGate = (top + 1) * rh;
-      const x0 = c1 * rw;
-      for (let k = 0; k < rw; k++) {
-        grid[yGate][x0 + k] = kind;
-        targets.push({ x: x0 + k, y: yGate, mode: "on" });
-      }
+    for (const [x, y] of edge.cells) {
+      grid[y][x] = kind;
+      targets.push({ x, y, mode: "on" });
     }
     if (!targets.length) return null;
-    const swPool = room(r1, c1).filter((c) => grid[c[1]][c[0]] === "b");
+    const swPool = room(a[0], a[1]).filter((c) => grid[c[1]][c[0]] === "b");
     if (!swPool.length) return null;
     const sw = farthest(swPool, [targets[0].x, targets[0].y]);
     grid[sw[1]][sw[0]] = "s";
@@ -822,29 +922,97 @@ function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): 
 
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      if (grid[y][x] === "b" && rng() < 0.12 && !(x === spawn[0] && y === spawn[1])) grid[y][x] = "f";
+      if (grid[y][x] === "b" && rng() < 0.05 && !(x === spawn[0] && y === spawn[1])) grid[y][x] = "f";
     }
   }
 
-  const splits: SplitDef[] = [];
-  const padPool = last.filter((c) => grid[c[1]][c[0]] === "b" || grid[c[1]][c[0]] === "f");
-  if (padPool.length >= 4) {
-    const pad = pick(rng, padPool);
-    const drops = last.filter((c) => manhattan(c, pad) >= 2 && !(c[0] === end[0] && c[1] === end[1]));
-    if (drops.length >= 2) {
-      const a = pick(rng, drops);
-      const b = farthest(drops, a);
-      grid[pad[1]][pad[0]] = "v";
-      splits.push({ x: pad[0], y: pad[1], a, b });
+  return finishPuzzle(packDef(toTiles(grid), spawn, seed, switches, []), seed, difficulty, 200_000);
+}
+
+/**
+ * Rectangular islands in a line. Each gap is a single OFF bridge — the only crossing.
+ * Used as the hardness safety net so daily / gauntlet never emit a walk-around map.
+ */
+export function forcedGatePuzzle(seed: string, gates: number, difficulty: Difficulty = "insane"): Puzzle {
+  const nGates = clamp(gates, 1, 4);
+  const n = nGates >= 4 ? 4 : nGates + 1;
+  const iw = 3;
+  const ih = 4;
+  const gap = 1;
+  const grid = emptyGrid();
+  const switches: SwitchDef[] = [];
+  const y0 = 3;
+  for (let i = 0; i < n; i++) {
+    const x0 = i * (iw + gap);
+    for (let y = 0; y < ih; y++) {
+      for (let x = 0; x < iw; x++) {
+        if (x0 + x < W && y0 + y < H) grid[y0 + y][x0 + x] = "b";
+      }
+    }
+    if (i < n - 1) {
+      const bx = x0 + iw;
+      const by = y0 + 1;
+      if (bx < W) grid[by][bx] = "l";
+      const sx = x0;
+      const sy = y0;
+      grid[sy][sx] = "s";
+      switches.push({ x: sx, y: sy, bridges: [{ x: bx, y: by, mode: "on" }] });
     }
   }
+  if (nGates >= 4 && n >= 3) {
+    const cutX = iw + gap + 1;
+    const line: SwitchDef["bridges"] = [];
+    for (let y = 0; y < ih; y++) {
+      const cy = y0 + y;
+      const ch = grid[cy][cutX];
+      if (ch === "e" || ch === "s") continue;
+      grid[cy][cutX] = "r";
+      line.push({ x: cutX, y: cy, mode: "on" });
+    }
+    if (line.length) {
+      const sx = 2;
+      const sy = y0 + ih - 1;
+      if (grid[sy][sx] === "b") grid[sy][sx] = "s";
+      switches.push({ x: sx, y: sy, bridges: line });
+    }
+  }
+  const spawn: [number, number] = [1, y0 + 2];
+  const endX = Math.min(W - 1, (n - 1) * (iw + gap) + iw - 1);
+  const endY = y0 + ih - 1;
+  grid[endY][endX] = "e";
+  if (grid[spawn[1]][spawn[0]] !== "b" && grid[spawn[1]][spawn[0]] !== "s") {
+    grid[spawn[1]][0] = "b";
+  }
+  const def = packDef(toTiles(grid), spawn, seed, switches);
+  return finishPuzzle(def, seed, difficulty, 120_000) ?? {
+    def,
+    seed,
+    difficulty,
+    solutionLen: 0,
+    usedObstacles: 0,
+  };
+}
 
-  return finishPuzzle(packDef(toTiles(grid), spawn, seed, switches, splits), seed, difficulty, 200_000);
+function forceHardPuzzle(seed: string, opts: QualityOpts, difficulty: Difficulty): Puzzle {
+  for (let gates = Math.max(opts.minRequired, 2); gates <= 4; gates++) {
+    const raw = forcedGatePuzzle(`${seed}:force:${gates}`, gates, difficulty);
+    const p = tightenPuzzle(raw, Math.min(opts.bfs, 120_000));
+    const assess = assessPuzzle(p.def, HARD_BFS);
+    if (meetsSwitchGate(assess, opts.minRequired)) return p;
+    if (meetsSwitchGate(assess, Math.min(opts.minRequired, assess.requiredCount)) && assess.gated) {
+      if (assess.requiredCount >= 2) return p;
+    }
+  }
+  return tightenPuzzle(forcedGatePuzzle(`${seed}:force`, 4, difficulty), HARD_BFS);
 }
 
 export function generateFullBoard(seed: string): Puzzle {
   const rng = mulberry32(hashSeed(`full:${seed}`));
-  return tryFullBoard(rng, seed, "insane") ?? generatePuzzle(seed, "easy");
+  for (let i = 0; i < 6; i++) {
+    const p = tryFullBoard(rng, `${seed}:${i}`, "insane");
+    if (p && isSwitchGated(p.def, 120_000)) return p;
+  }
+  return forceHardPuzzle(seed, DAILY_OPTS, "insane");
 }
 
 /** Two-wide winding corridor with forced bridge cuts. */
@@ -874,10 +1042,22 @@ function tryRibbon(rng: () => number, seed: string, difficulty: Difficulty): Puz
     if (grid[by][bx] !== "b") continue;
     const kind = rng() < 0.5 ? "l" : "r";
     grid[by][bx] = kind;
+    const targets: SwitchDef["bridges"] = [{ x: bx, y: by, mode: "on" }];
+    const prev = line[Math.max(0, t - 1)];
+    const dx = bx - prev[0];
+    const dy = by - prev[1];
+    const px = dy !== 0 ? 1 : 0;
+    const py = dx !== 0 ? 1 : 0;
+    const nx = bx + px;
+    const ny = by + py;
+    if (nx >= 0 && ny >= 0 && nx < W && ny < H && grid[ny][nx] === "b") {
+      grid[ny][nx] = kind;
+      targets.push({ x: nx, y: ny, mode: "on" });
+    }
     const swAt = line[Math.max(1, t - 3 - Math.floor(rng() * 2))];
     if (grid[swAt[1]][swAt[0]] !== "b") continue;
     grid[swAt[1]][swAt[0]] = "s";
-    switches.push({ x: swAt[0], y: swAt[1], bridges: [{ x: bx, y: by, mode: "on" }] });
+    switches.push({ x: swAt[0], y: swAt[1], bridges: targets });
   }
   if (switches.length < 2) return null;
   const spawn = line[0];
@@ -908,13 +1088,26 @@ export function generateQualityPuzzle(seed: string, opts: QualityOpts, difficult
     else if (roll < 0.97) p = tryBridges(rng, `${seed}:${i}`, difficulty);
     else p = trySplit(rng, `${seed}:${i}`, difficulty);
     if (!p) continue;
-    const used = p.usedObstacles;
-    const sc = scorePuzzle(p.solutionLen, used, opts);
+    const tight = opts.minRequired > 0 ? tightenPuzzle(p, opts.bfs) : p;
+    const assess = opts.minRequired > 0 ? assessPuzzle(tight.def, Math.min(opts.bfs, HARD_BFS)) : null;
+    const used = tight.usedObstacles;
+    const sc = scorePuzzle(tight.solutionLen, used, opts, assess?.requiredCount ?? 0, assess?.gated ?? false);
     if (sc > bestScore) {
-      best = p;
+      best = tight;
       bestScore = sc;
     }
-    if (p.solutionLen >= opts.minMoves && used >= opts.minUsed) return tightenPuzzle(p, opts.bfs);
+    if (opts.minRequired > 0) {
+      if (assess && isStrictHard(assess, opts)) return tight;
+    } else if (tight.solutionLen >= opts.minMoves && used >= opts.minUsed) {
+      return tight;
+    }
+  }
+  if (opts.minRequired > 0) {
+    if (best) {
+      const assess = assessPuzzle(best.def, HARD_BFS);
+      if (meetsSwitchGate(assess, opts.minRequired)) return best;
+    }
+    return forceHardPuzzle(seed, opts, difficulty);
   }
   if (best) return tightenPuzzle(best, opts.bfs);
   const fallback = tryPlain(mulberry32(hashSeed(seed + ":qfb")), `${seed}:qfb`, "easy", false);
@@ -957,26 +1150,37 @@ export function generatePuzzle(seed: string, difficulty: Difficulty): Puzzle {
   };
 }
 
+function pickHardPuzzle(raw: Puzzle | null, opts: QualityOpts, bfs = opts.bfs): Puzzle | null {
+  if (!raw) return null;
+  const p = tightenPuzzle(raw, bfs);
+  const assess = assessPuzzle(p.def, Math.min(bfs, 100_000));
+  if (!meetsSwitchGate(assess, opts.minRequired)) return null;
+  return p;
+}
+
 export function generateDaily(date: Date): Puzzle {
   const seed = dailySeed(date);
   const rng = mulberry32(hashSeed(`daily-full:${seed}`));
   let best: Puzzle | null = null;
   let bestScore = -1;
   for (let i = 0; i < 8; i++) {
-    const raw = tryFullBoard(rng, `${seed}:${i}`, "insane");
-    if (!raw) continue;
-    const p = tightenPuzzle(raw, 200_000);
-    const sc = scorePuzzle(p.solutionLen, p.usedObstacles, DAILY_OPTS);
+    const raw =
+      i < 5 ? tryFullBoard(rng, `${seed}:${i}`, "insane") : i < 7 ? tryPacked(rng, `${seed}:p${i}`, "insane") : trySlots(rng, `${seed}:s${i}`, "insane", 5, true);
+    const p = pickHardPuzzle(raw, DAILY_OPTS, 200_000);
+    if (!p) continue;
+    const assess = assessPuzzle(p.def, HARD_BFS);
+    const sc = scorePuzzle(p.solutionLen, p.usedObstacles, DAILY_OPTS, assess.requiredCount, assess.gated);
     if (sc > bestScore) {
       best = p;
       bestScore = sc;
     }
-    const needed = (p.def.switches ?? []).length;
-    if (needed >= 3 && p.solutionLen >= 50) return { ...p, seed };
-    if (needed >= 3 && p.solutionLen >= 40) return { ...p, seed };
+    if (isStrictHard(assess, DAILY_OPTS)) return { ...p, seed };
   }
-  if (best && (best.def.switches ?? []).length >= 2) return { ...best, seed };
-  return tightenPuzzle(generateQualityPuzzle(seed, DAILY_OPTS, "insane"), 200_000);
+  if (best) {
+    const assess = assessPuzzle(best.def, HARD_BFS);
+    if (meetsSwitchGate(assess, DAILY_OPTS.minRequired)) return { ...best, seed };
+  }
+  return { ...forceHardPuzzle(seed, DAILY_OPTS, "insane"), seed };
 }
 
 export function generateSeeded(seed: string): Puzzle {
@@ -990,11 +1194,16 @@ export function generateRun(seed: string, difficulty: Difficulty, count: number)
   return Array.from({ length: n }, (_, i) => {
     const tag = `${seed}#${i}`;
     const rng = mulberry32(hashSeed(`gfull:${difficulty}:${tag}`));
-    const full = tryFullBoard(rng, tag, difficulty);
-    if (full && full.solutionLen >= Math.min(28, opts.minMoves)) return full;
-    const packed = tryPacked(rng, `${tag}:p`, difficulty);
+    const full = pickHardPuzzle(tryFullBoard(rng, tag, difficulty), opts);
+    if (full) return full;
+    const packed = pickHardPuzzle(tryPacked(rng, `${tag}:p`, difficulty), opts);
     if (packed) return packed;
-    return generateQualityPuzzle(tag, opts, difficulty);
+    const slots = pickHardPuzzle(trySlots(rng, `${tag}:s`, difficulty, difficulty === "easy" ? 3 : 4, difficulty !== "easy"), opts);
+    if (slots) return slots;
+    const quality = generateQualityPuzzle(tag, opts, difficulty);
+    const assess = assessPuzzle(quality.def, HARD_BFS);
+    if (meetsSwitchGate(assess, opts.minRequired)) return quality;
+    return forceHardPuzzle(tag, opts, difficulty);
   });
 }
 
@@ -1006,7 +1215,7 @@ export function difficultyLabel(d: Difficulty): string {
 
 export function difficultyHint(d: Difficulty): string {
   const q = GAUNTLET_QUALITY[d];
-  return `${q.minMoves}+ moves · ${q.minUsed}+ used obstacles`;
+  return `${q.minRequired}+ required switches · ${q.minMoves}+ moves`;
 }
 
 export function difficultyBand(d: Difficulty): (typeof BAND)[Difficulty] {

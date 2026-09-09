@@ -29,6 +29,11 @@ body.title-letterbox #canvas {
 	background-color: #000 !important;
 }
 
+body.is-playing #animation_container,
+body.is-playing #canvas {
+	background-color: var(--play-tint, #000);
+}
+
 #hud-modal {
 	position: absolute;
 	inset: 0;
@@ -104,6 +109,13 @@ body.title-letterbox #canvas {
 	left: 50%;
 	top: 50%;
 	transform: translate(-50%, -50%);
+	overflow: hidden;
+}
+
+#dom_overlay_container #side_panel,
+#dom_overlay_container #table_container {
+	overflow: hidden;
+	scrollbar-width: none;
 }
 
 #touch-pad,

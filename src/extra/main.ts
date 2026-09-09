@@ -52,6 +52,7 @@ import {
   brandName,
   currentTheme,
   hueCss,
+  hueRgb,
   isDevName,
   loadSettings,
   NAME_MAX,
@@ -175,7 +176,16 @@ type StageLike = {
   bloxWorld?: BloxWorld | null;
 };
 
-type SkyClip = { x: number; y: number; visible: boolean; mouseEnabled: boolean };
+type SkyClip = {
+  x: number;
+  y: number;
+  visible: boolean;
+  mouseEnabled: boolean;
+  filters?: unknown;
+  cache?: (x: number, y: number, w: number, h: number) => void;
+  uncache?: () => void;
+  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
+};
 type LibCtor = {
   bettersky_22?: new () => SkyClip;
   spinna?: new () => { x: number; y: number; scaleX: number; scaleY: number; mouseEnabled: boolean; shadow?: unknown; parent?: unknown };
@@ -492,11 +502,39 @@ function ensureTint(): void {
   tintLayer = layer;
 }
 
+function applySkySpriteTint(sprite: SkyClip | null | undefined, hue: number, amt: number): void {
+  const cjs = window.createjs as { ColorFilter?: new (...args: number[]) => unknown } | undefined;
+  if (!sprite) return;
+  if (!sThemeBg()) {
+    sprite.filters = null;
+    sprite.uncache?.();
+    return;
+  }
+  if (amt <= 0.01 || !cjs?.ColorFilter) {
+    sprite.filters = null;
+    sprite.uncache?.();
+    return;
+  }
+  const [r, g, b] = hueRgb(hue);
+  const t = Math.min(1, amt);
+  sprite.filters = [
+    new cjs.ColorFilter(1 - t * 0.4, 1 - t * 0.4, 1 - t * 0.4, 1, r * t * 0.7, g * t * 0.7, b * t * 0.7, 0),
+  ];
+  const box = sprite.getBounds?.();
+  sprite.cache?.(box?.x ?? 0, box?.y ?? 0, box?.width ?? 550, box?.height ?? 300);
+}
+
+function sThemeBg(): boolean {
+  return loadSettings().themeBg;
+}
+
 function applyLooks(): void {
   const s = loadSettings();
   document.body.classList.toggle("no-theme-bg", !s.themeBg);
   document.body.style.setProperty("--bg-tint", hueCss(s.bgHue, s.bgTint * 0.55));
+  document.body.style.setProperty("--play-tint", s.bgTint > 0.01 ? hueCss(s.bgHue, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000");
   ensureTint();
+  applySkySpriteTint(sky, s.bgHue, s.bgTint);
   if (tintLayer) {
     tintLayer.graphics.clear();
     if (s.bgTint > 0.01) {
@@ -517,6 +555,7 @@ function showGameSky(on: boolean): void {
   const box = window.stage?.gameContainer;
   if (box) box.visible = !on;
   document.body.classList.toggle("no-theme-bg", !bg);
+  if (on) document.body.classList.remove("is-playing");
 }
 
 function syncSidePanel(show: boolean): void {
@@ -563,11 +602,13 @@ function parkCreateJsMenu(): void {
 function enterPlayVisuals(): void {
   menuParked = false;
   showGameSky(false);
+  document.body.classList.add("is-playing");
   setExportRootMouse(true);
   setMouseOverRate(0);
   hud?.parkForPlay();
   placeHudInput(false, "0", "0", "0", "", "");
   sidePanelOn = null;
+  lastTintKey = "";
 }
 
 function findMenu(): Record<string, { visible?: boolean; mouseEnabled?: boolean }> | null {
@@ -2340,32 +2381,45 @@ function applyPlayTint(): void {
   const gc = window.stage?.gameContainer as {
     addChildAt?: (c: unknown, i: number) => void;
     setChildIndex?: (c: unknown, i: number) => void;
+    getChildIndex?: (c: unknown) => number;
     children?: unknown[];
     numChildren?: number;
     __bloxTint?: TintShape;
   } | undefined;
+  const world = window.stage?.bloxWorld as {
+    background?: SkyClip & { instance_2?: SkyClip };
+  } | undefined;
   const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
-  if (!gc?.addChildAt || !cjs?.Shape) return;
   const s = loadSettings();
-  const key = `${s.bgTint}|${s.bgHue}`;
+  const skySpr = world?.background?.instance_2;
+  if (skySpr) skySpr.visible = s.themeBg;
+  applySkySpriteTint(skySpr, s.bgHue, s.bgTint);
+  applySkySpriteTint(sky, s.bgHue, s.bgTint);
+  if (!gc?.addChildAt || !cjs?.Shape) return;
+  const key = `${s.bgTint}|${s.bgHue}|${s.themeBg}`;
   let overlay = gc.__bloxTint;
-  const missing = !overlay || !gc.children?.includes(overlay);
-  if (!missing && key === lastTintKey) return;
-  lastTintKey = key;
-  if (missing) {
+  const listed = !!(overlay && gc.children?.includes(overlay));
+  if (!listed) {
     overlay = new cjs.Shape();
     overlay.mouseEnabled = false;
-    gc.addChildAt(overlay, 1);
+    gc.addChildAt(overlay, Math.min(1, gc.numChildren ?? 1));
     gc.__bloxTint = overlay;
-  } else if (overlay && gc.setChildIndex) {
-    const top = Math.max(0, (gc.numChildren ?? gc.children?.length ?? 1) - 1);
-    gc.setChildIndex(overlay, Math.min(1, top));
+    lastTintKey = "";
+  }
+  if (overlay && gc.setChildIndex && gc.getChildIndex) {
+    const bg = world?.background;
+    const bgIdx = bg ? gc.getChildIndex(bg) : -1;
+    const want = bgIdx >= 0 ? bgIdx + 1 : 1;
+    const idx = gc.getChildIndex(overlay);
+    if (idx !== want) gc.setChildIndex(overlay, Math.min(want, Math.max(0, (gc.numChildren ?? 1) - 1)));
   }
   if (!overlay) return;
+  if (key === lastTintKey && listed) return;
+  lastTintKey = key;
   overlay.graphics.clear();
-  if (s.bgTint > 0.01) {
-    overlay.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(0, 0, 550, 300);
-    overlay.alpha = s.bgTint * 0.42;
+  if (s.themeBg && s.bgTint > 0.01) {
+    overlay.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(-40, -40, 630, 380);
+    overlay.alpha = Math.min(0.55, 0.12 + s.bgTint * 0.4);
     overlay.visible = true;
   } else {
     overlay.visible = false;
