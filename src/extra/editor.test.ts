@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { occupiedCells } from "./coolmathBoard";
-import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, isPlayable, parseShare, setTile, stageId } from "./customLevels";
+import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, isPlayable, occupiedTileCount, parseShare, setTile, shareFromLocation, stageId } from "./customLevels";
 import type { LevelDef } from "./types";
 import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
 import { Stage } from "./engine";
@@ -140,6 +140,9 @@ describe("reverse seeds", () => {
     expect(parseShare(reported)?.tiles).toEqual(fromPaste?.tiles);
     expect(decodeSeed(reported.slice(0, 160))).toBeNull();
     expect(decodeSeed(reported.slice(0, 80))).toBeNull();
+    expect(occupiedTileCount(fromPaste!)).toBe(75);
+    expect(shareFromLocation(`?code=${reported}`, "")).toBe(reported);
+    expect(parseShare(shareFromLocation("", `#${reported}`))?.tiles).toEqual(fromPaste?.tiles);
   });
 
   it("keeps BX1 share codes working and tags them with the short id", () => {

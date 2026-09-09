@@ -7,8 +7,10 @@ import {
   findBySeed,
   isPlayable,
   listSaved,
+  occupiedTileCount,
   parseShare,
   saveStage,
+  shareFromLocation,
   stageId,
 } from "./customLevels";
 import { createJsToDef, defToCreateJs } from "./convert";
@@ -1141,6 +1143,7 @@ function shouldAskMobilePad(): boolean {
 }
 
 function afterIdentity(): void {
+  if (applyPendingShare()) return;
   if (shouldAskMobilePad()) openPanel("mobile-ask");
   else openPanel("home");
 }
@@ -1569,15 +1572,35 @@ function submitModal(): void {
       paintHud();
       return;
     }
-    pushUndo();
-    draft = def;
-    draftName = "Untitled";
-    beaten = false;
-    paint = newPaintState();
-    paint.hint = "Loaded share code.";
-    scheduleBeatCheck();
-    openPanel("creator-edit");
+    loadShareIntoEditor(def);
   }
+}
+
+function loadShareIntoEditor(def: LevelDef): void {
+  pushUndo();
+  draft = def;
+  draftName = "Untitled";
+  beaten = false;
+  paint = newPaintState();
+  paint.hint = `Loaded ${occupiedTileCount(def)} tiles from reverse seed.`;
+  scheduleBeatCheck();
+  openPanel("creator-edit");
+}
+
+function applyPendingShare(): boolean {
+  const raw = shareFromLocation(location.search, location.hash);
+  if (!raw) return false;
+  const def = parseShare(raw, listSaved());
+  if (!def) return false;
+  splashDone = true;
+  if (!getName()) setName("BLOX");
+  loadShareIntoEditor(def);
+  try {
+    history.replaceState(null, "", `${location.pathname}${location.search.replace(/[?&](code|seed)=[^&]*/g, "").replace(/^&/, "?")}`);
+  } catch {
+    /* ignore */
+  }
+  return true;
 }
 
 function openCodeModal(): void {
@@ -2695,6 +2718,10 @@ export function startBloxorzShell(): void {
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) sel.value = currentTheme();
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
+  if (applyPendingShare()) {
+    raiseHud();
+    hud?.setVisible(true);
+  }
   syncOverlay();
 }
 

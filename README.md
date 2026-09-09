@@ -36,7 +36,7 @@ npm run tauri dev
 
 ## Version
 
-The main menu shows **v1.0.10** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
+The main menu shows **v1.0.11** in the bottom-right (from `src/version.js`). Keep that string in sync with `package.json`.
 
 Insane gauntlet and Daily can dump a full 15×10 board. Static stone tiles share one cached bitmap so 150-tile stages stay playable. Dense reverse seeds encode as the compact 75-nibble form; a copied `BXS.` code pastes back as the same stage.
 

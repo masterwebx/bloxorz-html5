@@ -285,6 +285,31 @@ function hydrate(stage: SavedStage, source: SavedStage["source"]): SavedStage {
   };
 }
 
+/** Pull a BXS/BX1 code from ?code= / ?seed= or a #BXS… hash. */
+export function shareFromLocation(search: string, hash: string): string {
+  const q = search.startsWith("?") ? search.slice(1) : search;
+  const params = new URLSearchParams(q);
+  const fromQuery = (params.get("code") || params.get("seed") || "").trim();
+  if (fromQuery) return fromQuery;
+  let h = hash.startsWith("#") ? hash.slice(1) : hash;
+  try {
+    h = decodeURIComponent(h);
+  } catch {
+    /* keep raw */
+  }
+  h = h.trim();
+  if (h.startsWith("BXS.") || h.startsWith("BX1.") || /^BXS-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/i.test(h)) return h;
+  return "";
+}
+
+export function occupiedTileCount(def: LevelDef): number {
+  let n = 0;
+  for (const row of def.tiles) {
+    for (const ch of row) if (ch !== " ") n++;
+  }
+  return n;
+}
+
 export function parseShare(text: string, extra: SavedStage[] = []): LevelDef | null {
   const t = text.trim();
   const compact = t.match(/BXS\.[A-Za-z0-9_-]+/);
