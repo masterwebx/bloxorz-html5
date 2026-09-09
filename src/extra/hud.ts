@@ -767,12 +767,13 @@ export class ExtraHud {
     EDITOR_TOOLS.forEach((tool, i) => {
       const col = i < 6 ? 0 : 1;
       const row = i < 6 ? i : i - 6;
-      const x = 360 + col * 96;
+      const x = 300 + col * 128;
       const y = 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
       const icon = this.toolClip(tool.id, x, y);
       if (icon) this.add(icon);
-      this.add(this.act("tool:" + tool.id, mark + tool.label, x + 18, y, 11, false, 78));
+      const label = tool.label.replace(" Switch", "");
+      this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, 11, false, col === 0 ? 104 : 88));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, 248, 10, theme.muted));

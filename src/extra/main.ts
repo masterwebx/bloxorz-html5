@@ -221,6 +221,7 @@ let tintLayer: TintShape | null = null;
 let letterbox: TintShape | null = null;
 let blocksWereIdle = true;
 let prevPadButtons = new Set<number>();
+let prevInstrStart = false;
 let bakedHue = -1;
 let atlasFrames: FrameBackup[] | null = null;
 let atlasCanvas: HTMLCanvasElement | null = null;
@@ -1961,10 +1962,7 @@ function advanceInstructions(dir: 1 | -1 | 0): void {
     return;
   }
   if (dir < 0) {
-    if (frame <= 20) {
-      quitPlay();
-      return;
-    }
+    if (frame <= 20) return;
     inst.gotoAndPlay?.(Math.max(0, frame - 30));
     return;
   }
@@ -1972,10 +1970,63 @@ function advanceInstructions(dir: 1 | -1 | 0): void {
 }
 
 function pollInstructionsPad(): void {
+  const start = heldPadButtons().has(loadSettings().pads.pause);
+  if (start && !prevInstrStart) {
+    prevInstrStart = true;
+    advanceInstructions(0);
+    pollMenuPad();
+    return;
+  }
+  prevInstrStart = start;
   for (const ev of pollMenuPad()) {
     if (ev === "confirm" || ev === "right" || ev === "down") advanceInstructions(1);
-    else if (ev === "back" || ev === "left" || ev === "up") advanceInstructions(-1);
+    else if (ev === "left" || ev === "up") advanceInstructions(-1);
+    else if (ev === "back") {
+      if ((instructionClip()?.currentFrame ?? 0) <= 20) quitPlay();
+      else advanceInstructions(-1);
+    }
   }
+}
+
+function inStagePlay(): boolean {
+  const label = currentLabel();
+  return label === "game" || label === "restart";
+}
+
+function handleTouchPadDown(code: string): void {
+  if (currentLabel() === "instructions") {
+    if (code === "ArrowRight" || code === "ArrowDown") advanceInstructions(1);
+    else if (code === "ArrowLeft" || code === "ArrowUp") advanceInstructions(-1);
+    else if (code === "Space") advanceInstructions(1);
+    return;
+  }
+  if (inStagePlay()) {
+    const cmd = KEY_CMD[code];
+    if (cmd) tape.push(cmd);
+    window.stage?.triggerKeyDown?.({ code });
+    return;
+  }
+  if (code === "ArrowUp") handleMenuNav("up");
+  else if (code === "ArrowDown") handleMenuNav("down");
+  else if (code === "ArrowLeft") handleMenuNav("left");
+  else if (code === "ArrowRight") handleMenuNav("right");
+  else if (code === "Space") handleMenuNav("confirm");
+}
+
+function handleTouchPadUp(code: string): void {
+  if (inStagePlay()) window.stage?.triggerKeyUp?.({ code });
+}
+
+function handleTouchPadPause(): void {
+  if (currentLabel() === "instructions") {
+    advanceInstructions(0);
+    return;
+  }
+  if (inStagePlay() || playSession) {
+    quitPlay();
+    return;
+  }
+  if (extraView !== "home" && extraView !== "name" && extraView !== "splash") goBack();
 }
 
 function bindMenuPad(): void {
@@ -2087,12 +2138,15 @@ function bind(): void {
     if (currentLabel() === "instructions") {
       ev.preventDefault();
       const act = actionFromCode(ev.code);
-      if (act === "confirm" || ev.key === "Enter" || ev.key === " " || ev.key === "ArrowRight" || ev.key === "ArrowDown") {
-        advanceInstructions(1);
-      } else if (act === "back" || ev.key === "Escape" || ev.key === "Backspace" || ev.key === "ArrowLeft" || ev.key === "ArrowUp") {
-        advanceInstructions(-1);
-      } else if (act === "pause") {
+      if (act === "pause") {
         advanceInstructions(0);
+      } else if (act === "confirm" || ev.key === "Enter" || ev.key === " " || ev.key === "ArrowRight" || ev.key === "ArrowDown") {
+        advanceInstructions(1);
+      } else if (ev.key === "ArrowLeft" || ev.key === "ArrowUp") {
+        advanceInstructions(-1);
+      } else if (act === "back" || ev.key === "Escape" || ev.key === "Backspace") {
+        if ((instructionClip()?.currentFrame ?? 0) <= 20) quitPlay();
+        else advanceInstructions(-1);
       }
       return;
     }
@@ -2411,7 +2465,7 @@ declare global {
 
 export function startBloxorzShell(): void {
   const version = $("build-version");
-  if (version) version.textContent = "v" + (window.GAME_VERSION || "1.0.0");
+  if (version) version.textContent = "v" + (window.GAME_VERSION || "1.0.1");
   refreshNameCache();
   gateSoundPlay();
   wrapGetLevels();
@@ -2421,13 +2475,9 @@ export function startBloxorzShell(): void {
   if (!touchChrome) {
     touchChrome = new TouchChrome();
     touchChrome.mount({
-      down: (code) => {
-        const cmd = KEY_CMD[code];
-        if (cmd) tape.push(cmd);
-        window.stage?.triggerKeyDown?.({ code });
-      },
-      up: (code) => window.stage?.triggerKeyUp?.({ code }),
-      pause: quitPlay,
+      down: handleTouchPadDown,
+      up: handleTouchPadUp,
+      pause: handleTouchPadPause,
       rotate: toggleRotateScreen,
     });
     registerServiceWorker();

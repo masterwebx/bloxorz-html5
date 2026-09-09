@@ -57,8 +57,8 @@ export function wantsVirtualPad(): boolean {
   return isPhoneViewport();
 }
 
-export function showVirtualPad(enabled: boolean, playing: boolean): boolean {
-  return enabled && playing;
+export function showVirtualPad(enabled: boolean): boolean {
+  return enabled;
 }
 
 type Held = { code: string; el: HTMLElement };
@@ -70,6 +70,8 @@ export class TouchChrome {
   private held = new Map<number, Held>();
   private deferred: { prompt: () => Promise<void> } | null = null;
   private playing = false;
+  private settling = false;
+  private viewportTimer = 0;
   private handlers: TouchPadHandlers = {
     down: () => undefined,
     up: () => undefined,
@@ -89,8 +91,22 @@ export class TouchChrome {
       this.deferred = ev as unknown as { prompt: () => Promise<void> };
       this.sync();
     });
-    window.addEventListener("resize", () => this.sync());
-    window.addEventListener("orientationchange", () => this.sync());
+    window.addEventListener("resize", () => this.queueViewport());
+    window.addEventListener("orientationchange", () => this.queueViewport());
+    window.visualViewport?.addEventListener("resize", () => this.queueViewport());
+  }
+
+  private queueViewport(): void {
+    if (this.settling) return;
+    window.clearTimeout(this.viewportTimer);
+    this.viewportTimer = window.setTimeout(() => {
+      this.settling = true;
+      this.sync();
+      window.dispatchEvent(new Event("resize"));
+      window.requestAnimationFrame(() => {
+        this.settling = false;
+      });
+    }, 180);
   }
 
   sync(playing?: boolean): void {
@@ -103,14 +119,14 @@ export class TouchChrome {
     document.body.classList.toggle("is-portrait", portrait);
     document.body.classList.toggle("is-playing", this.playing);
     document.body.classList.toggle("is-pad-on", enabled);
-    const rotate = enabled && loadSettings().rotateScreen;
+    const rotate = enabled && loadSettings().rotateScreen && portrait;
     const wasRotated = document.body.classList.contains("is-rotated");
     document.body.classList.toggle("is-rotated", rotate);
-    if (wasRotated !== rotate) window.dispatchEvent(new Event("resize"));
-    if (this.pad) this.pad.hidden = !showVirtualPad(enabled, this.playing);
+    if (wasRotated !== rotate && !this.settling) window.dispatchEvent(new Event("resize"));
+    if (this.pad) this.pad.hidden = !showVirtualPad(enabled);
     if (this.landscape) this.landscape.hidden = true;
     if (this.install) {
-      this.install.hidden = !device || enabled || this.installDismissed() || this.playing;
+      this.install.hidden = !device || enabled || this.installDismissed();
     }
   }
 
