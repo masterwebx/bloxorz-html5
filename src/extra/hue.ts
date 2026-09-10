@@ -87,6 +87,42 @@ export function bakeFrameBackup(frame: FrameBackup, hue: number): ImageData {
   return makeImageData(data, frame.width, frame.height);
 }
 
+export function atlasHueFilter(hue: number): string {
+  const n = wrapHue(hue);
+  return n ? `hue-rotate(${n}deg)` : "none";
+}
+
+export type AtlasRect = { x: number; y: number; width: number; height: number };
+
+type HueBlitCtx = {
+  filter: string;
+  drawImage: (
+    image: CanvasImageSource,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ) => void;
+};
+
+/** Copy block rects from an unmodified atlas using CSS hue-rotate. No per-pixel walks. */
+export function blitHueRects(
+  ctx: HueBlitCtx,
+  source: CanvasImageSource,
+  rects: AtlasRect[],
+  hue: number,
+): void {
+  ctx.filter = atlasHueFilter(hue);
+  for (const r of rects) {
+    ctx.drawImage(source, r.x, r.y, r.width, r.height, r.x, r.y, r.width, r.height);
+  }
+  ctx.filter = "none";
+}
+
 /** Animate sprite names that are the rust block itself — not shadows or UI. */
 export const BLOCK_SPRITE_RE = /^blocka(fall|land|shrink|small)?\d+$/;
 

@@ -438,17 +438,21 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 
 #hud-theme-upload-btn {
 	left: 61%;
-	width: 10%;
+	width: 16%;
 }
 
 #hud-theme-template-btn {
-	left: 72%;
-	width: 12%;
+	left: 65%;
+	top: 51.5%;
+	width: 30%;
+	font-size: 9px;
+	line-height: 1.1;
+	white-space: normal;
 }
 
 #hud-theme-manage-btn {
-	left: 85%;
-	width: 10%;
+	left: 78%;
+	width: 17%;
 }
 
 #hud-theme-manage {
@@ -565,6 +569,51 @@ body.is-playing #canvas {
 
 #hud-modal.is-open {
 	display: flex;
+}
+
+#hud-busy {
+	position: absolute;
+	inset: 0;
+	z-index: 80;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.72);
+	pointer-events: auto;
+}
+
+#hud-busy[hidden] {
+	display: none !important;
+}
+
+.hud-busy-card {
+	width: min(320px, 80%);
+	padding: 16px 18px 14px;
+	background: #140e0a;
+	border: 1px solid #c45a18;
+	box-shadow: 0 0 24px rgba(255, 120, 30, 0.25);
+}
+
+#hud-busy-title {
+	margin: 0 0 12px;
+	font: 700 13px/1.3 Orbitron, sans-serif;
+	color: #ffe6c4;
+}
+
+.hud-busy-track {
+	height: 8px;
+	background: #2a1810;
+	border: 1px solid #c45a18;
+}
+
+#hud-busy-bar {
+	width: 0;
+	height: 100%;
+	background: #c45a18;
+}
+
+body.is-busy #dom_overlay_container > :not(#hud-busy) {
+	pointer-events: none !important;
 }
 
 .hud-modal-card {

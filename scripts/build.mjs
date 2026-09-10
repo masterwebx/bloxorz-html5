@@ -2,6 +2,7 @@ import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import { writeThemeTemplateZip } from "./themeTemplateZip.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -29,3 +30,4 @@ const localeIds = readdirSync(path.join(root, "translations"))
   .map((name) => name.replace(/\.json$/, ""));
 writeFileSync(path.join(root, "dist", "themes", "index.json"), JSON.stringify(themeIds));
 writeFileSync(path.join(root, "dist", "translations", "index.json"), JSON.stringify(localeIds));
+writeThemeTemplateZip(path.join(root, "dist", "themes", "_template.zip"));

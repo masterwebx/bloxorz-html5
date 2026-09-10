@@ -1,6 +1,6 @@
 # Theme pack
 
-This zip is a starting theme. Unzip it, rename the folder, replace the art and sounds, then zip it again (keep `theme.json` at the root or one folder down) and upload it from Settings → **Upload theme**.
+This zip is a starting theme with **Original art plus every in-game sound**. Unzip it, rename the folder, replace the art and sounds, then zip it again (keep `theme.json` at the root or one folder down) and upload it from Settings → **Upload theme**.
 
 The `_template` folder in the repo is skipped by the game list so it never shows up as a playable theme.
 
@@ -17,7 +17,7 @@ The `_template` folder in the repo is skipped by the game list so it never shows
 | `backgrounds/` | Sky / menu art |
 | `tutorial/` | How-to pictures |
 
-Copy missing PNGs from `themes/original/` if you only want to recolor a few tiles. Missing files fall back to Original.
+Copy missing files only if you delete some of these. Missing files fall back to Original.
 
 ## Sounds
 

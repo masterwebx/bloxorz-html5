@@ -32,7 +32,8 @@ describe("i18n", () => {
     bootLocales(LOCALE_TABLE, "en");
     setLocale("en");
     expect(t("play.moves")).toBe("Moves");
-    expect(t("settings.template")).toBe("Template");
+    expect(t("settings.template")).toBe("Download Template");
+    expect(t("settings.templateBusy")).toBe("Downloading template…");
     expect(t("settings.hueShift")).toBe("Hue shift");
     expect(t("settings.stageName")).toBe("Stage name");
     expect(t("play.stage", { n: 4 })).toBe("Stage 4");

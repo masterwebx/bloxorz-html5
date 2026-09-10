@@ -29,6 +29,7 @@ const MIME: Record<string, string> = {
   ".mp3": "audio/mpeg",
   ".md": "text/markdown",
   ".css": "text/css",
+  ".zip": "application/zip",
 };
 
 async function bundleExtra(): Promise<void> {
@@ -155,10 +156,40 @@ function extraBundlePlugin(): Plugin {
   };
 }
 
+function themeTemplateZipPlugin(): Plugin {
+  let cached: Uint8Array | null = null;
+  const load = async (): Promise<Uint8Array> => {
+    if (cached) return cached;
+    const mod = (await import("./scripts/themeTemplateZip.mjs")) as { buildThemeTemplateZip: () => Uint8Array };
+    cached = mod.buildThemeTemplateZip();
+    return cached;
+  };
+  return {
+    name: "bloxorz-theme-template-zip",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url?.split("?")[0] ?? "";
+        if (url !== "/themes/_template.zip") {
+          next();
+          return;
+        }
+        void load()
+          .then((zip) => {
+            res.setHeader("Content-Type", "application/zip");
+            res.setHeader("Content-Length", String(zip.length));
+            res.setHeader("Cache-Control", "no-cache");
+            res.end(Buffer.from(zip));
+          })
+          .catch(() => next());
+      });
+    },
+  };
+}
+
 export default defineConfig({
   root: "src",
   publicDir: false,
-  plugins: [rawGameAssetsPlugin(), extraBundlePlugin(), serveFolder("/themes", "themes"), serveFolder("/translations", "translations")],
+  plugins: [rawGameAssetsPlugin(), extraBundlePlugin(), themeTemplateZipPlugin(), serveFolder("/themes", "themes"), serveFolder("/translations", "translations")],
   server: {
     host: true,
     port: 4398,

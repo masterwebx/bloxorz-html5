@@ -118,7 +118,7 @@ describe("stage start audio", () => {
     });
     setMenuMusicAllowed(false);
     const sound = (window as unknown as { createjs: { Sound: { play: (...a: unknown[]) => SoundInst } } }).createjs.Sound;
-    const inst = sound.play("blox003wav");
+    const inst = sound.play("blox2wav");
     expect(inst?.loop).toBe(0);
     expect(tags[0]?.loop).toBe(false);
   });

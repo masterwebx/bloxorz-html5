@@ -26,7 +26,8 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { bakeFrameBackup, collectBlockFrameIndexes, hueDelta, shiftingHue, type FrameBackup } from "./hue";
+import { blitHueRects, collectBlockFrameIndexes, shiftingHue, type AtlasRect } from "./hue";
+import { armStageTitleClip, freezeStageTitleClip, stageTitleShouldArm, type StageTitleClip } from "./stageTitle";
 import {
   loadFinishedStages,
   saveFinishedStage,
@@ -74,7 +75,7 @@ import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
 import { applySaveBackup, buildSaveBackup, parseSaveBackup } from "./saveBackup";
 import { clearTheme3d, syncTheme3d } from "./theme3d";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
-import { downloadThemeTemplate } from "./themeTemplate";
+import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, canBillboard, type MenuItem } from "./hud";
@@ -380,8 +381,10 @@ let prevPadButtons = new Set<number>();
 let prevInstrStart = false;
 let bakedHue = -1;
 let hueShiftOrigin = 0;
-let atlasFrames: FrameBackup[] | null = null;
+let atlasRects: AtlasRect[] | null = null;
 let atlasCanvas: HTMLCanvasElement | null = null;
+let atlasOriginal: HTMLCanvasElement | null = null;
+let uiBusy = false;
 let touchChrome: TouchChrome | null = null;
 let localSaveWrapped = false;
 
@@ -493,14 +496,24 @@ function atlasSheet(): SpriteSheetLike | undefined {
   }
 }
 
-function collectBlockAtlas(): { canvas: HTMLCanvasElement; frames: FrameBackup[] } | null {
+function snapshotCanvas(src: HTMLCanvasElement): HTMLCanvasElement | null {
+  const copy = document.createElement("canvas");
+  copy.width = src.width;
+  copy.height = src.height;
+  const ctx = copy.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(src, 0, 0);
+  return copy;
+}
+
+function collectBlockAtlas(): { live: HTMLCanvasElement; original: HTMLCanvasElement; rects: AtlasRect[] } | null {
   const sheet = atlasSheet();
   const lib = adobeLib() as unknown as Record<string, unknown>;
   if (!sheet?.getFrame || !lib) return null;
   const indexes = collectBlockFrameIndexes(lib);
   if (!indexes.length) return null;
   let source: CanvasImageSource | null = null;
-  const rects: { x: number; y: number; width: number; height: number }[] = [];
+  const rects: AtlasRect[] = [];
   for (const i of indexes) {
     const frame = sheet.getFrame(i);
     if (!frame?.rect || !frame.image) continue;
@@ -508,18 +521,11 @@ function collectBlockAtlas(): { canvas: HTMLCanvasElement; frames: FrameBackup[]
     rects.push(frame.rect);
   }
   if (!source || !rects.length) return null;
-  const canvas = adoptAtlasCanvas(sheet, source);
-  if (!canvas) return null;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const frames = rects.map((r) => ({
-    x: r.x,
-    y: r.y,
-    width: r.width,
-    height: r.height,
-    original: ctx.getImageData(r.x, r.y, r.width, r.height),
-  }));
-  return { canvas, frames };
+  const live = adoptAtlasCanvas(sheet, source);
+  if (!live) return null;
+  const original = snapshotCanvas(live);
+  if (!original) return null;
+  return { live, original, rects };
 }
 
 function liveBlockHue(): number {
@@ -528,21 +534,18 @@ function liveBlockHue(): number {
 }
 
 function applyBlockHue(): void {
-  const s = loadSettings();
   const hue = liveBlockHue();
-  if (atlasFrames && bakedHue >= 0 && hue === bakedHue) return;
-  if (atlasFrames && bakedHue >= 0 && s.hueShift && hueDelta(hue, bakedHue) < 6) return;
-  if (!atlasFrames || !atlasCanvas) {
+  if (atlasRects && atlasOriginal && atlasCanvas && bakedHue >= 0 && hue === bakedHue) return;
+  if (!atlasRects || !atlasCanvas || !atlasOriginal) {
     const atlas = collectBlockAtlas();
     if (!atlas) return;
-    atlasFrames = atlas.frames;
-    atlasCanvas = atlas.canvas;
+    atlasRects = atlas.rects;
+    atlasCanvas = atlas.live;
+    atlasOriginal = atlas.original;
   }
   const ctx = atlasCanvas.getContext("2d");
   if (!ctx) return;
-  for (const frame of atlasFrames) {
-    ctx.putImageData(bakeFrameBackup(frame, hue), frame.x, frame.y);
-  }
+  blitHueRects(ctx, atlasOriginal, atlasRects, hue);
   bakedHue = hue;
 }
 
@@ -924,12 +927,22 @@ function bindSettingsChrome(): void {
   );
   uploadBtn?.addEventListener("click", () => upload?.click());
   templateBtn?.addEventListener("click", () => {
-    void downloadThemeTemplate().catch(() => {
-      themeUploadMsg = t("theme.templateBad");
-      lastHudPaint = "";
-      markHudDirty();
-      paintHud();
-    });
+    if (uiBusy) return;
+    uiBusy = true;
+    setTemplateBusy(true, 0, t("settings.templateBusy"));
+    void downloadThemeTemplate((done, total) => {
+      setTemplateBusy(true, total ? done / total : 0, t("settings.templateBusy"));
+    })
+      .catch(() => {
+        themeUploadMsg = t("theme.templateBad");
+        lastHudPaint = "";
+        markHudDirty();
+        paintHud();
+      })
+      .finally(() => {
+        uiBusy = false;
+        setTemplateBusy(false, 1);
+      });
   });
   manageBtn?.addEventListener("click", (ev) => {
     ev.stopPropagation();
@@ -1112,10 +1125,19 @@ function vanillaTitleClip(): BitmapMark | undefined {
 }
 
 function setVanillaTitleVisible(on: boolean): void {
-  const title = vanillaTitleClip();
+  const title = vanillaTitleClip() as StageTitleClip | undefined;
   if (!title) return;
   title.visible = on;
   if (on && title.alpha === 0) title.alpha = 1;
+}
+
+function syncStageTitleAudio(label: string): void {
+  const title = vanillaTitleClip() as StageTitleClip | undefined;
+  if (stageTitleShouldArm(lastLabel, label)) {
+    armStageTitleClip(title);
+    return;
+  }
+  freezeStageTitleClip(title);
 }
 
 function setVanillaCongraVisible(on: boolean): void {
@@ -1828,6 +1850,7 @@ function navItems(): NavItem[] {
 }
 
 function handleMenuNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
+  if (uiBusy) return;
   if (extraView === "remap" && rebindAction) return;
   if (extraView === "splash") {
     if (ev === "confirm" || ev === "back") dismissSplash();
@@ -2302,8 +2325,9 @@ function applyTheme(theme: ThemeId, reload = false): void {
   setHdRendering(isHdTheme(id));
   void swapAtlasLive(id);
   applyLooks();
-  atlasFrames = null;
+  atlasRects = null;
   atlasCanvas = null;
+  atlasOriginal = null;
   bakedHue = -1;
   applyBlockHue();
   lastTintKey = "";
@@ -3742,6 +3766,10 @@ function bindMenuPad(): void {
     return;
   }
   prevCreatorPad = new Set();
+  if (uiBusy) {
+    pollMenuPad();
+    return;
+  }
   for (const ev of pollMenuPad()) handleMenuNav(ev);
 }
 
@@ -3758,6 +3786,14 @@ function bind(): void {
   };
   $("hud-modal-ok")?.addEventListener("click", () => submitModal());
   $("hud-modal-cancel")?.addEventListener("click", () => closeModal());
+  $("hud-busy")?.addEventListener(
+    "pointerdown",
+    (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    },
+    true,
+  );
   modalInput()?.addEventListener("keydown", (ev) => {
     ev.stopPropagation();
     if (ev.key === "Enter") {
@@ -3870,6 +3906,10 @@ function bind(): void {
   });
 
   window.addEventListener("keydown", (ev) => {
+    if (uiBusy) {
+      ev.preventDefault();
+      return;
+    }
     if (document.activeElement === hudInput() || document.activeElement === modalInput()) return;
     if (extraView === "splash") {
       ev.preventDefault();
@@ -4037,6 +4077,7 @@ function syncOverlay(): void {
   const onTitle = label === "instructions" || label === "stagetitle";
   syncLetterbox(onTitle);
   setVanillaTitleVisible(false);
+  syncStageTitleAudio(label);
 
   if (playSession && !playLaunching && !labeledRun && label !== "finish" && (extraView === "auto" || label === "menu" || label === "splash")) {
     const back = playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";

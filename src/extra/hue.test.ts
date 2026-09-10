@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  atlasHueFilter,
   bakeFrameBackup,
   bakeHueIntoPixels,
+  blitHueRects,
   collectBlockFrameIndexes,
   hueDelta,
   hueRotateRgb,
@@ -46,6 +48,21 @@ describe("block hue bake", () => {
     expect(shiftingHue(350, true, 1000, 24)).toBe(14);
     expect(hueDelta(10, 14)).toBe(4);
     expect(hueDelta(350, 10)).toBe(20);
+  });
+
+  it("blits block rects with hue-rotate instead of walking pixels", () => {
+    const calls: unknown[] = [];
+    const ctx = {
+      filter: "none",
+      drawImage(...args: unknown[]) {
+        calls.push([this.filter, ...args]);
+      },
+    };
+    blitHueRects(ctx, {} as CanvasImageSource, [{ x: 2, y: 4, width: 8, height: 6 }], 40);
+    expect(atlasHueFilter(40)).toBe("hue-rotate(40deg)");
+    expect(atlasHueFilter(0)).toBe("none");
+    expect(calls).toEqual([["hue-rotate(40deg)", {}, 2, 4, 8, 6, 2, 4, 8, 6]]);
+    expect(ctx.filter).toBe("none");
   });
 
   it("builds preview face colors for the settings cuboid fallback", () => {
