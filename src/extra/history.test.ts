@@ -3,6 +3,7 @@ import { Stage } from "./engine";
 import type { LevelDef } from "./types";
 import { H, W } from "./engine";
 import {
+  acceptTapeCmd,
   loadFinishedStages,
   loadRuns,
   saveFinishedStage,
@@ -193,6 +194,13 @@ describe("run history", () => {
     expect(row.kind).toBe("daily");
     expect(row.seed).toBe("BXS.TEST");
     expect(row.title).toBe("DAILY PUZZLE");
+  });
+
+  it("records a swap only while the cubes are actually split", () => {
+    expect(acceptTapeCmd("swap", { idle: true, split: false })).toBe(false);
+    expect(acceptTapeCmd("swap", { idle: true, split: true })).toBe(true);
+    expect(acceptTapeCmd("right", { idle: false, split: false })).toBe(false);
+    expect(acceptTapeCmd("right", { idle: true, split: false })).toBe(true);
   });
 });
 

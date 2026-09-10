@@ -21,6 +21,15 @@ body.has-theme-media #canvas {
 	background-color: transparent !important;
 }
 
+body.has-webcam-bg #canvas,
+body.has-webcam-bg #animation_container,
+body.has-webcam-bg.is-playing #canvas,
+body.has-webcam-bg.is-playing #animation_container,
+body.has-webcam-bg.no-theme-bg #canvas,
+body.has-webcam-bg.no-theme-bg #animation_container {
+	background-color: transparent !important;
+}
+
 #play-chrome {
 	position: absolute;
 	inset: 0;
@@ -293,6 +302,7 @@ body.has-theme-media #canvas {
 #hud-theme-select,
 #hud-locale-select,
 #hud-theme-upload-btn,
+#hud-theme-manage-btn,
 .hud-dd-btn,
 .hud-dd-menu,
 .hud-dd-opt {
@@ -309,7 +319,8 @@ body.has-theme-media #canvas {
 }
 
 .hud-dd-btn,
-#hud-theme-upload-btn {
+#hud-theme-upload-btn,
+#hud-theme-manage-btn {
 	box-sizing: border-box;
 	height: 20px;
 	padding: 0 18px 0 6px;
@@ -387,18 +398,71 @@ body.has-theme-media #canvas {
 	width: 28%;
 }
 
-#hud-theme-upload-btn {
+#hud-theme-upload-btn,
+#hud-theme-manage-btn {
 	position: absolute;
 	z-index: 30;
-	left: 66%;
 	top: 43.5%;
-	width: 22%;
+	padding: 0 4px;
 	cursor: pointer;
+}
+
+#hud-theme-upload-btn {
+	left: 66%;
+	width: 11%;
+}
+
+#hud-theme-manage-btn {
+	left: 78%;
+	width: 12%;
+}
+
+#hud-theme-manage {
+	position: absolute;
+	z-index: 40;
+	left: 36%;
+	top: 48%;
+	width: 54%;
+	max-height: 36%;
+	overflow: auto;
+	box-sizing: border-box;
+	padding: 6px;
+	background: #1a120c;
+	border: 1px solid #c45a18;
+	pointer-events: auto;
+}
+
+.hud-theme-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin: 4px 0;
+	color: #ffe6c4;
+	font: 700 11px Orbitron, sans-serif;
+}
+
+.hud-theme-row button {
+	flex: 0 0 auto;
+	padding: 2px 8px;
+	font: 700 10px Orbitron, sans-serif;
+	color: #ffe6c4;
+	background: #1a120c;
+	border: 1px solid #c45a18;
+	cursor: pointer;
+}
+
+#hud-theme-manage-empty {
+	margin: 4px 0;
+	color: rgba(255, 210, 160, 0.7);
+	font: 700 11px Orbitron, sans-serif;
 }
 
 #hud-theme-select[hidden],
 #hud-locale-select[hidden],
 #hud-theme-upload-btn[hidden],
+#hud-theme-manage-btn[hidden],
+#hud-theme-manage[hidden],
 #play-chrome[hidden],
 #stage-card[hidden],
 #howto-copy[hidden],

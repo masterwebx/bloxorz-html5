@@ -29,23 +29,29 @@ export function isAudioUnlocked(): boolean {
   return unlocked && ctxReady;
 }
 
+function gatedPlay(...args: unknown[]): SoundInst {
+  if (isMusicId(args[0]) && !allowMenuMusic) {
+    hushStageMusic();
+    return mutedMusic;
+  }
+  if (!ctxReady) {
+    queued.push(args);
+    return null;
+  }
+  return playNow(args);
+}
+
 export function gateSoundPlay(): void {
   hookHtmlAudioPlay();
+  hookHtmlAudioLoop();
+  hookBufferStart();
+  watchSoundLoads();
   const sound = (window as unknown as { createjs?: { Sound?: { play: (...a: unknown[]) => SoundInst } } }).createjs
     ?.Sound;
-  if (!sound?.play || origPlay) return;
+  if (!sound?.play) return;
+  if (sound.play === gatedPlay) return;
   origPlay = sound.play.bind(sound);
-  sound.play = function gated(...args: unknown[]) {
-    if (isMusicId(args[0]) && !allowMenuMusic) {
-      hushStageMusic();
-      return mutedMusic;
-    }
-    if (!ctxReady) {
-      queued.push(args);
-      return null;
-    }
-    return playNow(args);
-  };
+  sound.play = gatedPlay;
 }
 
 function audioContext(): { resume?: () => Promise<unknown>; state?: string } | undefined {
@@ -132,6 +138,13 @@ function isMusicElement(el: HTMLAudioElement): boolean {
   return el === musicEl || /music/i.test(musicSrcOf(el));
 }
 
+function instanceLoop(inst: SoundInst): number {
+  if (!inst || typeof inst !== "object") return 0;
+  const rec = inst as { loop?: unknown; _loop?: unknown };
+  const n = typeof rec.loop === "number" ? rec.loop : typeof rec._loop === "number" ? rec._loop : 0;
+  return Number.isFinite(n) ? n : 0;
+}
+
 function stopCreatejsMusic(): void {
   try {
     const sound = (window as unknown as { createjs?: { Sound?: { stop?: (id?: string) => void; _instances?: SoundInst[] } } }).createjs
@@ -140,7 +153,8 @@ function stopCreatejsMusic(): void {
     if (Array.isArray(rows)) {
       for (const inst of rows) {
         const rec = inst as { src?: string; stop?: () => void };
-        if (isMusicId(rec.src) || /music/i.test(`${rec.src || ""}`)) inst?.stop?.();
+        const src = `${rec.src || ""}`;
+        if (isMusicId(rec.src) || /music/i.test(src) || instanceLoop(inst) !== 0) inst?.stop?.();
       }
     }
   } catch {
@@ -160,16 +174,13 @@ function pinSilentMenuHandle(): void {
   st.menuMusic = mutedMusic;
 }
 
-export function hushStageMusic(): void {
-  allowMenuMusic = false;
-  stopMenuMusic();
-  stopThemeMusic();
-  stopCreatejsMusic();
-  pinSilentMenuHandle();
+function hushHtmlAudio(): void {
   try {
     document.querySelectorAll("audio").forEach((el) => {
+      if (allowMenuMusic && el === musicEl) return;
+      const looping = el.loop || isMusicElement(el);
       el.loop = false;
-      if (isMusicElement(el)) {
+      if (looping) {
         el.pause();
         try {
           el.currentTime = 0;
@@ -183,6 +194,16 @@ export function hushStageMusic(): void {
   }
 }
 
+export function hushStageMusic(): void {
+  allowMenuMusic = false;
+  stopMenuMusic();
+  stopThemeMusic();
+  stopCreatejsMusic();
+  pinSilentMenuHandle();
+  hushHtmlAudio();
+  gateSoundPlay();
+}
+
 function hookHtmlAudioPlay(): void {
   if (typeof HTMLAudioElement === "undefined") return;
   const proto = HTMLAudioElement.prototype as HTMLAudioElement["prototype"] & { __bloxPlay?: typeof HTMLAudioElement.prototype.play };
@@ -191,14 +212,65 @@ function hookHtmlAudioPlay(): void {
   proto.__bloxPlay = orig;
   proto.play = function bloxPlay(this: HTMLAudioElement, ...args: unknown[]) {
     if (!allowMenuMusic) {
+      const music = isMusicElement(this);
+      const looping = this.loop || music;
       this.loop = false;
-      if (isMusicElement(this)) {
+      if (music || looping) {
         this.pause();
         return Promise.resolve();
       }
     }
     return orig.apply(this, args as []);
   };
+}
+
+function hookHtmlAudioLoop(): void {
+  if (typeof HTMLAudioElement === "undefined") return;
+  const proto = HTMLAudioElement.prototype as HTMLAudioElement & { __bloxLoop?: boolean };
+  if (proto.__bloxLoop) return;
+  const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "loop") || Object.getOwnPropertyDescriptor(HTMLAudioElement.prototype, "loop");
+  if (!desc?.get || !desc.set) return;
+  proto.__bloxLoop = true;
+  Object.defineProperty(HTMLAudioElement.prototype, "loop", {
+    configurable: true,
+    get() {
+      return desc.get!.call(this) as boolean;
+    },
+    set(v: boolean) {
+      if (!allowMenuMusic && this !== musicEl) {
+        desc.set!.call(this, false);
+        return;
+      }
+      desc.set!.call(this, v);
+    },
+  });
+}
+
+function hookBufferStart(): void {
+  if (typeof AudioBufferSourceNode === "undefined") return;
+  const proto = AudioBufferSourceNode.prototype as AudioBufferSourceNode & {
+    __bloxStart?: typeof AudioBufferSourceNode.prototype.start;
+  };
+  if (proto.__bloxStart) return;
+  const orig = proto.start;
+  proto.__bloxStart = orig;
+  proto.start = function bloxStart(this: AudioBufferSourceNode, ...args: unknown[]) {
+    if (!allowMenuMusic && this.loop) {
+      this.loop = false;
+      return;
+    }
+    return orig.apply(this, args as []);
+  };
+}
+
+function watchSoundLoads(): void {
+  const sound = (window as unknown as { createjs?: { Sound?: { addEventListener?: (n: string, fn: () => void) => void; __bloxLoad?: boolean } } })
+    .createjs?.Sound;
+  if (!sound?.addEventListener || sound.__bloxLoad) return;
+  sound.__bloxLoad = true;
+  sound.addEventListener("fileload", () => {
+    if (!allowMenuMusic) hushStageMusic();
+  });
 }
 
 function playNow(args: PlayArgs): SoundInst {

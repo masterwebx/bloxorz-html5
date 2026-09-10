@@ -470,4 +470,33 @@ export async function installThemeZip(buffer: ArrayBuffer): Promise<ThemePack> {
   return live;
 }
 
+export async function removeCustomTheme(id: string): Promise<{ ok: boolean; current: string }> {
+  seedBuiltins();
+  const pack = packs.get(id);
+  if (!pack || pack.builtin) return { ok: false, current: currentId };
+  if (pack.files) {
+    for (const url of Object.values(pack.files)) {
+      if (url.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  packs.delete(id);
+  try {
+    await idbDelete(id);
+  } catch {
+    /* keep the in-memory removal even if IDB fails */
+  }
+  if (currentId === id) currentId = "original";
+  return { ok: true, current: currentId };
+}
+
+export function listCustomThemes(): ThemePack[] {
+  return listThemes().filter((pack) => !pack.builtin);
+}
+
 export { DEFAULT_PAINT };

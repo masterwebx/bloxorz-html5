@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { resolveAtlasFile } from "./themeAtlas";
-import { getTheme, installThemeZip, isHdTheme, isSolid3d, setCurrentThemeId, themeMenuItems } from "./themePack";
+import {
+  getTheme,
+  installThemeZip,
+  isHdTheme,
+  isSolid3d,
+  listCustomThemes,
+  removeCustomTheme,
+  setCurrentThemeId,
+  themeMenuItems,
+} from "./themePack";
 
 function crc32(buf: Uint8Array): number {
   let c = 0xffffffff;
@@ -155,5 +164,21 @@ describe("theme packs", () => {
     const url = resolveAtlasFile(pack.id, "tiles/metal_v2.png");
     expect(url).toMatch(/^(blob:|data:)/);
     expect(url).not.toContain("themes/original/");
+  });
+
+  it("removes an uploaded custom pack from the theme list", async () => {
+    const pack = await installThemeZip(
+      await zipOf([
+        { name: "theme.json", body: '{"id":"toss","name":"Toss"}' },
+        { name: "tiles/metal_v2.png", body: new Uint8Array([1, 2, 3, 4]) },
+      ]),
+    );
+    setCurrentThemeId(pack.id);
+    expect(listCustomThemes().some((row) => row.id === pack.id)).toBe(true);
+    const out = await removeCustomTheme(pack.id);
+    expect(out.ok).toBe(true);
+    expect(out.current).toBe("original");
+    expect(listCustomThemes().some((row) => row.id === pack.id)).toBe(false);
+    expect((await removeCustomTheme("original")).ok).toBe(false);
   });
 });

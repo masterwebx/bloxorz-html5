@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   absorbHeldMenuConfirm,
+  isPadDriving,
+  noteKeyboardPlay,
   pollGamepad,
   pollMenuPad,
   resetPadState,
+  rumble,
 } from "./gamepad";
 import { invalidateSettingsCache } from "./settings";
 
@@ -104,5 +107,38 @@ describe("gamepad pause and menu confirm", () => {
     resetPadState();
     hold([0]);
     expect(pollMenuPad({ pauseConfirms: false })).toEqual(["confirm"]);
+  });
+
+  it("does not rumble for keyboard play even if a pad is plugged in", () => {
+    const playEffect = vi.fn();
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [
+        {
+          ...fakePad([]),
+          vibrationActuator: { playEffect },
+        },
+      ],
+    });
+    noteKeyboardPlay();
+    rumble(90, 0.4, 0.4);
+    expect(playEffect).not.toHaveBeenCalled();
+    expect(isPadDriving()).toBe(false);
+  });
+
+  it("rumbles after the last move came from the pad", () => {
+    const playEffect = vi.fn();
+    const pad = {
+      ...fakePad([15]),
+      vibrationActuator: { playEffect },
+    };
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [pad],
+    });
+    pollGamepad({ triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() });
+    expect(isPadDriving()).toBe(true);
+    rumble(90, 0.4, 0.4);
+    expect(playEffect).toHaveBeenCalled();
   });
 });

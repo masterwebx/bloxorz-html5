@@ -12,9 +12,10 @@ type StageLike = {
   triggerKeyUp?: (evt: { code: string }) => void;
 };
 
-export function rumble(ms: number, strong = 0.45, weak = 0.3): void {
+export function rumble(ms: number, strong = 0.45, weak = 0.3, force = false): void {
   const settings = loadSettings();
   if (!settings.rumble) return;
+  if (!force && !padDriving) return;
   let pulsed = false;
   for (const pad of navigator.getGamepads()) {
     const actuator = gActuator(pad);
@@ -42,6 +43,15 @@ function gActuator(pad: Gamepad | null): GamepadHapticActuator | undefined {
 let prevHeld: Record<string, boolean> = {};
 let prevMenu: Record<string, boolean> = {};
 let menuCool = 0;
+let padDriving = false;
+
+export function noteKeyboardPlay(): void {
+  padDriving = false;
+}
+
+export function isPadDriving(): boolean {
+  return padDriving;
+}
 
 function collectHeld(): Set<number> {
   const held = new Set<number>();
@@ -80,6 +90,7 @@ export function pollGamepad(
   if (stage?.triggerKeyDown) {
     for (const code of Object.keys(pressed)) {
       if (!prevHeld[code]) {
+        padDriving = true;
         stage.triggerKeyDown?.({ code });
         if (code === "Space") onCmd?.("swap");
         else if (code === "ArrowUp") onCmd?.("up");
@@ -138,6 +149,7 @@ export function resetPadState(): void {
   prevHeld = {};
   prevMenu = {};
   menuCool = 0;
+  padDriving = false;
 }
 
 export function actionFromCode(code: string): Action | null {

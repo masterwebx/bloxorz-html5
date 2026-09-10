@@ -24,10 +24,11 @@ import {
   utcDateLabel,
   type Difficulty,
 } from "./generate";
-import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, pollGamepad, pollMenuPad, rumble } from "./gamepad";
+import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import {
+  acceptTapeCmd,
   loadFinishedStages,
   saveFinishedStage,
   saveRun,
@@ -64,6 +65,8 @@ import {
   isDevOnlyTheme,
   isHdTheme,
   isSolid3d,
+  listCustomThemes,
+  removeCustomTheme,
   setCurrentThemeId,
   themeMenuItems,
 } from "./themePack";
@@ -144,6 +147,7 @@ type PlaySession = {
   author?: string;
   entry?: "start" | "resume" | "passcode" | "code" | "saved" | "creator-test" | "puzzle";
   diff?: Difficulty;
+  replay?: boolean;
 };
 
 type CustomPlayOpts = {
@@ -155,6 +159,7 @@ type CustomPlayOpts = {
   record?: boolean;
   entry?: PlaySession["entry"];
   diff?: Difficulty;
+  replay?: boolean;
 };
 
 type OverlayNode = BitmapMark & {
@@ -355,6 +360,8 @@ let showStats = false;
 let webcamStream: MediaStream | null = null;
 let beatBanner = "";
 let autoSolve = false;
+let solveTape: TapeCmd[] = [];
+let solveRetries = 0;
 let modalKind: "code-play" | "code-edit" | null = null;
 type TintShape = {
   graphics: { clear: () => void; beginFill: (c: string) => { drawRect: (x: number, y: number, w: number, h: number) => void } };
@@ -600,20 +607,25 @@ function sThemeBg(): boolean {
   return loadSettings().themeBg;
 }
 
+function usingWebcam(): boolean {
+  return loadSettings().webcamBg;
+}
+
 function applyLooks(): void {
   const s = loadSettings();
-  document.body.classList.toggle("no-theme-bg", !s.themeBg);
+  document.body.classList.toggle("no-theme-bg", !s.themeBg && !s.webcamBg);
+  document.body.classList.toggle("has-webcam-bg", s.webcamBg);
   document.body.style.setProperty("--bg-tint", hueCss(s.bgHue, s.bgTint * 0.55));
-  document.body.style.setProperty("--play-tint", s.bgTint > 0.01 ? hueCss(s.bgHue, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000");
+  document.body.style.setProperty("--play-tint", s.webcamBg ? "transparent" : s.bgTint > 0.01 ? hueCss(s.bgHue, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000");
   ensureTint();
   lastTintKey = "";
   if (sky) (sky as SkyClip & { __bloxTintKey?: string }).__bloxTintKey = "";
   const world = window.stage?.bloxWorld as { background?: { instance_2?: SkyClip & { __bloxTintKey?: string } } } | undefined;
   if (world?.background?.instance_2) world.background.instance_2.__bloxTintKey = "";
-  applySkySpriteTint(sky, s.bgHue, s.bgTint);
+  if (s.webcamBg && sky) sky.visible = false;
   if (tintLayer) {
     tintLayer.graphics.clear();
-    if (s.bgTint > 0.01) {
+    if (s.bgTint > 0.01 && !s.webcamBg) {
       tintLayer.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(0, 0, 550, 300);
       tintLayer.alpha = s.bgTint * 0.42;
       tintLayer.visible = true;
@@ -635,14 +647,17 @@ function applyThemeMedia(): void {
   const s = loadSettings();
   if (s.webcamBg) {
     wrap.hidden = false;
-    document.body.classList.add("has-theme-media");
+    document.body.classList.add("has-theme-media", "has-webcam-bg");
     img.hidden = true;
     video.hidden = true;
     video.pause();
     if (cam) cam.hidden = false;
     void startWebcam(cam);
+    lastTintKey = "";
+    applyPlayTint();
     return;
   }
+  document.body.classList.remove("has-webcam-bg");
   stopWebcam();
   const src = pack.background.src
     ? pack.background.src.startsWith("/") || pack.background.src.startsWith("blob:") || pack.background.src.startsWith("http")
@@ -798,12 +813,16 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const localeSel = $("hud-locale-select");
   const upload = $("hud-theme-upload") as HTMLInputElement | null;
   const uploadBtn = $("hud-theme-upload-btn");
-  for (const el of [themeSel, localeSel, uploadBtn]) {
+  const manageBtn = $("hud-theme-manage-btn");
+  const manage = $("hud-theme-manage");
+  for (const el of [themeSel, localeSel, uploadBtn, manageBtn]) {
     if (!el) continue;
     el.hidden = !on;
   }
   if (upload) upload.hidden = true;
+  if (!on && manage) manage.hidden = true;
   if (uploadBtn) uploadBtn.textContent = themeUploadMsg || t("settings.upload");
+  if (manageBtn) manageBtn.textContent = t("settings.manage");
   if (!on) {
     closeSettingsDropdowns();
     return;
@@ -816,6 +835,37 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   );
 }
 
+function fillThemeManage(): void {
+  const panel = $("hud-theme-manage");
+  const list = $("hud-theme-manage-list");
+  const empty = $("hud-theme-manage-empty");
+  if (!panel || !list || !empty) return;
+  const rows = listCustomThemes();
+  list.replaceChildren();
+  empty.hidden = rows.length > 0;
+  empty.textContent = t("settings.noCustomThemes");
+  for (const pack of rows) {
+    const row = document.createElement("div");
+    row.className = "hud-theme-row";
+    const name = document.createElement("span");
+    name.textContent = pack.name;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = t("settings.deleteTheme");
+    del.dataset.id = pack.id;
+    row.append(name, del);
+    list.append(row);
+  }
+}
+
+function toggleThemeManage(force?: boolean): void {
+  const panel = $("hud-theme-manage");
+  if (!panel) return;
+  const on = force ?? panel.hidden;
+  if (on) fillThemeManage();
+  panel.hidden = !on;
+}
+
 function bindSettingsChrome(): void {
   if (settingsChromeBound) return;
   settingsChromeBound = true;
@@ -823,6 +873,8 @@ function bindSettingsChrome(): void {
   const localeSel = $("hud-locale-select");
   const upload = $("hud-theme-upload") as HTMLInputElement | null;
   const uploadBtn = $("hud-theme-upload-btn");
+  const manageBtn = $("hud-theme-manage-btn");
+  const manage = $("hud-theme-manage");
   themeSel?.querySelector(".hud-dd-btn")?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     if (themeSel) toggleSettingsDropdown(themeSel);
@@ -849,12 +901,31 @@ function bindSettingsChrome(): void {
     "pointerdown",
     (ev) => {
       const node = ev.target as Node | null;
-      if (themeSel?.contains(node) || localeSel?.contains(node)) return;
+      if (themeSel?.contains(node) || localeSel?.contains(node) || manageBtn?.contains(node) || manage?.contains(node)) return;
       closeSettingsDropdowns();
+      if (manage) manage.hidden = true;
     },
     true,
   );
   uploadBtn?.addEventListener("click", () => upload?.click());
+  manageBtn?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleThemeManage();
+  });
+  manage?.addEventListener("click", (ev) => {
+    const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-id]")?.dataset.id;
+    if (!id) return;
+    ev.stopPropagation();
+    if (!window.confirm(t("theme.deleteConfirm"))) return;
+    const active = currentThemeId();
+    void removeCustomTheme(id).then((out) => {
+      if (!out.ok) return;
+      forgetThemeAtlas(id);
+      fillThemeManage();
+      placeSettingsChrome(true, true);
+      if (active === id) applyTheme("original", true);
+    });
+  });
   const saveImport = $("hud-save-import") as HTMLInputElement | null;
   saveImport?.addEventListener("change", () => {
     const file = saveImport.files?.[0];
@@ -928,6 +999,8 @@ function applyDomCopy(): void {
   if (rotate) rotate.textContent = t("boot.rotate");
   const uploadBtn = $("hud-theme-upload-btn");
   if (uploadBtn) uploadBtn.textContent = t("settings.upload");
+  const manageBtn = $("hud-theme-manage-btn");
+  if (manageBtn) manageBtn.textContent = t("settings.manage");
   const themeBtn = $("hud-theme-btn");
   if (themeBtn) themeBtn.setAttribute("aria-label", t("settings.theme"));
   const localeBtn = $("hud-locale-btn");
@@ -1285,11 +1358,13 @@ function cycleList(ids: string[], cur: string, dir: -1 | 1): string {
 function showGameSky(on: boolean): void {
   ensureSky();
   const bg = loadSettings().themeBg;
-  if (sky) sky.visible = on && bg;
+  const cam = usingWebcam();
+  if (sky) sky.visible = on && bg && !cam;
   parkExportRoot(on);
   const box = window.stage?.gameContainer;
   if (box) box.visible = !on;
-  document.body.classList.toggle("no-theme-bg", !bg);
+  document.body.classList.toggle("no-theme-bg", !bg && !cam);
+  document.body.classList.toggle("has-webcam-bg", cam);
   if (on) document.body.classList.remove("is-playing");
 }
 
@@ -2291,6 +2366,7 @@ function sessionSeed(stageNo: number): string {
 function recordCmd(cmd: TapeCmd): void {
   if (!playSession?.record || autoSolve) return;
   if (currentLabel() !== "game") return;
+  if (!acceptTapeCmd(cmd, { idle: blocksIdle(), split: playBlocks().length > 1 })) return;
   tape.push(cmd);
   if (cmd === "swap") noteSwap();
 }
@@ -2385,15 +2461,18 @@ function defForFinished(rec: FinishedStage): LevelDef | null {
 function startHistoryReplay(rec: FinishedStage): void {
   const def = defForFinished(rec);
   if (!def || !rec.cmds.length) return;
-  replayExclude = rec.cmds.slice();
-  startCustom([def], "history", {
+  resetPadState();
+  startCustom([structuredClone(def)], "history", {
     card: rec.kind === "daily" ? "daily" : rec.kind === "campaign" ? "classic" : "custom",
     title: rec.title || "REPLAY",
     seed: rec.seed,
     record: false,
+    replay: true,
   });
   autoSolve = true;
-  solveFeeder = createFeeder(rec.cmds);
+  solveTape = rec.cmds.slice();
+  solveRetries = 0;
+  solveFeeder = createFeeder(solveTape);
   noteReplayWatch();
 }
 
@@ -2467,7 +2546,7 @@ function handleHudAction(act: string): void {
     const s = loadSettings();
     s.rumble = !s.rumble;
     saveSettings(s);
-    if (s.rumble) rumble(180, 0.6, 0.5);
+    if (s.rumble) rumble(180, 0.6, 0.5, true);
     markHudDirty();
     paintHud();
   } else if (act === "toggle-timer") {
@@ -2488,6 +2567,9 @@ function handleHudAction(act: string): void {
     const s = loadSettings();
     s.webcamBg = !s.webcamBg;
     saveSettings(s);
+    applyLooks();
+    showGameSky(true);
+    lastTintKey = "";
     applyThemeMedia();
     markHudDirty();
     paintHud();
@@ -3002,6 +3084,10 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   if (!keepRunTotals(session) || levelNumber <= 1) resetStageTotals();
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
   syncSidePanel(!!session.classicRun && loadSettings().showTimer);
+  if (session.replay) {
+    window.exportRoot?.gotoAndPlay?.("game");
+    return;
+  }
   const intro =
     session.classicRun && session.kind === "campaign" && levelNumber === 1 ? "instructions" : "stagetitle";
   window.exportRoot?.gotoAndPlay?.(intro);
@@ -3022,6 +3108,7 @@ function startCustom(defs: LevelDef[], returnTo: Screen, opts: CustomPlayOpts = 
     author: opts.author,
     entry: opts.entry ?? (returnTo === "creator-edit" ? "creator-test" : "puzzle"),
     diff: opts.diff,
+    replay: opts.replay,
   });
 }
 
@@ -3129,6 +3216,8 @@ function solveCmdsForCurrent(): WalkCmd[] | null {
 function stopAutoSolve(banner = ""): void {
   autoSolve = false;
   solveFeeder = null;
+  solveTape = [];
+  solveRetries = 0;
   if (solveCode) window.stage?.triggerKeyUp?.({ code: solveCode });
   solveCode = "";
   beatBanner = banner;
@@ -3228,12 +3317,14 @@ function applyPlayTint(): void {
   } | undefined;
   const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
   const s = loadSettings();
+  const cam = usingWebcam();
   const skySpr = world?.background?.instance_2;
-  if (skySpr) skySpr.visible = s.themeBg;
-  applySkySpriteTint(skySpr, s.bgHue, s.bgTint);
-  applySkySpriteTint(sky, s.bgHue, s.bgTint);
+  if (skySpr) skySpr.visible = s.themeBg && !cam;
+  if (sky) sky.visible = !cam && sky.visible;
+  applySkySpriteTint(cam ? null : skySpr, s.bgHue, s.bgTint);
+  applySkySpriteTint(cam ? null : sky, s.bgHue, s.bgTint);
   if (!gc?.addChildAt || !cjs?.Shape) return;
-  const key = `${s.bgTint}|${s.bgHue}|${s.themeBg}`;
+  const key = `${s.bgTint}|${s.bgHue}|${s.themeBg}|${cam}`;
   let overlay = gc.__bloxTint;
   const listed = !!(overlay && gc.children?.includes(overlay));
   if (!listed) {
@@ -3254,7 +3345,7 @@ function applyPlayTint(): void {
   if (key === lastTintKey && listed) return;
   lastTintKey = key;
   overlay.graphics.clear();
-  if (s.themeBg && s.bgTint > 0.01) {
+  if (s.themeBg && s.bgTint > 0.01 && !cam) {
     overlay.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(-40, -40, 630, 380);
     overlay.alpha = Math.min(0.55, 0.12 + s.bgTint * 0.4);
     overlay.visible = true;
@@ -3464,9 +3555,12 @@ function handleTouchPadDown(code: string): void {
       else if (code === "Space") handlePauseNav("confirm");
       return;
     }
-    const cmd = KEY_CMD[code];
-    if (cmd) recordCmd(cmd);
-    window.stage?.triggerKeyDown?.({ code });
+      const cmd = KEY_CMD[code];
+      if (cmd) {
+        noteKeyboardPlay();
+        recordCmd(cmd);
+      }
+      window.stage?.triggerKeyDown?.({ code });
     return;
   }
   if (code === "ArrowUp") handleMenuNav("up");
@@ -3768,7 +3862,10 @@ function bind(): void {
       else if (act === "right") code = "ArrowRight";
       else if (act === "swap") code = "Space";
       const cmd = KEY_CMD[code];
-      if (cmd) recordCmd(cmd);
+      if (cmd) {
+        noteKeyboardPlay();
+        recordCmd(cmd);
+      }
       if (cmd) {
         ev.preventDefault();
         window.stage?.triggerKeyDown?.({ code });
@@ -3830,10 +3927,15 @@ function syncOverlay(): void {
   }
 
   if (label === "restart" && lastLabel === "game") {
-    if (autoSolve && !solveFeeder?.pending && !solveFeeder?.queue.length && !solveFeeder?.held) {
-      stopAutoSolve("Auto-solve failed");
+    if (autoSolve && playSession?.replay && solveTape.length && solveRetries < 2) {
+      solveRetries += 1;
+      if (solveCode) stage?.triggerKeyUp?.({ code: solveCode });
+      solveCode = "";
+      solveFeeder = createFeeder(solveTape);
+    } else if (autoSolve && !solveFeeder?.pending && !solveFeeder?.queue.length && !solveFeeder?.held) {
+      stopAutoSolve(playSession?.replay ? "Replay failed" : "Auto-solve failed");
     }
-    if (!solveFeeder?.pending) {
+    if (!autoSolve) {
       rumble(180, 0.6, 0.4);
       commitTape(false, stage?.levelNumber ?? lastLevelNum);
     }
@@ -3943,7 +4045,7 @@ function syncOverlay(): void {
       syncStageCard(false);
       tickSolve();
       if (isPauseMenuOpen()) pollPauseMenuPad();
-      else pollGamepad(stage, togglePauseMenu, recordCmd);
+      else if (!autoSolve) pollGamepad(stage, togglePauseMenu, recordCmd);
       if (!playSession) return;
       syncHelpText();
       const world3 = window.stage?.bloxWorld;

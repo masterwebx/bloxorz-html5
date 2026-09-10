@@ -136,3 +136,9 @@ export function winningTape(level: LevelStat): TapeCmd[] | null {
   const win = [...level.tapes].reverse().find((t) => t.won && t.cmds.length);
   return win?.cmds.length ? win.cmds : null;
 }
+
+/** Coolmath only consumes a move while idle, and Space only swaps while split. */
+export function acceptTapeCmd(cmd: TapeCmd, view: { idle: boolean; split: boolean }): boolean {
+  if (cmd === "swap") return view.split;
+  return view.idle;
+}

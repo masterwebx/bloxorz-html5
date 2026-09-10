@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   gateSoundPlay,
+  hushStageMusic,
   markAudioReadyForTests,
   normalizePlayArgs,
   resetAudioForTests,
@@ -117,6 +118,56 @@ describe("stage start audio", () => {
     const inst = sound.play("blox003wav");
     expect(inst?.loop).toBe(0);
     expect(tags[0]?.loop).toBe(false);
+  });
+
+  it("pauses a looping few-second SFX tag while a stage is running", () => {
+    installSound(() => ({ loop: 0, stop() {} }));
+    setMenuMusicAllowed(false);
+    const paused: string[] = [];
+    const el = {
+      loop: true,
+      currentSrc: "sounds/blox003wav.mp3",
+      currentTime: 1,
+      pause() {
+        paused.push("sfx");
+      },
+      getAttribute() {
+        return "";
+      },
+    };
+    const prev = (globalThis as { document?: unknown }).document;
+    (globalThis as { document: { querySelectorAll: (sel: string) => unknown[] } }).document = {
+      querySelectorAll: () => [el],
+    };
+    hushStageMusic();
+    expect(el.loop).toBe(false);
+    expect(paused).toEqual(["sfx"]);
+    (globalThis as { document?: unknown }).document = prev;
+  });
+
+  it("does not let a delayed Music tag keep playing during a stage", () => {
+    installSound(() => ({ loop: -1, stop() {} }));
+    setMenuMusicAllowed(false);
+    const paused: string[] = [];
+    const el = {
+      loop: true,
+      currentSrc: "sounds/Music.mp3",
+      currentTime: 2,
+      pause() {
+        paused.push("music");
+      },
+      getAttribute() {
+        return "sounds/Music.mp3";
+      },
+    };
+    const prev = (globalThis as { document?: unknown }).document;
+    (globalThis as { document: { querySelectorAll: (sel: string) => unknown[] } }).document = {
+      querySelectorAll: () => [el],
+    };
+    hushStageMusic();
+    expect(paused).toEqual(["music"]);
+    expect(el.loop).toBe(false);
+    (globalThis as { document?: unknown }).document = prev;
   });
 
   it("clears the vanilla menuMusic handle used on New Game / Continue", () => {

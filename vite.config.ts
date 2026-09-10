@@ -139,11 +139,16 @@ function extraBundlePlugin(): Plugin {
       await bundleExtra();
     },
     configureServer(server) {
-      void bundleExtra();
+      const rebuild = () =>
+        bundleExtra().catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[extra.bundle]", msg);
+        });
+      void rebuild();
       server.watcher.add(path.join(rootDir, "src/extra"));
       server.watcher.on("change", (file) => {
         if (file.includes(`${path.sep}extra${path.sep}`) && file.endsWith(".ts")) {
-          void bundleExtra();
+          void rebuild();
         }
       });
     },
