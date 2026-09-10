@@ -543,6 +543,7 @@ export class ExtraHud {
   drawSettings(opts: {
     rumble: boolean;
     showTimer: boolean;
+    showStageName: boolean;
     mobilePad: boolean;
     rotateScreen: boolean;
     themeBg: boolean;
@@ -552,6 +553,7 @@ export class ExtraHud {
     bgTint: number;
     bgHue: number;
     blockHue: number;
+    hueShift: boolean;
   }): void {
     this.clear();
     this.hideMascot();
@@ -569,9 +571,10 @@ export class ExtraHud {
     this.add(text(Math.round(opts.sfx * 100) + "%", 300, 70, 11, theme.muted));
     this.add(this.act("toggle-rumble", `${this.focusId === "toggle-rumble" ? "> " : "  "}${t("settings.rumble")}  ${onOff(opts.rumble)}`, 40, 90, 12, false, 150));
     this.add(this.act("toggle-mobile-pad", `${this.focusId === "toggle-mobile-pad" ? "> " : "  "}${t("settings.pad")}  ${onOff(opts.mobilePad)}`, 250, 90, 12, false, 180));
-    this.add(this.act("toggle-timer", `${this.focusId === "toggle-timer" ? "> " : "  "}${t("settings.timer")}  ${onOff(opts.showTimer)}`, 40, 110, 12, false, 240));
+    this.add(this.act("toggle-timer", `${this.focusId === "toggle-timer" ? "> " : "  "}${t("settings.timer")}  ${onOff(opts.showTimer)}`, 40, 110, 12, false, opts.mobilePad ? 155 : 175));
+    this.add(this.act("toggle-stage-name", `${this.focusId === "toggle-stage-name" ? "> " : "  "}${t("settings.stageName")}  ${onOff(opts.showStageName)}`, opts.mobilePad ? 198 : 230, 110, 11, false, opts.mobilePad ? 140 : 200));
     if (opts.mobilePad) {
-      this.add(this.act("toggle-rotate", `${this.focusId === "toggle-rotate" ? "> " : "  "}${t("settings.rotate")}  ${onOff(opts.rotateScreen)}`, 300, 110, 12, false, 220));
+      this.add(this.act("toggle-rotate", `${this.focusId === "toggle-rotate" ? "> " : "  "}${t("settings.rotate")}  ${onOff(opts.rotateScreen)}`, 350, 110, 11, false, 185));
     }
     this.add(text(t("settings.theme"), 40, 132, 12, this.focusId === "theme-cycle" ? theme.hot : theme.ink));
     this.add(text(t("settings.language"), 40, 156, 12, this.focusId === "locale-cycle" ? theme.hot : theme.ink));
@@ -584,8 +587,9 @@ export class ExtraHud {
     this.add(slider(160, 222, 120, opts.bgHue / 360, (v) => this.onAction("bghue:" + Math.round(v * 360))));
     this.add(text(String(Math.round(opts.bgHue)), 300, 222, 11, theme.muted));
     this.add(text(t("settings.blockHue"), 40, 242, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
-    this.add(slider(160, 242, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
-    this.add(swatch(300, 244, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
+    this.add(slider(150, 242, 90, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
+    this.add(swatch(248, 244, opts.blockHue, opts.blockHue > 0 || opts.hueShift ? 1 : 0.35));
+    this.add(this.act("toggle-hue-shift", `${this.focusId === "toggle-hue-shift" ? "> " : "  "}${t("settings.hueShift")}  ${onOff(opts.hueShift)}`, 278, 242, 11, false, 200));
     this.placePreview(392, 198);
     this.add(this.act("remap", t("settings.remap"), 40, 264, 12, false, 160));
     this.add(this.act("export-save", t("settings.export"), 200, 264, 12, false, 130));

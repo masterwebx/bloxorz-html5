@@ -130,6 +130,7 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
   const out: MenuPadEvent[] = [];
   for (const ev of Object.keys(now) as MenuPadEvent[]) {
     if (!prevMenu[ev] && menuCool === 0) {
+      padDriving = true;
       out.push(ev);
       menuCool = ev === "confirm" || ev === "back" ? 12 : 8;
     }

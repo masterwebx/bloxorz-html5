@@ -21,9 +21,20 @@ let allowMenuMusic = false;
 let musicEl: HTMLAudioElement | null = null;
 let musicSrc = "";
 
-function isMusicId(id: unknown): boolean {
+export function isMusicSrc(src: string): boolean {
+  const file = src.toLowerCase().replace(/\\/g, "/").split("?")[0].split("#")[0].split("/").pop() || "";
+  return file === "music.mp3" || file === "music.ogg" || file === "music.wav" || file === "music.m4a";
+}
+
+export function isMusicId(id: unknown): boolean {
+  if (typeof id !== "string" || !id) return false;
   if (id === "Music" || id === "music") return true;
-  return typeof id === "string" && /music/i.test(id);
+  return isMusicSrc(id);
+}
+
+/** Only our dedicated menu element is blocked. Pooled CreateJS tags may still have a stale Music src. */
+export function shouldBlockHtmlPlay(el: unknown, music: unknown, allowMenu: boolean): boolean {
+  return !allowMenu && el === music;
 }
 
 export function isAudioUnlocked(): boolean {
@@ -137,7 +148,7 @@ function musicSrcOf(el: HTMLAudioElement): string {
 }
 
 function isMusicElement(el: HTMLAudioElement): boolean {
-  return el === musicEl || /music/i.test(musicSrcOf(el));
+  return el === musicEl || isMusicSrc(musicSrcOf(el));
 }
 
 function stopCreatejsMusic(): void {
@@ -207,14 +218,12 @@ function hookHtmlAudioPlay(): void {
   const orig = proto.play;
   proto.__bloxPlay = orig;
   proto.play = function bloxPlay(this: HTMLAudioElement, ...args: unknown[]) {
-    if (!allowMenuMusic) {
-      if (isMusicElement(this)) {
-        this.loop = false;
-        this.pause();
-        return Promise.resolve();
-      }
+    if (shouldBlockHtmlPlay(this, musicEl, allowMenuMusic)) {
       this.loop = false;
+      this.pause();
+      return Promise.resolve();
     }
+    if (!allowMenuMusic) this.loop = false;
     return orig.apply(this, args as []);
   };
 }
@@ -278,7 +287,9 @@ function watchSoundLoads(): void {
   if (!sound?.addEventListener || sound.__bloxLoad) return;
   sound.__bloxLoad = true;
   sound.addEventListener("fileload", () => {
-    if (!allowMenuMusic) hushStageMusic();
+    if (allowMenuMusic) return;
+    stopCreatejsMusic();
+    hushHtmlAudio();
   });
 }
 
@@ -314,7 +325,6 @@ function playNow(args: PlayArgs): SoundInst {
       if (typeof window !== "undefined") window.setTimeout(() => pinPlayOnce(inst), 0);
     }
   }
-  unloopHtmlAudio();
   return inst;
 }
 

@@ -30,6 +30,7 @@ export interface Settings {
   sfx: number;
   rumble: boolean;
   showTimer: boolean;
+  showStageName: boolean;
   mobilePad: boolean;
   mobilePadChoice: MobilePadChoice;
   rotateScreen: boolean;
@@ -38,6 +39,7 @@ export interface Settings {
   bgTint: number;
   bgHue: number;
   blockHue: number;
+  hueShift: boolean;
   playerName: string;
   locale: string;
   keys: Record<Action, string>;
@@ -49,6 +51,7 @@ const DEFAULTS: Settings = {
   sfx: 0.9,
   rumble: true,
   showTimer: false,
+  showStageName: false,
   mobilePad: false,
   mobilePadChoice: "",
   rotateScreen: false,
@@ -57,6 +60,7 @@ const DEFAULTS: Settings = {
   bgTint: 0,
   bgHue: 28,
   blockHue: 0,
+  hueShift: false,
   playerName: "",
   locale: "",
   keys: {
@@ -100,6 +104,7 @@ export function loadSettings(): Settings {
       sfx: clamp01(parsed.sfx ?? DEFAULTS.sfx),
       rumble: parsed.rumble !== false,
       showTimer: parsed.showTimer === true,
+      showStageName: parsed.showStageName === true,
       mobilePad: parsed.mobilePad === true,
       mobilePadChoice: parsed.mobilePadChoice === "on" || parsed.mobilePadChoice === "off" ? parsed.mobilePadChoice : "",
       rotateScreen: parsed.rotateScreen === true,
@@ -108,6 +113,7 @@ export function loadSettings(): Settings {
       bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
       blockHue: clampHue(parsed.blockHue ?? DEFAULTS.blockHue),
+      hueShift: parsed.hueShift === true,
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       locale: typeof parsed.locale === "string" ? parsed.locale : "",
       keys: { ...DEFAULTS.keys, ...parsed.keys },

@@ -26,7 +26,7 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
+import { bakeFrameBackup, collectBlockFrameIndexes, hueDelta, shiftingHue, type FrameBackup } from "./hue";
 import {
   loadFinishedStages,
   saveFinishedStage,
@@ -73,7 +73,8 @@ import {
 import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
 import { applySaveBackup, buildSaveBackup, parseSaveBackup } from "./saveBackup";
 import { clearTheme3d, syncTheme3d } from "./theme3d";
-import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./hue";
+import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
+import { downloadThemeTemplate } from "./themeTemplate";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, canBillboard, type MenuItem } from "./hud";
@@ -378,6 +379,7 @@ let blocksWereIdle = true;
 let prevPadButtons = new Set<number>();
 let prevInstrStart = false;
 let bakedHue = -1;
+let hueShiftOrigin = 0;
 let atlasFrames: FrameBackup[] | null = null;
 let atlasCanvas: HTMLCanvasElement | null = null;
 let touchChrome: TouchChrome | null = null;
@@ -520,9 +522,16 @@ function collectBlockAtlas(): { canvas: HTMLCanvasElement; frames: FrameBackup[]
   return { canvas, frames };
 }
 
+function liveBlockHue(): number {
+  const s = loadSettings();
+  return shiftingHue(s.blockHue, s.hueShift, performance.now() - hueShiftOrigin);
+}
+
 function applyBlockHue(): void {
-  const hue = loadSettings().blockHue;
-  if (hue === bakedHue && atlasFrames) return;
+  const s = loadSettings();
+  const hue = liveBlockHue();
+  if (atlasFrames && bakedHue >= 0 && hue === bakedHue) return;
+  if (atlasFrames && bakedHue >= 0 && s.hueShift && hueDelta(hue, bakedHue) < 6) return;
   if (!atlasFrames || !atlasCanvas) {
     const atlas = collectBlockAtlas();
     if (!atlas) return;
@@ -816,15 +825,17 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const localeSel = $("hud-locale-select");
   const upload = $("hud-theme-upload") as HTMLInputElement | null;
   const uploadBtn = $("hud-theme-upload-btn");
+  const templateBtn = $("hud-theme-template-btn");
   const manageBtn = $("hud-theme-manage-btn");
   const manage = $("hud-theme-manage");
-  for (const el of [themeSel, localeSel, uploadBtn, manageBtn]) {
+  for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn]) {
     if (!el) continue;
     el.hidden = !on;
   }
   if (upload) upload.hidden = true;
   if (!on && manage) manage.hidden = true;
   if (uploadBtn) uploadBtn.textContent = themeUploadMsg || t("settings.upload");
+  if (templateBtn) templateBtn.textContent = t("settings.template");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
   if (!on) {
     closeSettingsDropdowns();
@@ -876,6 +887,7 @@ function bindSettingsChrome(): void {
   const localeSel = $("hud-locale-select");
   const upload = $("hud-theme-upload") as HTMLInputElement | null;
   const uploadBtn = $("hud-theme-upload-btn");
+  const templateBtn = $("hud-theme-template-btn");
   const manageBtn = $("hud-theme-manage-btn");
   const manage = $("hud-theme-manage");
   themeSel?.querySelector(".hud-dd-btn")?.addEventListener("click", (ev) => {
@@ -911,6 +923,14 @@ function bindSettingsChrome(): void {
     true,
   );
   uploadBtn?.addEventListener("click", () => upload?.click());
+  templateBtn?.addEventListener("click", () => {
+    void downloadThemeTemplate().catch(() => {
+      themeUploadMsg = t("theme.templateBad");
+      lastHudPaint = "";
+      markHudDirty();
+      paintHud();
+    });
+  });
   manageBtn?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     toggleThemeManage();
@@ -973,11 +993,17 @@ function bindSettingsChrome(): void {
 }
 
 function applyLanguage(id: string): void {
+  const prev = localeId();
+  if (id === prev) return;
   setLocale(id);
   applyDocumentLocale(id);
   const s = loadSettings();
   s.locale = id;
   saveSettings(s);
+  if (usesHdType(prev) !== usesHdType(id)) {
+    window.location.reload();
+    return;
+  }
   applyDomCopy();
   lastHudPaint = "";
   lastPlayHudKey = "";
@@ -1002,6 +1028,8 @@ function applyDomCopy(): void {
   if (rotate) rotate.textContent = t("boot.rotate");
   const uploadBtn = $("hud-theme-upload-btn");
   if (uploadBtn) uploadBtn.textContent = t("settings.upload");
+  const templateBtn = $("hud-theme-template-btn");
+  if (templateBtn) templateBtn.textContent = t("settings.template");
   const manageBtn = $("hud-theme-manage-btn");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
   const themeBtn = $("hud-theme-btn");
@@ -1149,7 +1177,14 @@ function padClock(ms: number): string {
 }
 
 function playHudStageName(stageNo: number): string {
-  return padStage(stageNo);
+  const card = titleCardCopy();
+  if (card) {
+    if (playSession?.card === "gauntlet" && playSession.defs.length > 1) {
+      return `${card.title}  ${stageNo}/${playSession.defs.length}`;
+    }
+    return card.title;
+  }
+  return t("play.stage", { n: padStage(stageNo) });
 }
 
 function isClassicPlayHud(): boolean {
@@ -1159,7 +1194,27 @@ function isClassicPlayHud(): boolean {
   return !!playSession.classicRun;
 }
 
+function syncPlayStageName(on: boolean): void {
+  const el = $("play-stage-name");
+  if (!el) return;
+  const want = on && loadSettings().showStageName;
+  if (!want) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const stageNo = window.stage?.levelNumber ?? 0;
+  el.textContent = playHudStageName(stageNo);
+  el.hidden = false;
+}
+
+function cueMenuHover(): void {
+  playUiClick();
+  rumble(50, 0.28, 0.36);
+}
+
 function syncPlayChrome(on: boolean): void {
+  syncPlayStageName(on);
   const box = $("play-chrome");
   if (!box) return;
   const show = on && usesHdType();
@@ -1167,6 +1222,7 @@ function syncPlayChrome(on: boolean): void {
   setBitmapPlayText(!show);
   if (!show) {
     lastPlayHudKey = "";
+    box.classList.remove("has-pass");
     return;
   }
   const world = window.stage?.bloxWorld as { moves?: number; background?: { menuButton?: { dispatchEvent?: (ev: unknown) => void } } } | undefined;
@@ -1176,7 +1232,7 @@ function syncPlayChrome(on: boolean): void {
   const classic = isClassicPlayHud();
   const classicFirst = !!playSession?.classicRun && playSession.kind === "campaign" && stageNo === 1;
   const stageName = playHudStageName(stageNo);
-  const key = `${stageNo}|${moves}|${code}|${classic}|${classicFirst}|${stageName}|${localeId()}`;
+  const key = `${stageNo}|${moves}|${code}|${classic}|${classicFirst}|${stageName}|${localeId()}|${loadSettings().showStageName}`;
   if (key === lastPlayHudKey) return;
   lastPlayHudKey = key;
   const passBox = $("play-pass");
@@ -1184,19 +1240,14 @@ function syncPlayChrome(on: boolean): void {
   const passLab = $("play-pass-lab");
   const moveVal = $("play-moves-val");
   const moveLab = $("play-moves-lab");
-  const stageBox = $("play-stage");
-  const stageVal = $("play-stage-val");
-  const stageLab = $("play-stage-lab");
   const menu = $("play-menu");
   const help = $("play-help");
+  box.classList.toggle("has-pass", classic);
   if (passBox) passBox.hidden = !classic;
-  if (stageBox) stageBox.hidden = !classic;
   if (passLab) passLab.textContent = t("play.passcode") + ":";
   if (moveLab) moveLab.textContent = t("play.moves") + ":";
-  if (stageLab) stageLab.textContent = t("hud.stage") + ":";
   if (pass) pass.textContent = code || String(stageNo).padStart(2, "0");
   if (moveVal) moveVal.textContent = String(moves);
-  if (stageVal) stageVal.textContent = stageName;
   if (menu) menu.textContent = t("play.menu");
   if (help) {
     help.hidden = !classicFirst;
@@ -1544,16 +1595,20 @@ function paintPauseFocus(): void {
 
 function handlePauseNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
   const action = pauseNavFromPad(ev);
-  if (action === "prev") pauseFocus = stepPauseFocus(pauseFocus, -1);
-  else if (action === "next") pauseFocus = stepPauseFocus(pauseFocus, 1);
-  else if (action === "confirm") {
-    clickPauseButton(PAUSE_ACTIONS[pauseFocus]);
-    return;
-  } else {
-    clickPauseButton("returnToGame");
+  if (action === "prev" || action === "next") {
+    const next = stepPauseFocus(pauseFocus, action === "prev" ? -1 : 1);
+    if (next !== pauseFocus) {
+      pauseFocus = next;
+      cueMenuHover();
+    }
+    paintPauseFocus();
     return;
   }
-  paintPauseFocus();
+  if (action === "confirm") {
+    clickPauseButton(PAUSE_ACTIONS[pauseFocus]);
+    return;
+  }
+  clickPauseButton("returnToGame");
 }
 
 function releaseSteerKeys(): void {
@@ -1682,6 +1737,7 @@ function navItems(): NavItem[] {
       { id: "toggle-rumble" },
       { id: "toggle-mobile-pad" },
       { id: "toggle-timer" },
+      { id: "toggle-stage-name" },
       ...(s.mobilePad ? [{ id: "toggle-rotate" }] : []),
       { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems(cachedDev).map((p) => p.id), currentThemeId(), d), true) },
       { id: "locale-cycle", adjust: (d) => applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), d)) },
@@ -1690,6 +1746,7 @@ function navItems(): NavItem[] {
       { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
       { id: "bghue", adjust: (d) => handleHudAction("bghue:" + String(clampStep(s.bgHue, d * 12, 0, 360))) },
       { id: "blockhue", adjust: (d) => handleHudAction("blockhue:" + String(clampStep(s.blockHue, d * 12, 0, 360))) },
+      { id: "toggle-hue-shift" },
       { id: "remap" },
       { id: "export-save" },
       { id: "import-save" },
@@ -1782,13 +1839,19 @@ function handleMenuNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"
   }
   const items = navItems();
   if (ev === "up") {
+    const before = menuCursor;
+    const scroll = listScroll;
     moveNav(-1);
+    if (menuCursor !== before || listScroll !== scroll) cueMenuHover();
     markHudDirty();
     paintHud();
     return;
   }
   if (ev === "down") {
+    const before = menuCursor;
+    const scroll = listScroll;
     moveNav(1);
+    if (menuCursor !== before || listScroll !== scroll) cueMenuHover();
     markHudDirty();
     paintHud();
     return;
@@ -1952,6 +2015,7 @@ function hudKey(): string {
     getName(),
     String(s.rumble),
     String(s.showTimer),
+    String(s.showStageName),
     String(s.mobilePad),
     String(s.rotateScreen),
     String(s.themeBg),
@@ -1959,6 +2023,7 @@ function hudKey(): string {
     String(s.bgTint),
     String(s.bgHue),
     String(s.blockHue),
+    String(s.hueShift),
     String(s.music),
     String(s.sfx),
     currentThemeId(),
@@ -2036,6 +2101,7 @@ function paintHud(): void {
     hud.drawSettings({
       rumble: s.rumble,
       showTimer: s.showTimer,
+      showStageName: s.showStageName,
       mobilePad: s.mobilePad,
       rotateScreen: s.rotateScreen,
       themeBg: s.themeBg,
@@ -2045,6 +2111,7 @@ function paintHud(): void {
       bgTint: s.bgTint,
       bgHue: s.bgHue,
       blockHue: s.blockHue,
+      hueShift: s.hueShift,
     });
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
     placeSettingsChrome(true);
@@ -2601,6 +2668,12 @@ function handleHudAction(act: string): void {
     saveSettings(s);
     markHudDirty();
     paintHud();
+  } else if (act === "toggle-stage-name") {
+    const s = loadSettings();
+    s.showStageName = !s.showStageName;
+    saveSettings(s);
+    markHudDirty();
+    paintHud();
   } else if (act === "toggle-theme-bg") {
     const s = loadSettings();
     s.themeBg = !s.themeBg;
@@ -2660,10 +2733,21 @@ function handleHudAction(act: string): void {
     applyLooks();
     markHudDirty();
     paintHud();
+  } else if (act === "toggle-hue-shift") {
+    const s = loadSettings();
+    s.hueShift = !s.hueShift;
+    saveSettings(s);
+    hueShiftOrigin = performance.now();
+    bakedHue = -1;
+    applyBlockHue();
+    markHudDirty();
+    paintHud();
   } else if (act.startsWith("blockhue:")) {
     const s = loadSettings();
     s.blockHue = Number(act.slice(9));
     saveSettings(s);
+    hueShiftOrigin = performance.now();
+    bakedHue = -1;
     applyBlockHue();
     markHudDirty();
     paintHud();
@@ -2985,7 +3069,6 @@ function startMenuAudio(): void {
 
 function hushPlayAudio(): void {
   setMenuMusicAllowed(false);
-  stopAllSounds();
   hushStageMusic();
 }
 
@@ -3893,6 +3976,7 @@ function bind(): void {
       }
       if (isPauseMenuOpen()) {
         ev.preventDefault();
+        noteKeyboardPlay();
         if (act === "confirm" || ev.key === "Enter") handlePauseNav("confirm");
         else if (act === "up" || ev.key === "ArrowUp") handlePauseNav("up");
         else if (act === "down" || ev.key === "ArrowDown") handlePauseNav("down");
@@ -3921,9 +4005,11 @@ function bind(): void {
     }
     if (ev.key === "ArrowDown") {
       ev.preventDefault();
+      noteKeyboardPlay();
       handleMenuNav("down");
     } else if (ev.key === "ArrowUp") {
       ev.preventDefault();
+      noteKeyboardPlay();
       handleMenuNav("up");
     } else if (ev.key === "ArrowLeft") {
       ev.preventDefault();
@@ -4071,10 +4157,11 @@ function syncOverlay(): void {
   }
 
   if (inRun) {
-    hushStageMusic();
     if (overlayMode !== "run") {
       overlayMode = "run";
       hushPlayAudio();
+      hueShiftOrigin = performance.now();
+      bakedHue = -1;
       enterPlayVisuals();
       raiseHud();
     }

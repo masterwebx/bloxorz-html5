@@ -49,8 +49,10 @@ def folder_for(name: str) -> str | None:
         return "backgrounds"
     if re.fullmatch(r"blocka\d{4}", name):
         return "block"
-    if name.startswith("blockafall") or name.startswith("bolckadoor"):
+    if name.startswith("bolckadoor"):
         return "animations"
+    if name.startswith("blocka"):
+        return "block"
     if name.startswith("instrucpict"):
         return "tutorial"
     if name in TILES:
@@ -124,7 +126,9 @@ def slice_theme(theme: str, payload: dict) -> None:
     written = set()
     for row in payload["frames"]:
         folder = row["folder"]
-        if folder is None or folder == "block":
+        if folder is None:
+            continue
+        if folder == "block" and row.get("file") == "block/movement.png":
             continue
         dest = out_root / folder / f"{row['name']}.png"
         if dest.name in written:
@@ -154,14 +158,15 @@ def pack_theme(theme: str, payload: dict, original_parts: dict[str, Image.Image]
             sheet.paste((0, 0, 0, 0), (x, y, x + w, y + h))
             continue
         part = None
-        if row["folder"] == "block":
+        file = row.get("file")
+        if file == "block/movement.png":
             src = movement or orig_move
             if src:
                 sx = int(row.get("srcX") or 0)
                 part = src.crop((sx, 0, sx + w, h))
         else:
-            local = open_rgba(theme_root / row["file"])
-            part = local or original_parts.get(row["file"])
+            local = open_rgba(theme_root / file) if file else None
+            part = local or original_parts.get(file)
         if part:
             if part.size != (w, h):
                 part = part.resize((w, h), Image.Resampling.NEAREST)
@@ -178,7 +183,9 @@ def load_original_parts(payload: dict) -> dict[str, Image.Image]:
     if move:
         out["block/movement.png"] = move
     for row in payload["frames"]:
-        if not row["file"] or row["folder"] == "block":
+        if not row["file"]:
+            continue
+        if row["file"] == "block/movement.png":
             continue
         img = open_rgba(root / row["file"])
         if img:

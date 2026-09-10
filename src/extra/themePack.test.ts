@@ -181,4 +181,18 @@ describe("theme packs", () => {
     expect(listCustomThemes().some((row) => row.id === pack.id)).toBe(false);
     expect((await removeCustomTheme("original")).ok).toBe(false);
   });
+
+  it("maps sounds/ clips onto Coolmath ids when a pack is uploaded", async () => {
+    const pack = await installThemeZip(
+      await zipOf([
+        { name: "theme.json", body: '{"id":"sfxpack","name":"Sfx"}' },
+        { name: "sounds/Click.mp3", body: new Uint8Array([1, 2, 3]) },
+        { name: "sounds/blox003wav.mp3", body: new Uint8Array([9, 8, 7]) },
+        { name: "sounds/Music.mp3", body: new Uint8Array([4]) },
+      ]),
+    );
+    expect(pack.audio.sfx?.Click).toMatch(/^(blob:|data:)/);
+    expect(pack.audio.sfx?.blox003wav).toMatch(/^(blob:|data:)/);
+    expect(pack.audio.music).toMatch(/^(blob:|data:)/);
+  });
 });

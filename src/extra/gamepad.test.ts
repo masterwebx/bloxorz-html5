@@ -109,6 +109,15 @@ describe("gamepad pause and menu confirm", () => {
     expect(pollMenuPad({ pauseConfirms: false })).toEqual(["confirm"]);
   });
 
+  it("marks the pad as driving when a menu d-pad event fires", () => {
+    hold([]);
+    pollMenuPad();
+    expect(isPadDriving()).toBe(false);
+    hold([12]);
+    expect(pollMenuPad()).toEqual(["up"]);
+    expect(isPadDriving()).toBe(true);
+  });
+
   it("does not rumble for keyboard play even if a pad is plugged in", () => {
     const playEffect = vi.fn();
     Object.defineProperty(navigator, "getGamepads", {

@@ -3,10 +3,12 @@ import {
   bakeFrameBackup,
   bakeHueIntoPixels,
   collectBlockFrameIndexes,
+  hueDelta,
   hueRotateRgb,
   isBlockSpriteName,
   makeImageData,
   rustFaces,
+  shiftingHue,
 } from "./hue";
 
 describe("block hue bake", () => {
@@ -35,6 +37,15 @@ describe("block hue bake", () => {
     expect(original.data[0]).toBe(196);
     expect(baked.data[0]).toBeLessThan(80);
     expect(baked.data[2]).toBeGreaterThan(140);
+  });
+
+  it("shifts the block hue over time only when enabled", () => {
+    expect(shiftingHue(10, false, 10_000)).toBe(10);
+    expect(shiftingHue(10, true, 0)).toBe(10);
+    expect(shiftingHue(10, true, 1000, 24)).toBe(34);
+    expect(shiftingHue(350, true, 1000, 24)).toBe(14);
+    expect(hueDelta(10, 14)).toBe(4);
+    expect(hueDelta(350, 10)).toBe(20);
   });
 
   it("builds preview face colors for the settings cuboid fallback", () => {

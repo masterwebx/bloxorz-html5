@@ -19,5 +19,48 @@
   "background": {
     "type": "sky"
   },
-  "audio": {}
+  "audio": {
+    "music": "sounds/Music.mp3",
+    "sfx": {
+      "Click": "sounds/Click.mp3",
+      "Latch": "sounds/Latch.mp3",
+      "blox003wav": "sounds/blox003wav.mp3",
+      "blox004wav": "sounds/blox004wav.mp3",
+      "blox005wav": "sounds/blox005wav.mp3",
+      "blox006wav": "sounds/blox006wav.mp3",
+      "blox007wav": "sounds/blox007wav.mp3",
+      "blox008wav": "sounds/blox008wav.mp3",
+      "blox009wav": "sounds/blox009wav.mp3",
+      "blox010wav": "sounds/blox010wav.mp3",
+      "blox011wav": "sounds/blox011wav.mp3",
+      "blox012wav": "sounds/blox012wav.mp3",
+      "blox013wav": "sounds/blox013wav.mp3",
+      "blox014wav": "sounds/blox014wav.mp3",
+      "blox015wav": "sounds/blox015wav.mp3",
+      "blox016wav": "sounds/blox016wav.mp3",
+      "blox017wav": "sounds/blox017wav.mp3",
+      "blox018wav": "sounds/blox018wav.mp3",
+      "blox019wav": "sounds/blox019wav.mp3",
+      "blox020wav": "sounds/blox020wav.mp3",
+      "blox021wav": "sounds/blox021wav.mp3",
+      "blox022wav": "sounds/blox022wav.mp3",
+      "blox023wav": "sounds/blox023wav.mp3",
+      "blox024wav": "sounds/blox024wav.mp3",
+      "blox025wav": "sounds/blox025wav.mp3",
+      "blox026wav": "sounds/blox026wav.mp3",
+      "blox027wav": "sounds/blox027wav.mp3",
+      "blox028wav": "sounds/blox028wav.mp3",
+      "blox029wav": "sounds/blox029wav.mp3",
+      "blox030wav": "sounds/blox030wav.mp3",
+      "blox031wav": "sounds/blox031wav.mp3",
+      "blox032wav": "sounds/blox032wav.mp3",
+      "blox033wav": "sounds/blox033wav.mp3",
+      "blox034wav": "sounds/blox034wav.mp3",
+      "blox035wav": "sounds/blox035wav.mp3",
+      "blox036wav": "sounds/blox036wav.mp3",
+      "blox2wav": "sounds/blox2wav.mp3",
+      "mech5wav": "sounds/mech5wav.mp3",
+      "unsplitwav": "sounds/unsplitwav.mp3"
+    }
+  }
 }

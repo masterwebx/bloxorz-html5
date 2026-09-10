@@ -33,6 +33,22 @@ export const RUST_TOP: [number, number, number] = [196, 104, 32];
 export const RUST_LEFT: [number, number, number] = [122, 48, 16];
 export const RUST_RIGHT: [number, number, number] = [160, 68, 20];
 
+export function wrapHue(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return ((n % 360) + 360) % 360;
+}
+
+export function hueDelta(a: number, b: number): number {
+  const d = Math.abs(wrapHue(a) - wrapHue(b));
+  return Math.min(d, 360 - d);
+}
+
+export function shiftingHue(base: number, enabled: boolean, elapsedMs: number, degPerSec = 24): number {
+  const start = wrapHue(base);
+  if (!enabled) return Math.round(start);
+  return Math.round(wrapHue(start + (elapsedMs / 1000) * degPerSec));
+}
+
 export function rustFaces(hue: number): { top: string; left: string; right: string; edge: string } {
   const top = hueRotateRgb(RUST_TOP[0], RUST_TOP[1], RUST_TOP[2], hue);
   const left = hueRotateRgb(RUST_LEFT[0], RUST_LEFT[1], RUST_LEFT[2], hue);

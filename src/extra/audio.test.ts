@@ -2,10 +2,13 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   gateSoundPlay,
   hushStageMusic,
+  isMusicId,
+  isMusicSrc,
   markAudioReadyForTests,
   normalizePlayArgs,
   resetAudioForTests,
   setMenuMusicAllowed,
+  shouldBlockHtmlPlay,
   soundLoopCount,
   stopAllSounds,
   stopVanillaMenuMusic,
@@ -184,5 +187,77 @@ describe("stage start audio", () => {
     expect(stopped).toEqual(["music"]);
     expect(w.stage.menuMusic).toBeTruthy();
     expect(w.stage.menuMusic?.volume).toBe(0);
+  });
+});
+
+describe("in-game SFX", () => {
+  it("does not treat roll or UI clips as music", () => {
+    expect(isMusicId("Music")).toBe(true);
+    expect(isMusicId("music")).toBe(true);
+    expect(isMusicSrc("sounds/Music.mp3")).toBe(true);
+    expect(isMusicId("blox003wav")).toBe(false);
+    expect(isMusicId("Click")).toBe(false);
+    expect(isMusicId("Latch")).toBe(false);
+    expect(isMusicSrc("sounds/blox003wav.mp3")).toBe(false);
+    expect(isMusicSrc("sounds/blox004wav.mp3")).toBe(false);
+    expect(isMusicSrc("https://game/sounds/Click.mp3")).toBe(false);
+  });
+
+  it("does not block HTMLAudio.play on a pooled tag that still shows a Music src", () => {
+    const pooled = { currentSrc: "sounds/Music.mp3" };
+    const musicEl = { currentSrc: "blob:menu-music" };
+    expect(shouldBlockHtmlPlay(pooled, musicEl, false)).toBe(false);
+    expect(shouldBlockHtmlPlay(musicEl, musicEl, false)).toBe(true);
+    expect(shouldBlockHtmlPlay(musicEl, musicEl, true)).toBe(false);
+  });
+
+  it("plays roll SFX after music is hushed, including repeated stage ticks", () => {
+    const played: unknown[][] = [];
+    const stops: unknown[] = [];
+    installSound((...args) => {
+      played.push(args);
+      return { loop: 0, stop() {} };
+    });
+    const sound = (window as unknown as { createjs: { Sound: { play: (...a: unknown[]) => SoundInst; stop: (id?: string) => void } } }).createjs
+      .Sound;
+    sound.stop = (id?: string) => {
+      stops.push(id);
+    };
+    setMenuMusicAllowed(false);
+    hushStageMusic();
+    hushStageMusic();
+    hushStageMusic();
+    const inst = sound.play("blox003wav");
+    const click = sound.play("Click");
+    expect(played.some((row) => row[0] === "blox003wav")).toBe(true);
+    expect(played.some((row) => row[0] === "Click")).toBe(true);
+    expect(inst?.loop).toBe(0);
+    expect(click?.loop).toBe(0);
+    expect(stops.every((id) => id === "Music" || id === "music")).toBe(true);
+  });
+
+  it("lets window.playSound reach CreateJS for a 1-arg roll clip", () => {
+    const played: unknown[][] = [];
+    installSound((...args) => {
+      played.push(args);
+      return { loop: 0, stop() {} };
+    });
+    const w = window as unknown as { playSound?: (id: string, loop?: number) => SoundInst };
+    w.playSound = (id, loop) =>
+      (window as unknown as { createjs: { Sound: { play: (...a: unknown[]) => SoundInst } } }).createjs.Sound.play(
+        id,
+        1,
+        0,
+        0,
+        loop || 0,
+      );
+    gateSoundPlay();
+    setMenuMusicAllowed(false);
+    hushStageMusic();
+    w.playSound?.("blox004wav");
+    w.playSound?.("blox036wav");
+    expect(played.some((row) => row[0] === "blox003wav" || row[0] === "blox004wav")).toBe(true);
+    expect(played.some((row) => row[0] === "blox036wav")).toBe(true);
+    expect(played.some((row) => row[0] === "Music")).toBe(false);
   });
 });

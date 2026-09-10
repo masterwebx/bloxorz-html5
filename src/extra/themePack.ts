@@ -3,6 +3,7 @@ import gray from "../../themes/gray/theme.json";
 import holiday from "../../themes/holiday/theme.json";
 import solid3d from "../../themes/solid3d/theme.json";
 import { inflateZipEntry, listZipEntries, zipBase, type ZipEntry } from "./unzip";
+import { soundIdFromPath } from "./sounds";
 
 export type ThemeRender = "atlas" | "solid3d";
 export type ThemeBgType = "sky" | "image" | "gif" | "video";
@@ -301,8 +302,23 @@ function lookupFile(files: Record<string, string>, name?: string): string | unde
   if (!name) return undefined;
   if (files[name]) return files[name];
   const want = fileKey(name);
-  const hit = Object.entries(files).find(([k]) => fileKey(k) === want || fileKey(zipBase(k)) === want);
+  const wantBase = fileKey(zipBase(name));
+  const hit = Object.entries(files).find(([k]) => {
+    const key = fileKey(k);
+    const base = fileKey(zipBase(k));
+    return key === want || key === wantBase || base === want || base === wantBase;
+  });
   return hit?.[1];
+}
+
+function inferSfxFromFiles(files: Record<string, string>): Record<string, string> {
+  const sfx: Record<string, string> = {};
+  for (const [name, url] of Object.entries(files)) {
+    const id = soundIdFromPath(name);
+    if (!id || id === "Music") continue;
+    sfx[id] = url;
+  }
+  return sfx;
 }
 
 function registerStored(row: StoredPack): ThemePack | null {
@@ -313,13 +329,13 @@ function registerStored(row: StoredPack): ThemePack | null {
   if (atlas) pack.atlas = atlas;
   const bg = lookupFile(urls, pack.background.src);
   if (bg) pack.background.src = bg;
-  const music = lookupFile(urls, pack.audio.music);
+  const music = lookupFile(urls, pack.audio.music) || lookupFile(urls, "sounds/Music.mp3");
   if (music) pack.audio.music = music;
+  const mapped: Record<string, string> = { ...inferSfxFromFiles(urls) };
   if (pack.audio.sfx) {
-    const mapped: Record<string, string> = {};
     for (const [k, v] of Object.entries(pack.audio.sfx)) mapped[k] = lookupFile(urls, v) ?? v;
-    pack.audio.sfx = mapped;
   }
+  pack.audio.sfx = mapped;
   if (packs.get(pack.id)?.builtin || packs.has(pack.id)) {
     pack.id = uniqueCustomId(pack.id, "");
   }
