@@ -6132,7 +6132,6 @@
     this.flasher.name = "flasher";
     this.flasher.parent = this;
     this.flasher.setTransform(10.8, -10.6);
-    this.flasher.filters = [new cjs.BlurFilter(5, 5, 3)];
 
     this.timeline.addTween(cjs.Tween.get(this.flasher).to({ _off: true }, 234).wait(123));
 
@@ -12259,6 +12258,38 @@
         return stoneStamp;
       };
 
+      var skipTileSpawn = false;
+
+      function restIdleTile(tile) {
+        if (!tile || tile.type === "b") return;
+        tile.tickEnabled = false;
+        if (tile.flasher) {
+          tile.flasher.tickEnabled = false;
+          tile.flasher.filters = null;
+        }
+      }
+
+      function wakeTile(tile) {
+        if (!tile || tile.type === "b") return;
+        tile.tickEnabled = true;
+        if (tile.flasher) tile.flasher.tickEnabled = true;
+      }
+
+      function bakeFloor(world) {
+        if (!world || !world.layerTiles || world._floorCached) return;
+        var n = world.tiles ? world.tiles.length : 0;
+        var bake = window.__bloxShouldBakeFloor ? window.__bloxShouldBakeFloor(n) : n >= 30;
+        if (!bake) return;
+        world.layerTiles.cache(-80, -140, 820, 520);
+        world._floorCached = true;
+      }
+
+      function uncacheFloor(world) {
+        if (!world || !world._floorCached || !world.layerTiles) return;
+        world.layerTiles.uncache();
+        world._floorCached = false;
+      }
+
       function createTile(_, type, x, y) {
         var types = {
           b: "normalblock",
@@ -12292,6 +12323,15 @@
         }
 
         var tile = new lib.Tile();
+        if (tile.flasher) {
+          tile.flasher.filters = null;
+        }
+        var rawPlay = tile.play.bind(tile);
+        tile.play = function () {
+          uncacheFloor(_);
+          wakeTile(tile);
+          rawPlay();
+        };
 
         if (initialDoorStates.hasOwnProperty(type)) {
           tile.door = {
@@ -12375,10 +12415,15 @@
 
         if (type === "f") {
           tile.gotoAndStop(182);
+        } else if (skipTileSpawn) {
+          restIdleTile(tile);
         } else {
           var delay = "bshvf".indexOf(type) !== -1 ? Math.floor(Math.random() * 5) + 10 : 30;
           wait(delay, function () {
             tile.play();
+            wait(40, function () {
+              restIdleTile(tile);
+            });
           });
         }
 
@@ -12471,6 +12516,8 @@
         _.layerShadows = new createjs.Container();
         _.layerShadows.alpha = 0.5;
         _.layerTiles = new createjs.Container();
+        _.layerTiles.mouseEnabled = false;
+        _.layerTiles.mouseChildren = false;
 
         stage.gameContainer.addChild(_.background);
         stage.gameContainer.addChild(_.layerTiles);
@@ -12530,6 +12577,7 @@
 
         // destroy
         _.destroy = function () {
+          uncacheFloor(_);
           createjs.Ticker.removeEventListener("tick", _.tick);
           if (stage.bloxWorld === _) {
             stage.bloxWorld = null;
@@ -12742,6 +12790,7 @@
         };
 
         _.sortBlockDepthAmongTiles = function (block, direction) {
+          uncacheFloor(_);
           block.afterPos = null;
           _.layerShadows.removeChild(block.shadow);
           _.layerBlocks.removeChild(block);
@@ -12769,35 +12818,24 @@
             y += depthNudge[direction + block.roll.position][1];
           }
 
-          var tilesToSort = _.tiles.map(function (tile) {
-            return {
-              tile: tile,
-              depth: tile.pos.y - tile.pos.x,
-              behindBlock: tile.pos.y <= y && tile.pos.x >= x,
-              pos: tile.pos,
-            };
-          });
+          if (block.parent === _.layerTiles) {
+            _.layerTiles.removeChild(block);
+          }
 
-          var tilesBehind = tilesToSort.filter(function (data) {
-            return data.behindBlock;
-          });
+          var insertAt = _.layerTiles.numChildren;
+          for (var i = 0; i < _.tiles.length; i++) {
+            var tile = _.tiles[i];
+            if (!tile || !tile.pos) continue;
+            if (tile.pos.y <= y && tile.pos.x >= x) continue;
+            var idx = _.layerTiles.getChildIndex(tile);
+            if (idx >= 0 && idx < insertAt) insertAt = idx;
+          }
 
-          var tilesInfront = tilesToSort.filter(function (data) {
-            return !data.behindBlock;
-          });
-
-          tilesBehind.map(function (a) {
-            _.layerTiles.addChild(a.tile);
-          });
-
-          _.layerTiles.addChild(block);
-
-          tilesInfront.map(function (a) {
-            _.layerTiles.addChild(a.tile);
-          });
+          _.layerTiles.addChildAt(block, insertAt);
         };
 
         _.switchDoors = function (doors) {
+          uncacheFloor(_);
           doors.forEach(function (door) {
             if (door.type === "onoff" || (door.type === "on" && !door.targetTile.door.state) || (door.type === "off" && door.targetTile.door.state)) {
               door.targetTile.door.state = !door.targetTile.door.state;
@@ -12806,6 +12844,13 @@
             }
           });
           _.updateShadows();
+          wait(32, function () {
+            if (stage.bloxWorld !== _) return;
+            doors.forEach(function (door) {
+              restIdleTile(door.targetTile);
+            });
+            bakeFloor(_);
+          });
         };
 
         _.addTile = function (type, x, y) {
@@ -12820,6 +12865,8 @@
         };
 
         _.removeAllTiles = function () {
+          uncacheFloor(_);
+          _._shadowSig = null;
           _.tiles.map(function (tile) {
             _.layerTiles.removeChild(tile);
           });
@@ -12828,6 +12875,13 @@
         };
 
         _.updateShadows = function (level) {
+          var sig = "";
+          for (var i = 0; i < _.tiles.length; i++) {
+            var t = _.tiles[i];
+            sig += t.door ? (t.door.state ? "1" : "0") : t.type === "e" ? "e" : "x";
+          }
+          if (sig === _._shadowSig) return;
+          _._shadowSig = sig;
           _.removeShadows();
           _.shadowMask.graphics.beginFill("blue");
 
@@ -12862,6 +12916,17 @@
 
         _.loadLevel = function () {
           var level = levels[stage.levelNumber - 1];
+          var occupied = 0;
+          for (var oy = 0; oy < 10; oy++) {
+            for (var ox = 0; ox < 15; ox++) {
+              if (level[oy + 1][ox] !== " ") occupied++;
+            }
+          }
+          skipTileSpawn = window.__bloxShouldSkipSpawn ? window.__bloxShouldSkipSpawn(occupied) : occupied >= 60;
+          window.__bloxDenseBoard = window.__bloxShouldBakeFloor ? window.__bloxShouldBakeFloor(occupied) : occupied >= 30;
+          try {
+            window.dispatchEvent(new Event("resize"));
+          } catch (e) {}
           var swatches = level[12] || {};
           var splits = level[13] || {};
           var doors = [];
@@ -12913,6 +12978,16 @@
 
           _.updateShadows(level);
 
+          if (skipTileSpawn) {
+            bakeFloor(_);
+          } else {
+            wait(55, function () {
+              if (stage.bloxWorld !== _) return;
+              _.tiles.forEach(restIdleTile);
+              bakeFloor(_);
+            });
+          }
+
           var start = level[11];
           _.background.onReady = function () {
             _.addBlock(start[0], start[1], new lib.Block(), new lib.BlockShadow());
@@ -12946,6 +13021,7 @@
         };
 
         _.transitionOutLevelLose = function () {
+          uncacheFloor(_);
           setSplit(0);
           _.sounds.end.gotoAndPlay("lose");
           _.background.play();
@@ -12968,6 +13044,7 @@
         };
 
         _.transitionOutLevelWin = function (x, y) {
+          uncacheFloor(_);
           _.sounds.end.gotoAndPlay("win");
           _.background.play();
           _.onScreenArrows.play();

@@ -346,7 +346,7 @@
 					var w = lib.properties.width, h = lib.properties.height;
 					var iw = anim_container.offsetWidth;
 					var ih = anim_container.offsetHeight;
-					var pRatio = Math.min(1.5, window.devicePixelRatio || 1),
+					var pRatio = Math.min(window.__bloxDenseBoard ? 1 : 1.5, window.devicePixelRatio || 1),
 						xRatio = iw / w,
 						yRatio = ih / h,
 						sRatio = Math.min(xRatio, yRatio);
