@@ -26,7 +26,7 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { blitHueRects, collectBlockFrameIndexes, shiftingHue, type AtlasRect } from "./hue";
+import { clipHueAction, shiftingHue, wrapHue } from "./hue";
 import { armStageTitleClip, freezeStageTitleClip, stageTitleShouldArm, type StageTitleClip } from "./stageTitle";
 import {
   loadFinishedStages,
@@ -379,11 +379,7 @@ let letterbox: TintShape | null = null;
 let blocksWereIdle = true;
 let prevPadButtons = new Set<number>();
 let prevInstrStart = false;
-let bakedHue = -1;
 let hueShiftOrigin = 0;
-let atlasRects: AtlasRect[] | null = null;
-let atlasCanvas: HTMLCanvasElement | null = null;
-let atlasOriginal: HTMLCanvasElement | null = null;
 let uiBusy = false;
 let touchChrome: TouchChrome | null = null;
 let localSaveWrapped = false;
@@ -496,57 +492,62 @@ function atlasSheet(): SpriteSheetLike | undefined {
   }
 }
 
-function snapshotCanvas(src: HTMLCanvasElement): HTMLCanvasElement | null {
-  const copy = document.createElement("canvas");
-  copy.width = src.width;
-  copy.height = src.height;
-  const ctx = copy.getContext("2d");
-  if (!ctx) return null;
-  ctx.drawImage(src, 0, 0);
-  return copy;
-}
-
-function collectBlockAtlas(): { live: HTMLCanvasElement; original: HTMLCanvasElement; rects: AtlasRect[] } | null {
-  const sheet = atlasSheet();
-  const lib = adobeLib() as unknown as Record<string, unknown>;
-  if (!sheet?.getFrame || !lib) return null;
-  const indexes = collectBlockFrameIndexes(lib);
-  if (!indexes.length) return null;
-  let source: CanvasImageSource | null = null;
-  const rects: AtlasRect[] = [];
-  for (const i of indexes) {
-    const frame = sheet.getFrame(i);
-    if (!frame?.rect || !frame.image) continue;
-    source = frame.image;
-    rects.push(frame.rect);
-  }
-  if (!source || !rects.length) return null;
-  const live = adoptAtlasCanvas(sheet, source);
-  if (!live) return null;
-  const original = snapshotCanvas(live);
-  if (!original) return null;
-  return { live, original, rects };
-}
-
 function liveBlockHue(): number {
   const s = loadSettings();
   return shiftingHue(s.blockHue, s.hueShift, performance.now() - hueShiftOrigin);
 }
 
+type HueClip = {
+  visible?: boolean;
+  cacheID?: number;
+  filters?: unknown;
+  __bloxHue?: number;
+  cache?: (x: number, y: number, w: number, h: number) => void;
+  updateCache?: () => void;
+  uncache?: () => void;
+  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
+};
+
+function applyClipHue(clip: HueClip | null | undefined, hue: number, animating: boolean): void {
+  if (!clip) return;
+  const action = clipHueAction(clip.__bloxHue, hue, animating);
+  if (action === "skip") return;
+  if (action === "clear") {
+    clip.filters = null;
+    clip.uncache?.();
+    clip.__bloxHue = 0;
+    return;
+  }
+  if (action === "apply") {
+    const cjs = window.createjs as {
+      ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
+      ColorMatrixFilter?: new (m: unknown) => unknown;
+    };
+    const Matrix = cjs?.ColorMatrix;
+    const Filter = cjs?.ColorMatrixFilter;
+    if (!Matrix || !Filter) return;
+    const mtx = new Matrix();
+    mtx.adjustHue(hue);
+    clip.filters = [new Filter(mtx)];
+    if (clip.cacheID) clip.updateCache?.();
+    else {
+      const box = clip.getBounds?.();
+      clip.cache?.(box?.x ?? -120, box?.y ?? -140, Math.max(40, box?.width ?? 240), Math.max(40, box?.height ?? 220));
+    }
+    clip.__bloxHue = wrapHue(hue);
+    return;
+  }
+  clip.updateCache?.();
+}
+
 function applyBlockHue(): void {
   const hue = liveBlockHue();
-  if (atlasRects && atlasOriginal && atlasCanvas && bakedHue >= 0 && hue === bakedHue) return;
-  if (!atlasRects || !atlasCanvas || !atlasOriginal) {
-    const atlas = collectBlockAtlas();
-    if (!atlas) return;
-    atlasRects = atlas.rects;
-    atlasCanvas = atlas.live;
-    atlasOriginal = atlas.original;
+  for (const clip of hud?.hueClips() ?? []) {
+    if (!hue || clip.visible !== false) applyClipHue(clip, hue, true);
   }
-  const ctx = atlasCanvas.getContext("2d");
-  if (!ctx) return;
-  blitHueRects(ctx, atlasOriginal, atlasRects, hue);
-  bakedHue = hue;
+  if (overlayMode === "run") {
+    for (const block of playBlocks()) applyClipHue(block, hue, !block.roll?.idle);
+  }
 }
 
 function ensureSky(): void {
@@ -2325,10 +2326,7 @@ function applyTheme(theme: ThemeId, reload = false): void {
   setHdRendering(isHdTheme(id));
   void swapAtlasLive(id);
   applyLooks();
-  atlasRects = null;
-  atlasCanvas = null;
-  atlasOriginal = null;
-  bakedHue = -1;
+  for (const clip of hud?.hueClips() ?? []) clip.__bloxHue = undefined;
   applyBlockHue();
   lastTintKey = "";
   window.__bloxResetStoneStamp?.();
@@ -2762,19 +2760,17 @@ function handleHudAction(act: string): void {
     s.hueShift = !s.hueShift;
     saveSettings(s);
     hueShiftOrigin = performance.now();
-    bakedHue = -1;
-    applyBlockHue();
     markHudDirty();
     paintHud();
+    applyBlockHue();
   } else if (act.startsWith("blockhue:")) {
     const s = loadSettings();
     s.blockHue = Number(act.slice(9));
     saveSettings(s);
     hueShiftOrigin = performance.now();
-    bakedHue = -1;
-    applyBlockHue();
     markHudDirty();
     paintHud();
+    applyBlockHue();
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
@@ -4202,7 +4198,6 @@ function syncOverlay(): void {
       overlayMode = "run";
       hushPlayAudio();
       hueShiftOrigin = performance.now();
-      bakedHue = -1;
       enterPlayVisuals();
       raiseHud();
     }
@@ -4317,12 +4312,12 @@ function syncOverlay(): void {
   placeSettingsChrome(extraView === "settings");
   touchChrome?.sync(false);
 
-  applyBlockHue();
   bindMenuPad();
   capturePadRebind();
   if (playLaunching) return;
   if (extraView === "finish") {
     paintHud();
+    applyBlockHue();
     return;
   }
   if (!splashDone) {
@@ -4339,6 +4334,7 @@ function syncOverlay(): void {
   } else {
     paintHud();
   }
+  applyBlockHue();
 }
 
 declare global {

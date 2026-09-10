@@ -53,7 +53,11 @@ type HudNode = {
   removeAllChildren: () => void;
   addEventListener: (type: string, fn: (ev?: unknown) => void) => void;
   cache?: (x: number, y: number, w: number, h: number, scale?: number) => void;
+  updateCache?: () => void;
   uncache?: () => void;
+  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
+  filters?: unknown;
+  __bloxHue?: number;
 };
 
 type HudText = HudNode & {
@@ -352,10 +356,17 @@ export class ExtraHud {
     if (this.mascot.parent === this.root) this.root.removeChild?.(this.mascot);
   }
 
-  private placePreview(x: number, y: number): void {
+  hueClips(): HudNode[] {
+    const out: HudNode[] = [];
+    if (this.mascot?.parent) out.push(this.mascot);
+    if (this.preview?.parent) out.push(this.preview);
+    return out;
+  }
+
+  private placePreview(x: number, y: number, hue = 0): void {
     if (!this.preview && this.makePreview) this.preview = this.makePreview();
     if (!this.preview) {
-      this.add(blockPreview(x, y, 0));
+      this.add(blockPreview(x, y, hue));
       return;
     }
     this.preview.visible = true;
@@ -590,7 +601,7 @@ export class ExtraHud {
     this.add(slider(150, 242, 90, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
     this.add(swatch(248, 244, opts.blockHue, opts.blockHue > 0 || opts.hueShift ? 1 : 0.35));
     this.add(this.act("toggle-hue-shift", `${this.focusId === "toggle-hue-shift" ? "> " : "  "}${t("settings.hueShift")}  ${onOff(opts.hueShift)}`, 278, 242, 11, false, 200));
-    this.placePreview(392, 198);
+    this.placePreview(392, 198, opts.blockHue);
     this.add(this.act("remap", t("settings.remap"), 40, 264, 12, false, 160));
     this.add(this.act("export-save", t("settings.export"), 200, 264, 12, false, 130));
     this.add(this.act("import-save", t("settings.import"), 350, 264, 12, false, 160));

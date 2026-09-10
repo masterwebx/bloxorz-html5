@@ -43,6 +43,14 @@ export function hueDelta(a: number, b: number): number {
   return Math.min(d, 360 - d);
 }
 
+/** Cheap per-clip hue: clear, set a ColorMatrixFilter, or just recache an animating clip. */
+export function clipHueAction(prev: number | undefined, hue: number, animating: boolean): "clear" | "apply" | "update" | "skip" {
+  const next = wrapHue(hue);
+  if (!next) return prev ? "clear" : "skip";
+  if (prev !== next) return "apply";
+  return animating ? "update" : "skip";
+}
+
 export function shiftingHue(base: number, enabled: boolean, elapsedMs: number, degPerSec = 24): number {
   const start = wrapHue(base);
   if (!enabled) return Math.round(start);
