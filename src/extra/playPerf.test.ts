@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { blockInsertIndex, shouldBakeFloor, shouldSkipTileSpawn, tileIsBehindBlock } from "./playPerf";
+import {
+  blockInsertIndex,
+  shouldBakeFloor,
+  shouldSkipTileSpawn,
+  TILE_SPAWN_LABEL_FRAME,
+  tileIdleFrame,
+  tileIsBehindBlock,
+} from "./playPerf";
 
 describe("dense playfield helpers", () => {
   it("bakes the floor only once a board is packed", () => {
@@ -8,6 +15,17 @@ describe("dense playfield helpers", () => {
     expect(shouldSkipTileSpawn(8)).toBe(false);
     expect(shouldSkipTileSpawn(40)).toBe(false);
     expect(shouldSkipTileSpawn(60)).toBe(true);
+  });
+
+  it("rests switches on the idle frame, not the empty spawn label", () => {
+    expect(tileIdleFrame("s")).toBe(69);
+    expect(tileIdleFrame("h")).toBe(92);
+    expect(tileIdleFrame("v")).toBe(159);
+    expect(tileIdleFrame("s")).not.toBe(TILE_SPAWN_LABEL_FRAME.s);
+    expect(tileIdleFrame("h")).not.toBe(TILE_SPAWN_LABEL_FRAME.h);
+    expect(tileIdleFrame("v")).not.toBe(TILE_SPAWN_LABEL_FRAME.v);
+    expect(tileIdleFrame("k", true)).toBe(39);
+    expect(tileIdleFrame("l", false)).toBe(32);
   });
 
   it("treats north-east tiles as behind the block in iso space", () => {

@@ -72,7 +72,7 @@ import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./h
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, canBillboard, type MenuItem } from "./hud";
-import { shouldBakeFloor, shouldSkipTileSpawn } from "./playPerf";
+import { shouldBakeFloor, shouldSkipTileSpawn, tileIdleFrame } from "./playPerf";
 import {
   ACH_COUNT,
   ACH_PAGE,
@@ -3994,6 +3994,7 @@ declare global {
     __bloxGetStoneStamp?: () => CanvasImageSource | null;
     __bloxShouldBakeFloor?: (n: number) => boolean;
     __bloxShouldSkipSpawn?: (n: number) => boolean;
+    __bloxTileIdleFrame?: (type: string, doorOpen?: boolean) => number | null;
     __bloxDenseBoard?: boolean;
     applyLiveTheme?: (theme: string) => void;
     AdobeAn?: {
@@ -4043,6 +4044,7 @@ function showAchievementToasts(rows: AchievementDef[]): void {
 export function startBloxorzShell(): void {
   window.__bloxShouldBakeFloor = shouldBakeFloor;
   window.__bloxShouldSkipSpawn = shouldSkipTileSpawn;
+  window.__bloxTileIdleFrame = tileIdleFrame;
   const version = $("build-version");
   if (version) version.textContent = "v" + (window.GAME_VERSION || "1.0.1");
   const saved = loadSettings();

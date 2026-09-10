@@ -12260,8 +12260,24 @@
 
       var skipTileSpawn = false;
 
+      function tileIdleFrame(type, doorOpen) {
+        if (window.__bloxTileIdleFrame) return window.__bloxTileIdleFrame(type, doorOpen);
+        if (type === "l" || type === "k") return doorOpen ? 39 : 32;
+        if (type === "r" || type === "q") return doorOpen ? 129 : 122;
+        if (type === "s") return 69;
+        if (type === "h") return 92;
+        if (type === "e") return 114;
+        if (type === "v") return 159;
+        if (type === "f") return 182;
+        return null;
+      }
+
       function restIdleTile(tile) {
         if (!tile || tile.type === "b") return;
+        if (tile.type !== "f") {
+          var idle = tileIdleFrame(tile.type, tile.door && tile.door.state);
+          if (idle != null && tile.gotoAndStop) tile.gotoAndStop(idle);
+        }
         tile.tickEnabled = false;
         if (tile.flasher) {
           tile.flasher.tickEnabled = false;
@@ -12411,6 +12427,7 @@
 
         addPos(tile, x, y);
         tile.pos.update();
+        tile.type = type;
         tile.gotoAndStop(types[type]);
 
         if (type === "f") {
