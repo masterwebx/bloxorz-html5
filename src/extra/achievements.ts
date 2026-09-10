@@ -2,6 +2,7 @@ import { LEVELS } from "./levels";
 import type { LevelDef } from "./types";
 import type { HistoryKind, TapeCmd } from "./history";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough } from "./walkthrough";
+import { t } from "./i18n";
 
 export const ACH_COUNT = 300;
 export const ACH_PAGE = 6;
@@ -272,6 +273,67 @@ export function recordCount(): number {
 
 export function padAch(n: number): string {
   return String(n).padStart(3, "0");
+}
+
+function filled(key: string, fallback: string, vars?: Record<string, string | number>): string {
+  const out = t(key, vars);
+  return out === key ? (vars ? Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, String(v)), fallback) : fallback) : out;
+}
+
+const STAGE_COPY: Record<string, { name: string; hint: string; nameFb: string; hintFb: string }> = {
+  Cleared: {
+    name: "ach.stageCleared",
+    hint: "ach.stageClearedHint",
+    nameFb: "{stage} Cleared",
+    hintFb: "Finish campaign {stage}.",
+  },
+  Untipped: {
+    name: "ach.stageUntipped",
+    hint: "ach.stageUntippedHint",
+    nameFb: "{stage} Untipped",
+    hintFb: "Finish campaign {stage} without falling on that attempt.",
+  },
+  Efficient: {
+    name: "ach.stageEfficient",
+    hint: "ach.stageEfficientHint",
+    nameFb: "{stage} Efficient",
+    hintFb: "Finish campaign {stage} in {cap} moves or fewer.",
+  },
+  Par: {
+    name: "ach.stagePar",
+    hint: "ach.stageParHint",
+    nameFb: "{stage} Par",
+    hintFb: "Match or beat the published route on campaign {stage} ({cap} moves).",
+  },
+  "One Piece": {
+    name: "ach.stageOnePiece",
+    hint: "ach.stageOnePieceHint",
+    nameFb: "{stage} One Piece",
+    hintFb: "Finish campaign {stage} without swapping split cubes.",
+  },
+};
+
+export function achName(def: AchievementDef): string {
+  const stage = /^Stage (\d{2}) (Cleared|Untipped|Efficient|Par|One Piece)$/.exec(def.name);
+  if (stage) {
+    const copy = STAGE_COPY[stage[2]];
+    return filled(copy.name, copy.nameFb, { stage: t("play.stage", { n: stage[1] }) });
+  }
+  const uniques = /^(\d+) Uniques$/.exec(def.name);
+  if (uniques) return filled("ach.uniques", "{n} Uniques", { n: uniques[1] });
+  return def.name;
+}
+
+export function achHint(def: AchievementDef): string {
+  const stage = /^Stage (\d{2}) (Cleared|Untipped|Efficient|Par|One Piece)$/.exec(def.name);
+  if (stage) {
+    const copy = STAGE_COPY[stage[2]];
+    const cap = def.hint.match(/in (\d+) moves/)?.[1] || def.hint.match(/\((\d+) moves\)/)?.[1] || "";
+    return filled(copy.hint, copy.hintFb, { stage: t("play.stage", { n: stage[1] }), cap });
+  }
+  const uniques = /^(\d+) Uniques$/.exec(def.name);
+  if (uniques) return filled("ach.uniquesHint", "Finish {n} unique stages of any kind.", { n: uniques[1] });
+  return def.hint;
 }
 
 export function parMoves(stage: number): number {
@@ -806,12 +868,12 @@ export function achievementRows(scroll: number, page = ACH_PAGE): AchRow[] {
   return ACHIEVEMENTS.slice(scroll, scroll + page).map((def) => {
     const unlocked = !!s.unlocked[String(def.n)];
     const hinted = s.hinted.includes(def.n);
-    const label = `#${padAch(def.n)}  ${unlocked ? def.name : "???"}`;
+    const label = `#${padAch(def.n)}  ${unlocked ? achName(def) : "???"}`;
     let meta = "";
-    if (unlocked) meta = def.hint;
-    else if (hinted) meta = def.hint;
-    else if (tokens > 0) meta = "Confirm to spend 1 hint.";
-    else meta = "Beat a new unique stage to earn a hint.";
+    if (unlocked) meta = achHint(def);
+    else if (hinted) meta = achHint(def);
+    else if (tokens > 0) meta = t("achievements.hintSpend");
+    else meta = t("achievements.need");
     return {
       n: def.n,
       label,

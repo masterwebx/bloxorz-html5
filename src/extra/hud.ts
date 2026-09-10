@@ -981,9 +981,9 @@ export class ExtraHud {
   drawInGameDev(banner = "", autoSolve = false): void {
     this.clear();
     this.hideMascot();
-    this.add(hitRow(autoSolve ? "Stop auto-solve" : "Beat stage for me", 12, 30, 11, () => this.onAction("dev-beat"), false, 160));
-    this.add(hitRow("Dev menu", 12, 50, 11, () => this.onAction("dev-menu"), false, 120));
-    if (banner) this.add(text(banner, 12, 72, 11, paint().green));
+    this.add(hitRow(autoSolve ? "Stop auto-solve" : "Beat stage for me", 12, 32, 11, () => this.onAction("dev-beat"), false, 180));
+    this.add(hitRow("Dev menu", 12, 52, 11, () => this.onAction("dev-menu"), false, 120));
+    if (banner) this.add(text(banner, 12, 74, 11, paint().green));
   }
 }
 

@@ -92,6 +92,7 @@ import {
   noteSwap,
   noteWin,
   onAchievementsUnlocked,
+  achName,
   spendHint,
   uniqueStageKey,
   unlockedCount,
@@ -4010,7 +4011,7 @@ function showAchievementToasts(rows: AchievementDef[]): void {
     const title = document.createElement("b");
     title.textContent = t("achievements.unlocked");
     const body = document.createElement("span");
-    body.textContent = `#${String(row.n).padStart(3, "0")}  ${row.name}`;
+    body.textContent = `#${String(row.n).padStart(3, "0")}  ${achName(row)}`;
     el.append(title, body);
     host.appendChild(el);
     window.setTimeout(() => {

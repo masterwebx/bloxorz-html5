@@ -3,6 +3,8 @@ import {
   ACH_COUNT,
   ACHIEVEMENTS,
   achievementRows,
+  achHint,
+  achName,
   hasAchievementMenu,
   hintTokens,
   loadAchievements,
@@ -18,6 +20,8 @@ import {
   spendHint,
   uniqueStageKey,
 } from "./achievements";
+import { bootLocales, setLocale } from "./i18n";
+import { LOCALE_TABLE } from "./locale.gen";
 
 function memoryStore() {
   const data = new Map<string, string>();
@@ -79,6 +83,18 @@ describe("achievements", () => {
     const rows = achievementRows(0, 6);
     expect(rows[0]?.unlocked).toBe(true);
     expect(rows[0]?.label).toContain("#001");
+  });
+
+  it("translates stage achievements and hint copy", () => {
+    bootLocales(LOCALE_TABLE, "es");
+    setLocale("es");
+    setAchievementsStorage(memoryStore());
+    expect(achName(ACHIEVEMENTS[0]!)).toContain("Fase");
+    expect(achName(ACHIEVEMENTS[0]!)).not.toContain("Stage");
+    expect(achHint(ACHIEVEMENTS[0]!)).toContain("Fase");
+    const rows = achievementRows(0, 1);
+    expect(rows[0]?.meta).toBe("Completa una etapa unica nueva para ganar una pista.");
+    setLocale("en");
   });
 
   it("lists campaign and play records", () => {

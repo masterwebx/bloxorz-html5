@@ -60,11 +60,13 @@ export function soundLoopCount(loop: unknown): number {
   return 0;
 }
 
-function playArgs(args: PlayArgs): PlayArgs {
+export function normalizePlayArgs(args: PlayArgs): PlayArgs {
   if (!args.length) return args;
   if (args.length === 1) {
     const interrupt =
-      (window as unknown as { createjs?: { Sound?: { INTERRUPT_EARLY?: number } } }).createjs?.Sound?.INTERRUPT_EARLY ?? 0;
+      typeof window !== "undefined"
+        ? (window as unknown as { createjs?: { Sound?: { INTERRUPT_EARLY?: number } } }).createjs?.Sound?.INTERRUPT_EARLY ?? 0
+        : 0;
     return [args[0], interrupt, 0, 0, 0];
   }
   if (args.length >= 5) {
@@ -85,10 +87,23 @@ function playArgs(args: PlayArgs): PlayArgs {
   return next;
 }
 
+function playbackTag(inst: SoundInst): { loop?: unknown } | null {
+  if (!inst || typeof inst !== "object") return null;
+  const rec = inst as { playbackResource?: { loop?: unknown }; _playbackResource?: { loop?: unknown } };
+  return rec.playbackResource || rec._playbackResource || null;
+}
+
+function pinPlayOnce(inst: SoundInst): void {
+  if (!inst || typeof inst !== "object") return;
+  inst.loop = 0;
+  const tag = playbackTag(inst);
+  if (tag) tag.loop = false;
+}
+
 function unloopHtmlAudio(): void {
   try {
     document.querySelectorAll("audio").forEach((el) => {
-      if (el === musicEl) return;
+      if (allowMenuMusic && el === musicEl) return;
       el.loop = false;
     });
   } catch {
@@ -96,10 +111,21 @@ function unloopHtmlAudio(): void {
   }
 }
 
+const mutedMusic: NonNullable<SoundInst> = {
+  loop: 0,
+  volume: 0,
+  stop() {
+    /* already silent */
+  },
+};
+
 function playNow(args: PlayArgs): SoundInst {
-  const play = playArgs(args);
+  const play = normalizePlayArgs(args);
   if (isMusicId(play[0])) {
-    if (!allowMenuMusic) return null;
+    if (!allowMenuMusic) {
+      stopVanillaMenuMusic();
+      return mutedMusic;
+    }
     ensureMenuMusic();
     return menuMusic;
   }
@@ -108,15 +134,22 @@ function playNow(args: PlayArgs): SoundInst {
   if (id && themeSoundUrl(id)) {
     const html = playThemeSound(id, false);
     const s = loadSettings();
-    if (html) html.volume = s.sfx;
+    if (html) {
+      html.loop = false;
+      html.volume = s.sfx;
+    }
     return html as SoundInst;
   }
   const inst = origPlay(...play);
+  const loop = play.length >= 5 ? soundLoopCount(play[4]) : 0;
   if (inst && typeof inst === "object") {
     const s = loadSettings();
     inst.volume = s.sfx;
-    const loop = play.length >= 5 ? soundLoopCount(play[4]) : 0;
-    if (loop === 0) inst.loop = 0;
+    if (loop === 0) {
+      pinPlayOnce(inst);
+      queueMicrotask(() => pinPlayOnce(inst));
+      if (typeof window !== "undefined") window.setTimeout(() => pinPlayOnce(inst), 0);
+    }
   }
   unloopHtmlAudio();
   return inst;
@@ -246,14 +279,27 @@ export function stopMenuMusic(): void {
   queued = queued.filter((args) => !isMusicId(args[0]));
 }
 
+export function stopVanillaMenuMusic(): void {
+  if (typeof window === "undefined") return;
+  const st = (window as unknown as { stage?: { menuMusic?: SoundInst } }).stage;
+  try {
+    st?.menuMusic?.stop?.();
+  } catch {
+    /* ignore */
+  }
+  if (st) st.menuMusic = null;
+}
+
 export function stopAllSounds(): void {
+  setMenuMusicAllowed(false);
   stopMenuMusic();
   stopThemeMusic();
+  stopVanillaMenuMusic();
   queued = [];
   unloopHtmlAudio();
   try {
     document.querySelectorAll("audio").forEach((el) => {
-      if (el === musicEl) return;
+      el.loop = false;
       el.pause();
       el.currentTime = 0;
     });
@@ -265,6 +311,26 @@ export function stopAllSounds(): void {
   } catch {
     /* plugin may not be ready */
   }
+}
+
+export function resetAudioForTests(): void {
+  const sound =
+    typeof window === "undefined"
+      ? undefined
+      : (window as unknown as { createjs?: { Sound?: { play: (...a: unknown[]) => SoundInst } } }).createjs?.Sound;
+  if (sound && origPlay) sound.play = origPlay;
+  origPlay = null;
+  unlocked = false;
+  ctxReady = false;
+  queued = [];
+  whooshOnce = false;
+  allowMenuMusic = false;
+  stopTrackedMusic();
+}
+
+export function markAudioReadyForTests(): void {
+  ctxReady = true;
+  unlocked = true;
 }
 
 export function applyVolumes(): void {
