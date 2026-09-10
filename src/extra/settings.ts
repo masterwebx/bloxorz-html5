@@ -34,6 +34,7 @@ export interface Settings {
   mobilePadChoice: MobilePadChoice;
   rotateScreen: boolean;
   themeBg: boolean;
+  webcamBg: boolean;
   bgTint: number;
   bgHue: number;
   blockHue: number;
@@ -52,6 +53,7 @@ const DEFAULTS: Settings = {
   mobilePadChoice: "",
   rotateScreen: false,
   themeBg: true,
+  webcamBg: false,
   bgTint: 0,
   bgHue: 28,
   blockHue: 0,
@@ -102,6 +104,7 @@ export function loadSettings(): Settings {
       mobilePadChoice: parsed.mobilePadChoice === "on" || parsed.mobilePadChoice === "off" ? parsed.mobilePadChoice : "",
       rotateScreen: parsed.rotateScreen === true,
       themeBg: parsed.themeBg !== false,
+      webcamBg: parsed.webcamBg === true,
       bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
       blockHue: clampHue(parsed.blockHue ?? DEFAULTS.blockHue),

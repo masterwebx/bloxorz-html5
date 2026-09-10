@@ -13,6 +13,10 @@
 	object-fit: cover;
 }
 
+#theme-webcam[hidden] {
+	display: none !important;
+}
+
 body.has-theme-media #canvas {
 	background-color: transparent !important;
 }
@@ -86,6 +90,14 @@ body.has-theme-media #canvas {
 	column-gap: 0;
 	letter-spacing: 0;
 	white-space: nowrap;
+}
+
+#animation_container.has-speedrun #play-pass,
+#animation_container.has-speedrun #play-moves,
+#play-chrome.has-speedrun #play-pass,
+#play-chrome.has-speedrun #play-moves {
+	left: 54%;
+	width: 32%;
 }
 
 #play-pass { top: 0.17%; }
@@ -379,7 +391,7 @@ body.has-theme-media #canvas {
 	position: absolute;
 	z-index: 30;
 	left: 66%;
-	top: 51.5%;
+	top: 43.5%;
 	width: 22%;
 	cursor: pointer;
 }

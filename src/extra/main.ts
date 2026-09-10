@@ -1,5 +1,5 @@
 import { cmdToCode, createFeeder, tickFeeder, type SolveFeeder } from "./autoSolve";
-import { beatBadge, EDITOR_TOOLS, editorMarks, newPaintState, paintEditorCell, type EditorToolId } from "./editor";
+import { checkBeatable, EDITOR_TOOLS, editorMarks, newPaintState, paintEditorCell, type EditorToolId } from "./editor";
 import {
   decodeSeed,
   deleteStage,
@@ -26,7 +26,7 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, pollGamepad, pollMenuPad, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
+import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import {
   loadFinishedStages,
   saveFinishedStage,
@@ -68,6 +68,7 @@ import {
   themeMenuItems,
 } from "./themePack";
 import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
+import { applySaveBackup, buildSaveBackup, parseSaveBackup } from "./saveBackup";
 import { clearTheme3d, syncTheme3d } from "./theme3d";
 import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./hue";
 import { solveLevel } from "./solve";
@@ -174,7 +175,7 @@ type PauseBtn = OverlayNode & {
   scaleY?: number;
 };
 
-type PauseStats = {
+type PauseStats = OverlayNode & {
   instance?: OverlayNode;
   instance_1?: OverlayNode;
   instance_2?: OverlayNode;
@@ -351,6 +352,7 @@ let finishKind: PlayCard = "classic";
 let finishTitle = "";
 let finishSubtitle = "";
 let showStats = false;
+let webcamStream: MediaStream | null = null;
 let beatBanner = "";
 let autoSolve = false;
 let modalKind: "code-play" | "code-edit" | null = null;
@@ -627,9 +629,21 @@ function applyThemeMedia(): void {
   const wrap = $("theme-media");
   const img = $("theme-media-img") as HTMLImageElement | null;
   const video = $("theme-media-video") as HTMLVideoElement | null;
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
   if (!wrap || !img || !video) return;
   const pack = getTheme(currentThemeId());
   const s = loadSettings();
+  if (s.webcamBg) {
+    wrap.hidden = false;
+    document.body.classList.add("has-theme-media");
+    img.hidden = true;
+    video.hidden = true;
+    video.pause();
+    if (cam) cam.hidden = false;
+    void startWebcam(cam);
+    return;
+  }
+  stopWebcam();
   const src = pack.background.src
     ? pack.background.src.startsWith("/") || pack.background.src.startsWith("blob:") || pack.background.src.startsWith("http")
       ? pack.background.src
@@ -659,6 +673,44 @@ function applyThemeMedia(): void {
     video.hidden = true;
     img.hidden = false;
     if (img.getAttribute("src") !== src) img.src = src;
+  }
+}
+
+function stopWebcam(): void {
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
+  if (cam) {
+    cam.hidden = true;
+    cam.srcObject = null;
+  }
+  if (webcamStream) {
+    for (const track of webcamStream.getTracks()) track.stop();
+    webcamStream = null;
+  }
+}
+
+async function startWebcam(cam: HTMLVideoElement | null): Promise<void> {
+  if (!cam) return;
+  if (webcamStream && cam.srcObject === webcamStream) {
+    void cam.play().catch(() => undefined);
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    if (!loadSettings().webcamBg) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
+    webcamStream = stream;
+    cam.srcObject = stream;
+    cam.hidden = false;
+    void cam.play().catch(() => undefined);
+  } catch {
+    const s = loadSettings();
+    s.webcamBg = false;
+    saveSettings(s);
+    cam.hidden = true;
+    markHudDirty();
+    paintHud();
   }
 }
 
@@ -803,6 +855,25 @@ function bindSettingsChrome(): void {
     true,
   );
   uploadBtn?.addEventListener("click", () => upload?.click());
+  const saveImport = $("hud-save-import") as HTMLInputElement | null;
+  saveImport?.addEventListener("change", () => {
+    const file = saveImport.files?.[0];
+    saveImport.value = "";
+    if (!file) return;
+    void file.text().then(async (raw) => {
+      try {
+        if (!window.confirm(t("settings.importConfirm"))) return;
+        const data = parseSaveBackup(raw);
+        await applySaveBackup(data);
+        window.location.reload();
+      } catch {
+        themeUploadMsg = t("settings.importBad");
+        lastHudPaint = "";
+        markHudDirty();
+        paintHud();
+      }
+    });
+  });
   upload?.addEventListener("change", () => {
     const file = upload.files?.[0];
     upload.value = "";
@@ -1135,6 +1206,9 @@ function syncPauseStats(on: boolean): void {
   if (!show) {
     for (const mark of digitMarks) setMarkAlpha(mark, 1, false);
     for (const mark of btnMarks) setMarkAlpha(mark, 1, true);
+    box.style.left = "";
+    box.style.top = "";
+    box.style.transform = "";
     return;
   }
   for (const mark of digitMarks) setMarkAlpha(mark, 0, false);
@@ -1171,6 +1245,7 @@ function syncPauseStats(on: boolean): void {
   placeOverlay(ret, buttons?.returnToGame, true, "left");
   placeOverlay(sound, buttons?.toggleSound, true, "left");
   placeOverlay(quit, buttons?.quitToMenu, true, "left");
+  placeOverlay(box, stats, true, "left");
 }
 
 function syncSelectPrompt(on: boolean): void {
@@ -1227,6 +1302,8 @@ function syncSidePanel(show: boolean): void {
   if (sel) sel.style.display = "none";
   panel.classList.toggle("is-open", show);
   panel.style.display = show ? "" : "none";
+  $("animation_container")?.classList.toggle("has-speedrun", show);
+  $("play-chrome")?.classList.toggle("has-speedrun", show);
 }
 
 function hideVanillaMenu(): void {
@@ -1514,10 +1591,13 @@ function navItems(): NavItem[] {
       { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems(cachedDev).map((p) => p.id), currentThemeId(), d), true) },
       { id: "locale-cycle", adjust: (d) => applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), d)) },
       { id: "toggle-theme-bg" },
+      { id: "toggle-webcam" },
       { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
       { id: "bghue", adjust: (d) => handleHudAction("bghue:" + String(clampStep(s.bgHue, d * 12, 0, 360))) },
       { id: "blockhue", adjust: (d) => handleHudAction("blockhue:" + String(clampStep(s.blockHue, d * 12, 0, 360))) },
       { id: "remap" },
+      { id: "export-save" },
+      { id: "import-save" },
     ];
   }
   if (extraView === "remap") {
@@ -1780,6 +1860,7 @@ function hudKey(): string {
     String(s.mobilePad),
     String(s.rotateScreen),
     String(s.themeBg),
+    String(s.webcamBg),
     String(s.bgTint),
     String(s.bgHue),
     String(s.blockHue),
@@ -1846,7 +1927,7 @@ function paintHud(): void {
     animateHome = false;
   } else if (extraView === "name") {
     hud.drawName();
-    placeHudInput(true, "7.3%", "42.5%", "43%", "NAME", getName(), NAME_MAX);
+    placeHudInput(true, "7.3%", "42.5%", "43%", t("name.placeholder"), getName(), NAME_MAX);
   } else if (extraView === "credits") hud.drawCredits();
   else if (extraView === "mobile-ask") hud.drawMobileAsk();
   else if (extraView === "load") {
@@ -1863,6 +1944,7 @@ function paintHud(): void {
       mobilePad: s.mobilePad,
       rotateScreen: s.rotateScreen,
       themeBg: s.themeBg,
+      webcamBg: s.webcamBg,
       music: s.music,
       sfx: s.sfx,
       bgTint: s.bgTint,
@@ -1890,19 +1972,16 @@ function paintHud(): void {
       falls: st?.totalFalls ?? 0,
       fails: lastFinished?.fails ?? 0,
       showStats,
-      rows: (lastFinished?.levels ?? []).map((lv) => ({
-        title: t("play.stage", { n: String(lv.stage).padStart(2, "0") }),
-        meta: `${lv.moves} ${t("play.moves")} · ${lv.attempts} ${t("finish.attempts")}`,
-      })),
+      rows: finishStatRows(),
     });
   } else if (extraView === "puzzles") {
     hud.drawPuzzles(utcDateLabel());
   } else if (extraView === "puzzles-seeded") {
     hud.drawSeeded();
-    placeHudInput(true, "7.3%", "37.5%", "51%", "SEED", puzzleSeed, 24);
+    placeHudInput(true, "7.3%", "37.5%", "51%", t("puzzles.seed"), puzzleSeed, 24);
   } else if (extraView === "puzzles-gauntlet") {
     hud.drawGauntlet(puzzleDiff);
-    placeHudInput(true, "7.3%", "53.5%", "51%", "SEED", gauntletSeed, 24);
+    placeHudInput(true, "7.3%", "53.5%", "51%", t("puzzles.seed"), gauntletSeed, 24);
   } else if (extraView === "history") {
     const all = loadFinishedStages();
     const maxScroll = Math.max(0, all.length - LIST_HISTORY);
@@ -1912,12 +1991,11 @@ function paintHud(): void {
       total: all.length,
       pageSize: LIST_HISTORY,
       rows: all.slice(listScroll, listScroll + LIST_HISTORY).map((rec, i) => {
-        const title = rec.title || `Stage ${String(rec.stage).padStart(2, "0")}`;
+        const title = rec.title || t("play.stage", { n: String(rec.stage).padStart(2, "0") });
+        const kind = rec.kind && rec.kind !== "campaign" ? t("history.kind." + rec.kind) : "";
         return {
           title: `${title} · ${rec.player} · ${rec.moves} ${t("play.moves")}`,
-          meta: [rec.kind && rec.kind !== "campaign" ? rec.kind : "", new Date(rec.at).toLocaleString()]
-            .filter(Boolean)
-            .join(" · "),
+          meta: [kind, rec.seed, new Date(rec.at).toLocaleString()].filter(Boolean).join(" · "),
           replay: rec.cmds.length ? () => startHistoryReplay(all[listScroll + i]!) : undefined,
         };
       }),
@@ -1998,7 +2076,7 @@ function paintHud(): void {
       marks: editorMarks(draft),
       cursor: editCursor,
     });
-    placeHudInput(true, "21.5%", "2.1%", "36%", "STAGE NAME", draftName, 24);
+    placeHudInput(true, "21.5%", "2.1%", "36%", t("creator.placeholder"), draftName, 24);
   }
 }
 
@@ -2087,6 +2165,7 @@ async function swapAtlasLive(theme: ThemeId): Promise<void> {
     if (sheet) adoptAtlasCanvas(sheet, img);
     const images = adobeComp()?.getImages?.();
     if (images) images.bloxorz_atlas_ = img;
+    refreshPlayTilesAfterTheme();
   } catch {
     /* keep current atlas */
   }
@@ -2211,6 +2290,7 @@ function sessionSeed(stageNo: number): string {
 
 function recordCmd(cmd: TapeCmd): void {
   if (!playSession?.record || autoSolve) return;
+  if (currentLabel() !== "game") return;
   tape.push(cmd);
   if (cmd === "swap") noteSwap();
 }
@@ -2218,7 +2298,7 @@ function recordCmd(cmd: TapeCmd): void {
 function persistWonStage(stageNo: number): void {
   if (!playSession?.record) return;
   const lv = run?.levels.find((l) => l.stage === stageNo);
-  const cmds = lv ? winningTape(lv) : tape.length ? tape : null;
+  const cmds = lv ? winningTape(lv) : null;
   if (!cmds?.length) return;
   const kind = sessionKind();
   const seed = sessionSeed(stageNo);
@@ -2404,12 +2484,23 @@ function handleHudAction(act: string): void {
     showGameSky(true);
     markHudDirty();
     paintHud();
+  } else if (act === "toggle-webcam") {
+    const s = loadSettings();
+    s.webcamBg = !s.webcamBg;
+    saveSettings(s);
+    applyThemeMedia();
+    markHudDirty();
+    paintHud();
+  } else if (act === "export-save") {
+    void exportSaveFile();
+  } else if (act === "import-save") {
+    ($("hud-save-import") as HTMLInputElement | null)?.click();
   } else if (act === "toggle-stats") {
     showStats = !showStats;
     markHudDirty();
     paintHud();
   } else if (act === "screenshot") {
-    void shareWinShot();
+    void copyGameShot();
     noteScreenshot();
     markHudDirty();
   } else if (act.startsWith("music:")) {
@@ -2767,6 +2858,27 @@ function startMenuAudio(): void {
 function hushPlayAudio(): void {
   setMenuMusicAllowed(false);
   stopAllSounds();
+  hushStageMusic();
+}
+
+function finishStatRows(): { title: string; meta: string }[] {
+  const levels = (lastFinished?.levels ?? []).filter((lv) => lv.tapes.some((row) => row.won && row.cmds.length) || lv.moves);
+  if (levels.length) {
+    return levels.map((lv) => ({
+      title: t("play.stage", { n: String(lv.stage).padStart(2, "0") }),
+      meta: `${lv.moves} ${t("play.moves")} · ${lv.attempts} ${t("finish.attempts")}`,
+    }));
+  }
+  const st = window.stage;
+  const moves = lastFinished?.totalMoves ?? st?.totalMoves ?? 0;
+  const attempts = (lastFinished?.fails ?? 0) + 1;
+  const stageNo = lastFinished?.levels[0]?.stage ?? st?.levelNumber ?? 1;
+  return [
+    {
+      title: t("play.stage", { n: String(stageNo).padStart(2, "0") }),
+      meta: `${moves} ${t("play.moves")} · ${attempts} ${t("finish.attempts")}`,
+    },
+  ];
 }
 
 function finishCopy(): { title: string; cleared: string } {
@@ -2790,31 +2902,21 @@ function rememberFinish(session: PlaySession | null): void {
   finishReturnTo = back && back !== "auto" && back !== "finish" ? back : "home";
 }
 
-async function shareWinShot(): Promise<void> {
+async function copyGameShot(): Promise<void> {
   const canvas = $("canvas") as HTMLCanvasElement | null;
   if (!canvas) return;
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) return;
-  const name = `bloxorz-${finishKind || "win"}.png`;
-  const file = new File([blob], name, { type: "image/png" });
-  try {
-    const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean };
-    if (nav.share && nav.canShare?.({ files: [file] })) {
-      await nav.share({ files: [file], title: finishCopy().title });
-      return;
-    }
-  } catch {
-    /* download instead */
-  }
-  try {
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-  } catch {
-    /* download instead */
-  }
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+}
+
+async function exportSaveFile(): Promise<void> {
+  const backup = await buildSaveBackup();
+  const blob = new Blob([JSON.stringify(backup)], { type: "application/json" });
   const a = document.createElement("a");
   const href = URL.createObjectURL(blob);
   a.href = href;
-  a.download = name;
+  a.download = `bloxorz-save-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   window.setTimeout(() => URL.revokeObjectURL(href), 1500);
 }
@@ -3190,8 +3292,13 @@ function commitTape(won: boolean, stageNo: number): void {
 
 function scheduleBeatCheck(): void {
   const issue = isPlayable(draft);
-  beatLabel = beatBadge(draft, issue);
-  beaten = !issue && beatLabel === "CAN BE BEAT";
+  if (issue) {
+    beatLabel = issue;
+    beaten = false;
+  } else {
+    beaten = checkBeatable(draft);
+    beatLabel = beaten ? t("creator.beatable") : t("creator.impossible");
+  }
   if (extraView === "creator-edit" || extraView === "creator") {
     markHudDirty();
     paintHud();
@@ -3762,6 +3869,18 @@ function syncOverlay(): void {
       showStats = false;
       saveRun(run);
       run = null;
+    } else {
+      lastFinished = {
+        id: `${Date.now()}`,
+        at: Date.now(),
+        player: getName() || "BLOX",
+        totalTimeMs: 0,
+        totalMoves: stage?.totalMoves ?? 0,
+        fails: stage?.totalFalls ?? 0,
+        complete: true,
+        levels: [],
+      };
+      showStats = false;
     }
     rememberFinish(playSession);
     lastLabel = label;
@@ -3803,6 +3922,7 @@ function syncOverlay(): void {
   }
 
   if (inRun) {
+    hushStageMusic();
     if (overlayMode !== "run") {
       overlayMode = "run";
       hushPlayAudio();
@@ -4159,3 +4279,5 @@ window.__bloxLoadThemeAtlas = async (theme: string) => {
     return orig.call(this, type, attrs);
   } as typeof orig;
 })();
+
+gateSoundPlay();

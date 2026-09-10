@@ -268,14 +268,31 @@ async function idbDelete(id: string): Promise<void> {
   });
 }
 
+function mimeFor(name: string): string {
+  const n = name.toLowerCase();
+  if (n.endsWith(".png")) return "image/png";
+  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+  if (n.endsWith(".gif")) return "image/gif";
+  if (n.endsWith(".webp")) return "image/webp";
+  if (n.endsWith(".mp3")) return "audio/mpeg";
+  if (n.endsWith(".wav")) return "audio/wav";
+  if (n.endsWith(".ogg")) return "audio/ogg";
+  if (n.endsWith(".mp4")) return "video/mp4";
+  if (n.endsWith(".webm")) return "video/webm";
+  return "application/octet-stream";
+}
+
 function filesToUrls(files: Record<string, ArrayBuffer>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, buf] of Object.entries(files)) {
-    const url = URL.createObjectURL(new Blob([new Uint8Array(buf)]));
+    const url = URL.createObjectURL(new Blob([new Uint8Array(buf)], { type: mimeFor(name) }));
     objectUrls.push(url);
     out[name] = url;
+    const key = fileKey(name);
+    if (key !== name && !out[key]) out[key] = url;
     const base = zipBase(name);
     if (base !== name && !out[base]) out[base] = url;
+    if (base && !out["tiles/" + base]) out["tiles/" + base] = url;
   }
   return out;
 }

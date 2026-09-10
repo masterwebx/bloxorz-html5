@@ -30,11 +30,16 @@ export function isAudioUnlocked(): boolean {
 }
 
 export function gateSoundPlay(): void {
+  hookHtmlAudioPlay();
   const sound = (window as unknown as { createjs?: { Sound?: { play: (...a: unknown[]) => SoundInst } } }).createjs
     ?.Sound;
   if (!sound?.play || origPlay) return;
   origPlay = sound.play.bind(sound);
   sound.play = function gated(...args: unknown[]) {
+    if (isMusicId(args[0]) && !allowMenuMusic) {
+      hushStageMusic();
+      return mutedMusic;
+    }
     if (!ctxReady) {
       queued.push(args);
       return null;
@@ -119,11 +124,88 @@ const mutedMusic: NonNullable<SoundInst> = {
   },
 };
 
+function musicSrcOf(el: HTMLAudioElement): string {
+  return `${el.currentSrc || el.getAttribute("src") || ""}`.toLowerCase();
+}
+
+function isMusicElement(el: HTMLAudioElement): boolean {
+  return el === musicEl || /music/i.test(musicSrcOf(el));
+}
+
+function stopCreatejsMusic(): void {
+  try {
+    const sound = (window as unknown as { createjs?: { Sound?: { stop?: (id?: string) => void; _instances?: SoundInst[] } } }).createjs
+      ?.Sound;
+    const rows = sound?._instances;
+    if (Array.isArray(rows)) {
+      for (const inst of rows) {
+        const rec = inst as { src?: string; stop?: () => void };
+        if (isMusicId(rec.src) || /music/i.test(`${rec.src || ""}`)) inst?.stop?.();
+      }
+    }
+  } catch {
+    /* plugin may not be ready */
+  }
+}
+
+function pinSilentMenuHandle(): void {
+  if (typeof window === "undefined") return;
+  const st = (window as unknown as { stage?: { menuMusic?: SoundInst } }).stage;
+  if (!st) return;
+  try {
+    if (st.menuMusic && st.menuMusic !== mutedMusic) st.menuMusic.stop?.();
+  } catch {
+    /* ignore */
+  }
+  st.menuMusic = mutedMusic;
+}
+
+export function hushStageMusic(): void {
+  allowMenuMusic = false;
+  stopMenuMusic();
+  stopThemeMusic();
+  stopCreatejsMusic();
+  pinSilentMenuHandle();
+  try {
+    document.querySelectorAll("audio").forEach((el) => {
+      el.loop = false;
+      if (isMusicElement(el)) {
+        el.pause();
+        try {
+          el.currentTime = 0;
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+function hookHtmlAudioPlay(): void {
+  if (typeof HTMLAudioElement === "undefined") return;
+  const proto = HTMLAudioElement.prototype as HTMLAudioElement["prototype"] & { __bloxPlay?: typeof HTMLAudioElement.prototype.play };
+  if (proto.__bloxPlay) return;
+  const orig = proto.play;
+  proto.__bloxPlay = orig;
+  proto.play = function bloxPlay(this: HTMLAudioElement, ...args: unknown[]) {
+    if (!allowMenuMusic) {
+      this.loop = false;
+      if (isMusicElement(this)) {
+        this.pause();
+        return Promise.resolve();
+      }
+    }
+    return orig.apply(this, args as []);
+  };
+}
+
 function playNow(args: PlayArgs): SoundInst {
   const play = normalizePlayArgs(args);
   if (isMusicId(play[0])) {
     if (!allowMenuMusic) {
-      stopVanillaMenuMusic();
+      hushStageMusic();
       return mutedMusic;
     }
     ensureMenuMusic();
@@ -203,7 +285,7 @@ export function unlockAudio(after?: () => void): boolean {
 
 export function setMenuMusicAllowed(on: boolean): void {
   allowMenuMusic = on;
-  if (!on) stopMenuMusic();
+  if (!on) hushStageMusic();
 }
 
 function defaultMusicUrl(): string {
@@ -280,21 +362,11 @@ export function stopMenuMusic(): void {
 }
 
 export function stopVanillaMenuMusic(): void {
-  if (typeof window === "undefined") return;
-  const st = (window as unknown as { stage?: { menuMusic?: SoundInst } }).stage;
-  try {
-    st?.menuMusic?.stop?.();
-  } catch {
-    /* ignore */
-  }
-  if (st) st.menuMusic = null;
+  hushStageMusic();
 }
 
 export function stopAllSounds(): void {
   setMenuMusicAllowed(false);
-  stopMenuMusic();
-  stopThemeMusic();
-  stopVanillaMenuMusic();
   queued = [];
   unloopHtmlAudio();
   try {
@@ -311,6 +383,7 @@ export function stopAllSounds(): void {
   } catch {
     /* plugin may not be ready */
   }
+  pinSilentMenuHandle();
 }
 
 export function resetAudioForTests(): void {

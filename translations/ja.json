@@ -252,5 +252,20 @@
   "records.screenshots": "スクリーンショット",
   "records.ghosts": "ゴースト",
   "records.themes": "使用したテーマ",
-  "records.replays": "履歴リプレイ"
+  "records.replays": "履歴リプレイ",
+  "creator.name": "名前",
+  "creator.beatable": "クリア可能",
+  "creator.impossible": "不可能",
+  "creator.placeholder": "ステージ名",
+  "puzzles.seed": "シード",
+  "history.kind.campaign": "キャンペーン",
+  "history.kind.custom": "カスタム",
+  "history.kind.daily": "デイリー",
+  "history.kind.gauntlet": "ガントレット",
+  "history.kind.seeded": "シード",
+  "settings.webcam": "カメラ背景",
+  "settings.export": "データを書き出す",
+  "settings.import": "セーブを読み込む",
+  "settings.importConfirm": "この端末のセーブをファイルで置き換えますか？",
+  "settings.importBad": "セーブファイルを読めませんでした。"
 }

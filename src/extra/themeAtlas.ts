@@ -28,9 +28,10 @@ function lookupPackFile(pack: ThemePack, file: string): string | null {
   if (pack.files?.[file]) return pack.files[file]!;
   if (pack.files) {
     const want = file.replace(/\\/g, "/").toLowerCase();
+    const base = want.split("/").pop() || want;
     const hit = Object.entries(pack.files).find(([k]) => {
       const key = k.replace(/\\/g, "/").toLowerCase();
-      return key === want || key.endsWith("/" + want) || key.endsWith(want.split("/").pop() || want);
+      return key === want || key.endsWith("/" + want) || key === base || key.endsWith("/" + base);
     });
     if (hit) return hit[1];
   }
@@ -40,7 +41,13 @@ function lookupPackFile(pack: ThemePack, file: string): string | null {
 
 export function resolveAtlasFile(id: string, file: string): string | null {
   const pack = getTheme(id);
-  return lookupPackFile(pack, file) || themeFileUrl("original", file);
+  const fromPack = lookupPackFile(pack, file);
+  if (fromPack) return fromPack;
+  if (!pack.builtin) {
+    const fallback = lookupPackFile(getTheme("original"), file);
+    if (fallback) return fallback;
+  }
+  return themeFileUrl("original", file);
 }
 
 function loadImage(src: string): Promise<HTMLImageElement | null> {

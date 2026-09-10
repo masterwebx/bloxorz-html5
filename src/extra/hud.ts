@@ -1,13 +1,11 @@
 import { playHomeWhoosh, playUiClick, playUiLatch } from "./audio";
 import {
   BOARD_VIEW,
-  CLIP_OFFSET,
-  clipForTile,
   type ClipName,
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
 import { GAUNTLET_QUALITY } from "./generate";
-import { DEFAULT_ISO, TILE_FACE, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
+import { DEFAULT_ISO, TILE_FACE, TOOL_CH, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
 import { rustFaces } from "./hue";
 import { t } from "./i18n";
 import { currentTheme } from "./settings";
@@ -284,8 +282,6 @@ export function drawBillboard(container: HudNode, label: string, x: number, y: n
   return letters.length * 6 * pitch;
 }
 
-const CLIP_ISO_SCALE = 0.3;
-
 export class ExtraHud {
   readonly root: HudNode;
   private layer: HudNode;
@@ -546,6 +542,7 @@ export class ExtraHud {
     mobilePad: boolean;
     rotateScreen: boolean;
     themeBg: boolean;
+    webcamBg: boolean;
     music: number;
     sfx: number;
     bgTint: number;
@@ -574,7 +571,8 @@ export class ExtraHud {
     }
     this.add(text(t("settings.theme"), 40, 132, 12, this.focusId === "theme-cycle" ? theme.hot : theme.ink));
     this.add(text(t("settings.language"), 40, 156, 12, this.focusId === "locale-cycle" ? theme.hot : theme.ink));
-    this.add(this.act("toggle-theme-bg", `${this.focusId === "toggle-theme-bg" ? "> " : "  "}${t("settings.themeBg")}  ${onOff(opts.themeBg)}`, 40, 180, 12, false, 280));
+    this.add(this.act("toggle-theme-bg", `${this.focusId === "toggle-theme-bg" ? "> " : "  "}${t("settings.themeBg")}  ${onOff(opts.themeBg)}`, 40, 180, 12, false, 230));
+    this.add(this.act("toggle-webcam", `${this.focusId === "toggle-webcam" ? "> " : "  "}${t("settings.webcam")}  ${onOff(opts.webcamBg)}`, 300, 180, 12, false, 230));
     this.add(text(t("settings.tint"), 40, 202, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
     this.add(slider(160, 202, 120, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
     this.add(swatch(300, 204, opts.bgHue, opts.bgTint));
@@ -585,7 +583,9 @@ export class ExtraHud {
     this.add(slider(160, 242, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
     this.add(swatch(300, 244, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
     this.placePreview(392, 198);
-    this.add(this.act("remap", t("settings.remap"), 40, 264, 12, false, 180));
+    this.add(this.act("remap", t("settings.remap"), 40, 264, 12, false, 160));
+    this.add(this.act("export-save", t("settings.export"), 200, 264, 12, false, 130));
+    this.add(this.act("import-save", t("settings.import"), 350, 264, 12, false, 160));
   }
 
   drawRemap(rows: { id: string; label: string; bind: string }[], waiting: string | null): void {
@@ -809,7 +809,7 @@ export class ExtraHud {
     this.hideMascot();
     const theme = paint();
     this.add(this.act("creator-make", t("common.back"), 10, 6, 12, false, 56));
-    this.add(text(t("settings.name"), 72, 8, 12));
+    this.add(text(t("creator.name"), 72, 8, 12));
     this.add(fieldBox(118, 6, 200));
     this.add(text(opts.badge, 330, 8, 11, theme.green));
     this.add(this.act("creator-test", t("creator.test"), 490, 6, 12, false, 50));
@@ -900,25 +900,10 @@ export class ExtraHud {
       for (let x = 0; x < 15; x++) cells.push({ x, y, ch: opts.tiles[y]?.[x] ?? " " });
     }
     cells.sort((a, b) => a.y - a.x - (b.y - b.x));
-    const overlays: HudNode[] = [];
     for (const cell of cells) {
       drawIsoTile(mesh, cell.x, cell.y, cell.ch, DEFAULT_ISO);
-      if (cell.ch === " ") continue;
-      const clip = this.tryAtlasClip(cell.ch);
-      if (!clip) continue;
-      const spec = clipForTile(cell.ch);
-      const p = isoCenter(cell.x, cell.y, DEFAULT_ISO);
-      const [ox, oy] = spec ? CLIP_OFFSET[spec.name] : [0, 0];
-      clip.x = p.x + ox * CLIP_ISO_SCALE;
-      clip.y = p.y + oy * CLIP_ISO_SCALE;
-      clip.scaleX = CLIP_ISO_SCALE;
-      clip.scaleY = CLIP_ISO_SCALE;
-      clip.mouseEnabled = false;
-      if (spec && spec.dim < 1) (clip as HudNode & { alpha?: number }).alpha = spec.dim;
-      overlays.push(clip);
     }
     this.board.addChild(mesh);
-    for (const clip of overlays) this.board.addChild(clip);
     const spawn = isoCenter(opts.spawn[0], opts.spawn[1], DEFAULT_ISO);
     const block = new createjs.Shape();
     block.graphics.beginFill("#ff7a18").drawRect(-5, -14, 10, 16);
@@ -939,41 +924,15 @@ export class ExtraHud {
     }
   }
 
-  private tryAtlasClip(ch: string): HudNode | null {
-    if (ch === " ") return null;
-    const spec = clipForTile(ch);
-    if (!spec) return null;
-    try {
-      return this.makeClip?.(spec.name) ?? null;
-    } catch {
-      return null;
-    }
-  }
-
   private toolClip(id: string, x: number, y: number): HudNode {
-    const ch = id === "erase" ? " " : id === "spawn" ? "b" : id === "link" ? "s" : id === "exit" ? "e" : id === "stone" ? "b" : id === "soft" ? "s" : id === "heavy" ? "h" : id === "fragile" ? "f" : id === "split" ? "v" : id === "bridgeL" ? "l" : id === "bridgeR" ? "r" : " ";
-    const spec = clipForTile(ch);
     const wrap = new createjs.Container();
     wrap.x = x;
     wrap.y = y;
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
-    const clip = spec ? this.makeClip?.(spec.name) : null;
-    if (clip) {
-      const [ox, oy] = CLIP_OFFSET[spec!.name];
-      clip.x = 6 - ox * 0.22;
-      clip.y = 8 - oy * 0.22;
-      clip.scaleX = 0.22;
-      clip.scaleY = 0.22;
-      clip.mouseEnabled = false;
-      clip.visible = true;
-      clip.alpha = 1;
-      clip.gotoAndStop?.(0);
-      wrap.addChild(clip);
-      return wrap;
-    }
+    const ch = TOOL_CH[id] ?? " ";
     const s = new createjs.Shape();
-    s.graphics.beginFill("rgba(255,255,255,0.22)").drawRect(1, 2, 12, 10);
+    drawIsoTile(s, 0, 0, ch, { ox: 2, oy: 10, s: 0.42 });
     wrap.addChild(s);
     return wrap;
   }

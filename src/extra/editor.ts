@@ -61,7 +61,7 @@ export function checkBeatable(def: LevelDef, limit = 80_000): boolean {
 
 export function beatBadge(def: LevelDef, playable: string | null): string {
   if (playable) return playable;
-  return checkBeatable(def) ? "CAN BE BEAT" : "IMPOSSIBLE";
+  return checkBeatable(def) ? t("creator.beatable") : t("creator.impossible");
 }
 
 function solid(def: LevelDef, x: number, y: number): boolean {

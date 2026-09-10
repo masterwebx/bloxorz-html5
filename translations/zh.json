@@ -252,5 +252,20 @@
   "records.screenshots": "截图",
   "records.ghosts": "幽灵",
   "records.themes": "用过的主题",
-  "records.replays": "历史回放"
+  "records.replays": "历史回放",
+  "creator.name": "名称",
+  "creator.beatable": "可通关",
+  "creator.impossible": "不可能",
+  "creator.placeholder": "关卡名称",
+  "puzzles.seed": "种子",
+  "history.kind.campaign": "战役",
+  "history.kind.custom": "自定义",
+  "history.kind.daily": "每日",
+  "history.kind.gauntlet": "试炼",
+  "history.kind.seeded": "种子",
+  "settings.webcam": "摄像头背景",
+  "settings.export": "导出数据",
+  "settings.import": "导入存档",
+  "settings.importConfirm": "用该文件替换此设备上的存档？",
+  "settings.importBad": "无法读取该存档文件。"
 }

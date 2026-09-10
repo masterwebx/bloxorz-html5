@@ -117,12 +117,16 @@ function migrateFinishedFromRuns(): FinishedStage[] {
 
 export function loadFinishedStages(): FinishedStage[] {
   const rows = readJson<FinishedStage[]>(FINISHED_KEY, []);
-  if (Array.isArray(rows) && rows.length) return rows;
-  return migrateFinishedFromRuns();
+  const src = Array.isArray(rows) && rows.length ? rows : migrateFinishedFromRuns();
+  return src.filter(isCompletedFinish);
+}
+
+function isCompletedFinish(row: FinishedStage | null | undefined): row is FinishedStage {
+  return !!row && Array.isArray(row.cmds) && row.cmds.length > 0;
 }
 
 export function saveFinishedStage(row: FinishedStage): void {
-  if (!row.cmds.length) return;
+  if (!isCompletedFinish(row)) return;
   const rows = loadFinishedStages().filter((r) => r.id !== row.id);
   rows.unshift(row);
   store().setItem(FINISHED_KEY, JSON.stringify(rows.slice(0, MAX_FINISHED)));

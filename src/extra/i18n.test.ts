@@ -40,6 +40,10 @@ describe("i18n", () => {
     expect(t("howto.next")).toBe("Siguiente >");
     expect(t("pause.resume")).toBe("Volver al juego");
     expect(t("timer.stage")).toBe("Fase");
+    expect(t("puzzles.gauntlet")).toBe("Desafío");
+    expect(t("puzzles.seed")).toBe("Semilla");
+    expect(t("creator.test")).toBe("Probar");
+    expect(t("creator.beatable")).toBe("SE PUEDE SUPERAR");
   });
 
   it("keeps English Classic on bitmap marks and English on HD type", () => {

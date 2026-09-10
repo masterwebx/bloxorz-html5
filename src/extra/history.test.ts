@@ -93,6 +93,49 @@ describe("history finished stages", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].title).toBe("Stage 01");
   });
+
+  it("does not list in-progress or empty tapes", () => {
+    const store = memoryStore();
+    setHistoryStorage(store);
+    saveFinishedStage({
+      id: "early",
+      at: 4,
+      player: "BLOX",
+      stage: 1,
+      moves: 0,
+      cmds: [],
+      title: "Stage 01",
+    });
+    expect(loadFinishedStages()).toEqual([]);
+    store.setItem(
+      "bloxorz-finished-v1",
+      JSON.stringify([
+        { id: "partial", at: 5, player: "BLOX", stage: 2, moves: 2, cmds: [] },
+        { id: "won", at: 6, player: "BLOX", stage: 1, moves: 3, cmds: ["right", "right", "down"] },
+      ]),
+    );
+    const rows = loadFinishedStages();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("won");
+    expect(rows[0].cmds).toEqual(["right", "right", "down"]);
+  });
+
+  it("does not promote a failed attempt into history", () => {
+    const store = memoryStore();
+    setHistoryStorage(store);
+    saveRun({
+      id: "fail-run",
+      at: 8,
+      player: "BLOX",
+      totalTimeMs: 40,
+      totalMoves: 3,
+      fails: 1,
+      complete: false,
+      levels: [{ stage: 1, timeMs: 40, moves: 3, attempts: 1, tapes: [{ cmds: ["right", "up", "left"], won: false }] }],
+    });
+    expect(loadRuns()).toEqual([]);
+    expect(loadFinishedStages()).toEqual([]);
+  });
 });
 
 describe("run history", () => {

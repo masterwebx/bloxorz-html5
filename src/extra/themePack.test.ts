@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveAtlasFile } from "./themeAtlas";
 import { getTheme, installThemeZip, isHdTheme, isSolid3d, setCurrentThemeId, themeMenuItems } from "./themePack";
 
 function crc32(buf: Uint8Array): number {
@@ -142,5 +143,17 @@ describe("theme packs", () => {
     expect(again.id).not.toBe(first.id);
     expect(again.id).not.toBe("original");
     expect(getTheme(first.id).builtin).toBe(false);
+  });
+
+  it("resolves uploaded tile files for in-game atlas compose", async () => {
+    const pack = await installThemeZip(
+      await zipOf([
+        { name: "theme.json", body: '{"id":"paint","name":"Paint"}' },
+        { name: "tiles/metal_v2.png", body: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) },
+      ]),
+    );
+    const url = resolveAtlasFile(pack.id, "tiles/metal_v2.png");
+    expect(url).toMatch(/^(blob:|data:)/);
+    expect(url).not.toContain("themes/original/");
   });
 });

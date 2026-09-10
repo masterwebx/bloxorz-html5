@@ -37,6 +37,7 @@ describe("mobile settings", () => {
     expect(s.mobilePadChoice).toBe("");
     expect(s.rotateScreen).toBe(false);
     expect(s.showTimer).toBe(false);
+    expect(s.webcamBg).toBe(false);
   });
 
   it("keeps an explicit speedrun timer on", () => {

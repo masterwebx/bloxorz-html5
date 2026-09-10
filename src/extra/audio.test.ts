@@ -80,10 +80,29 @@ describe("stage start audio", () => {
     const inst = w.createjs.Sound.play("Music");
     expect(played).toHaveLength(0);
     expect(inst?.loop).toBe(0);
-    expect(w.stage.menuMusic).toBeNull();
+    expect(w.stage.menuMusic).toBe(inst);
     const looping = w.createjs.Sound.play("Music", { loop: -1 });
     expect(played).toHaveLength(0);
     expect(looping?.loop).toBe(0);
+    expect(w.stage.menuMusic).toBe(looping);
+  });
+
+  it("keeps a late Music play silent and does not let vanilla retry", () => {
+    const played: unknown[][] = [];
+    installSound((...args) => {
+      played.push(args);
+      return { loop: -1, stop() {} };
+    });
+    const w = window as unknown as { stage: { menuMusic?: SoundInst | null }; createjs: { Sound: { play: (...a: unknown[]) => SoundInst } } };
+    setMenuMusicAllowed(false);
+    stopAllSounds();
+    window.setTimeout(() => {
+      w.createjs.Sound.play("Music", { loop: -1 });
+    }, 0);
+    const inst = w.createjs.Sound.play("Music", { loop: -1 });
+    expect(played).toHaveLength(0);
+    expect(inst?.volume).toBe(0);
+    expect(w.stage.menuMusic).toBeTruthy();
   });
 
   it("forces 1-arg SFX onto a play-once HTML tag", () => {
@@ -112,6 +131,7 @@ describe("stage start audio", () => {
     };
     stopVanillaMenuMusic();
     expect(stopped).toEqual(["music"]);
-    expect(w.stage.menuMusic).toBeNull();
+    expect(w.stage.menuMusic).toBeTruthy();
+    expect(w.stage.menuMusic?.volume).toBe(0);
   });
 });

@@ -255,5 +255,20 @@
   "theme.uploadBad": "Could not read that theme zip.",
   "theme.uploadOk": "Theme installed.",
   "creator.empty": "No saved stages yet. Paint one and Save.",
-  "creator.emptySaved": "No saved stages yet."
+  "creator.emptySaved": "No saved stages yet.",
+  "creator.name": "Name",
+  "creator.beatable": "CAN BE BEAT",
+  "creator.impossible": "IMPOSSIBLE",
+  "creator.placeholder": "STAGE NAME",
+  "puzzles.seed": "Seed",
+  "history.kind.campaign": "Campaign",
+  "history.kind.custom": "Custom",
+  "history.kind.daily": "Daily",
+  "history.kind.gauntlet": "Gauntlet",
+  "history.kind.seeded": "Seeded",
+  "settings.webcam": "Webcam background",
+  "settings.export": "Export data",
+  "settings.import": "Import save data",
+  "settings.importConfirm": "Replace this device's save with the file?",
+  "settings.importBad": "Could not read that save file."
 }
