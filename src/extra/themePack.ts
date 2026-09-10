@@ -106,8 +106,14 @@ export function listThemes(): ThemePack[] {
   });
 }
 
-export function themeMenuItems(): { id: string; name: string; builtin: boolean }[] {
-  return listThemes().map((pack) => ({ id: pack.id, name: pack.name, builtin: pack.builtin }));
+export function isDevOnlyTheme(id: string): boolean {
+  return id === "solid3d";
+}
+
+export function themeMenuItems(dev = false): { id: string; name: string; builtin: boolean }[] {
+  return listThemes()
+    .filter((pack) => !isDevOnlyTheme(pack.id) || dev)
+    .map((pack) => ({ id: pack.id, name: pack.name, builtin: pack.builtin }));
 }
 
 export function getTheme(id: string): ThemePack {
@@ -218,14 +224,23 @@ function openDb(): Promise<IDBDatabase> {
 
 type StoredPack = { json: RawTheme; files: Record<string, ArrayBuffer> };
 
-async function idbGetAll(): Promise<StoredPack[]> {
+async function idbEntries(): Promise<{ key: string; row: StoredPack }[]> {
   if (typeof indexedDB === "undefined") return [];
   try {
     const db = await openDb();
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, "readonly");
-      const req = tx.objectStore(IDB_STORE).getAll();
-      req.onsuccess = () => resolve((req.result as StoredPack[]) ?? []);
+      const req = tx.objectStore(IDB_STORE).openCursor();
+      const out: { key: string; row: StoredPack }[] = [];
+      req.onsuccess = () => {
+        const cur = req.result;
+        if (!cur) {
+          resolve(out);
+          return;
+        }
+        out.push({ key: String(cur.key), row: cur.value as StoredPack });
+        cur.continue();
+      };
       req.onerror = () => reject(req.error);
     });
   } catch {
@@ -238,6 +253,16 @@ async function idbPut(id: string, row: StoredPack): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readwrite");
     tx.objectStore(IDB_STORE).put(row, id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbDelete(id: string): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(id);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -278,26 +303,49 @@ function registerStored(row: StoredPack): ThemePack | null {
     for (const [k, v] of Object.entries(pack.audio.sfx)) mapped[k] = lookupFile(urls, v) ?? v;
     pack.audio.sfx = mapped;
   }
+  if (packs.get(pack.id)?.builtin || packs.has(pack.id)) {
+    pack.id = uniqueCustomId(pack.id, "");
+  }
   packs.set(pack.id, pack);
   return pack;
 }
 
-export async function bootThemes(saved?: string | null): Promise<string> {
+let themesBooted = false;
+
+export async function bootThemes(saved?: string | null, dev = false): Promise<string> {
   seedBuiltins();
-  try {
-    const idx = (await fetch("themes/index.json").then((r) => (r.ok ? r.json() : []))) as string[];
-    for (const id of idx) {
-      if (packs.has(id) || id.startsWith("_")) continue;
-      const raw = (await fetch(`themes/${id}/theme.json`).then((r) => (r.ok ? r.json() : null))) as RawTheme | null;
-      if (!raw) continue;
-      const pack = normalizePack(raw, id, true);
-      packs.set(pack.id, pack);
+  if (!themesBooted) {
+    try {
+      const idx = (await fetch("themes/index.json").then((r) => (r.ok ? r.json() : []))) as string[];
+      for (const id of idx) {
+        if (packs.has(id) || id.startsWith("_")) continue;
+        const raw = (await fetch(`themes/${id}/theme.json`).then((r) => (r.ok ? r.json() : null))) as RawTheme | null;
+        if (!raw) continue;
+        const pack = normalizePack(raw, id, true);
+        packs.set(pack.id, pack);
+      }
+    } catch {
+      /* bundled builtins are enough */
     }
-  } catch {
-    /* bundled builtins are enough */
+    for (const { key, row } of await idbEntries()) {
+      if (!row?.json) continue;
+      const claimed = sanitizeThemeId(row.json.id || key || "custom") || "custom";
+      let id = claimed;
+      if (packs.has(id)) {
+        id = uniqueCustomId(claimed, "");
+        row.json = { ...row.json, id };
+        try {
+          await idbPut(id, row);
+          if (key !== id) await idbDelete(key);
+        } catch {
+          /* keep the remapped pack live even if IDB rewrite fails */
+        }
+      }
+      registerStored({ ...row, json: { ...row.json, id } });
+    }
+    themesBooted = true;
   }
-  for (const row of await idbGetAll()) registerStored(row);
-  if (saved && packs.has(saved)) currentId = saved;
+  if (saved && packs.has(saved) && (dev || !isDevOnlyTheme(saved))) currentId = saved;
   else currentId = "original";
   return currentId;
 }
@@ -317,23 +365,18 @@ function sanitizeThemeId(id: string): string {
     .slice(0, 48);
 }
 
-function uniqueCustomId(rawId: string, folder: string): string {
+export function uniqueCustomId(rawId: string, folder = ""): string {
   seedBuiltins();
-  const folderId = sanitizeThemeId(folder);
   const wanted = sanitizeThemeId(rawId);
-  const builtinHit = (id: string): boolean => {
-    const pack = packs.get(id);
-    return !!pack?.builtin;
-  };
-  let id = folderId && builtinHit(wanted) ? folderId : wanted || folderId || "custom";
-  if (!id) id = "custom";
-  if (builtinHit(id)) id = folderId && folderId !== id ? folderId : `${id}-pack`;
-  if (builtinHit(id)) {
-    let n = 2;
-    while (packs.has(`${id}-${n}`)) n += 1;
-    id = `${id}-${n}`;
-  }
-  return id;
+  const folderId = sanitizeThemeId(folder);
+  const base =
+    (!wanted || packs.has(wanted)) && folderId && !packs.has(folderId) ? folderId : wanted || folderId || "custom";
+  if (!packs.has(base)) return base;
+  const stem = folderId && !packs.has(folderId) ? folderId : `${base}-pack`;
+  if (!packs.has(stem)) return stem;
+  let n = 2;
+  while (packs.has(`${stem}-${n}`)) n += 1;
+  return `${stem}-${n}`;
 }
 
 function fileKey(name: string): string {

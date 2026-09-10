@@ -61,6 +61,7 @@ import {
   currentThemeId,
   getTheme,
   installThemeZip,
+  isDevOnlyTheme,
   isHdTheme,
   isSolid3d,
   setCurrentThemeId,
@@ -411,6 +412,7 @@ function setName(name: string): void {
     cachedDev = isDevName(next);
     nameRead = true;
     if (cachedDev && !wasDev) playDevJingle();
+    if (!cachedDev && isDevOnlyTheme(currentThemeId())) applyTheme("original", true);
   } catch {
     /* ignore */
   }
@@ -699,7 +701,7 @@ function toggleSettingsDropdown(wrap: HTMLElement): void {
 }
 
 function themeSelectOpts(): { id: string; name: string }[] {
-  return themeMenuItems().map((pack) => ({
+  return themeMenuItems(cachedDev).map((pack) => ({
     id: pack.id,
     name: pack.builtin ? themePackLabel(pack.id, pack.name) : pack.name,
   }));
@@ -1508,7 +1510,7 @@ function navItems(): NavItem[] {
       { id: "toggle-mobile-pad" },
       { id: "toggle-timer" },
       ...(s.mobilePad ? [{ id: "toggle-rotate" }] : []),
-      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems().map((p) => p.id), currentThemeId(), d), true) },
+      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems(cachedDev).map((p) => p.id), currentThemeId(), d), true) },
       { id: "locale-cycle", adjust: (d) => applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), d)) },
       { id: "toggle-theme-bg" },
       { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
@@ -1783,7 +1785,7 @@ function hudKey(): string {
     String(s.music),
     String(s.sfx),
     currentThemeId(),
-    themeMenuItems().map((p) => p.id).join(","),
+    themeMenuItems(cachedDev).map((p) => p.id).join(","),
     themeUploadMsg,
     localeId(),
     finishKind,
@@ -2019,7 +2021,7 @@ function openPanel(name: Screen): void {
 }
 
 function applyTheme(theme: ThemeId, reload = false): void {
-  const id = normalizeTheme(theme);
+  const id = isDevOnlyTheme(normalizeTheme(theme)) && !cachedDev ? "original" : normalizeTheme(theme);
   setCurrentThemeId(id);
   try {
     localStorage.setItem("theme", id);
@@ -2043,7 +2045,7 @@ function applyTheme(theme: ThemeId, reload = false): void {
   }
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) {
-    const ids = themeMenuItems();
+    const ids = themeMenuItems(cachedDev);
     if (sel.dataset.ids !== ids.map((p) => p.id).join(",")) {
       sel.innerHTML = "";
       for (const pack of ids) {
@@ -2448,7 +2450,7 @@ function handleHudAction(act: string): void {
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
-    applyTheme(cycleList(themeMenuItems().map((p) => p.id), currentThemeId(), 1), true);
+    applyTheme(cycleList(themeMenuItems(cachedDev).map((p) => p.id), currentThemeId(), 1), true);
   } else if (act === "locale-cycle") {
     applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), 1));
   } else if (act.startsWith("locale:")) {
@@ -4051,7 +4053,7 @@ export function startBloxorzShell(): void {
   $("pause-sound")?.addEventListener("click", () => clickPauseButton("toggleSound"));
   $("pause-quit")?.addEventListener("click", () => clickPauseButton("quitToMenu"));
   void (async () => {
-    const theme = await bootThemes(currentTheme());
+    const theme = await bootThemes(currentTheme(), cachedDev);
     setCurrentThemeId(theme);
     await loadExtraLocales();
     applyDocumentLocale(localeId());
@@ -4111,7 +4113,7 @@ export function startBloxorzShell(): void {
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) {
-    const ids = themeMenuItems();
+    const ids = themeMenuItems(cachedDev);
     sel.innerHTML = "";
     for (const pack of ids) {
       const opt = document.createElement("option");
@@ -4133,7 +4135,13 @@ export function startBloxorzShell(): void {
 
 window.startBloxorzShell = startBloxorzShell;
 window.__bloxLoadThemeAtlas = async (theme: string) => {
-  const id = await bootThemes(theme);
+  let dev = false;
+  try {
+    dev = isDevName((localStorage.getItem(NAME_KEY) || "").trim());
+  } catch {
+    /* ignore */
+  }
+  const id = await bootThemes(theme, dev);
   return composeThemeAtlas(id, true);
 };
 

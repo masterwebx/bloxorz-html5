@@ -80,11 +80,16 @@ async function zipOf(files: { name: string; body: string | Uint8Array; deflate?:
 
 describe("theme packs", () => {
   it("ships original, gray, holiday, and solid 3D", () => {
-    const ids = themeMenuItems().map((p) => p.id);
+    const ids = themeMenuItems(true).map((p) => p.id);
     expect(ids).toContain("original");
     expect(ids).toContain("gray");
     expect(ids).toContain("holiday");
     expect(ids).toContain("solid3d");
+  });
+
+  it("hides Solid 3D from the theme list unless DEV mode is on", () => {
+    expect(themeMenuItems(false).map((p) => p.id)).not.toContain("solid3d");
+    expect(themeMenuItems(true).map((p) => p.id)).toContain("solid3d");
   });
 
   it("marks the 3D pack as HD isometric cubes", () => {
@@ -115,5 +120,27 @@ describe("theme packs", () => {
     expect(menu.map((p) => p.id)).toContain("mewga");
     expect(menu.find((p) => p.id === "mewga")?.name).toBe("mewga");
     expect(getTheme("original").builtin).toBe(true);
+  });
+
+  it("does not overwrite a builtin or an already installed custom pack", async () => {
+    const originalFiles = getTheme("original").files;
+    const first = await installThemeZip(
+      await zipOf([
+        { name: "theme.json", body: '{"id":"original","name":"Hijack"}' },
+        { name: "tiles/metal_v2.png", body: new Uint8Array([1, 2, 3, 4]) },
+      ]),
+    );
+    expect(first.id).not.toBe("original");
+    expect(getTheme("original").builtin).toBe(true);
+    expect(getTheme("original").files).toBe(originalFiles);
+    const again = await installThemeZip(
+      await zipOf([
+        { name: "theme.json", body: '{"id":"original","name":"Hijack"}' },
+        { name: "tiles/metal_v2.png", body: new Uint8Array([5, 6, 7, 8]) },
+      ]),
+    );
+    expect(again.id).not.toBe(first.id);
+    expect(again.id).not.toBe("original");
+    expect(getTheme(first.id).builtin).toBe(false);
   });
 });
