@@ -115,9 +115,9 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	width: 32%;
 }
 
-#play-pass { top: 0.17%; }
-#play-moves { top: 6.83%; }
-#play-stage { top: 13.49%; }
+#play-pass { top: 13.49%; }
+#play-moves { top: 0.17%; }
+#play-stage { top: 6.83%; }
 
 #play-pass-lab,
 #play-moves-lab,
@@ -480,6 +480,8 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #hud-theme-manage-btn[hidden],
 #hud-theme-manage[hidden],
 #play-chrome[hidden],
+#play-pass[hidden],
+#play-stage[hidden],
 #stage-card[hidden],
 #howto-copy[hidden],
 #howto-page[hidden],

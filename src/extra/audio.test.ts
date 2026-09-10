@@ -120,7 +120,7 @@ describe("stage start audio", () => {
     expect(tags[0]?.loop).toBe(false);
   });
 
-  it("pauses a looping few-second SFX tag while a stage is running", () => {
+  it("unloops a stage SFX tag without pausing the roll", () => {
     installSound(() => ({ loop: 0, stop() {} }));
     setMenuMusicAllowed(false);
     const paused: string[] = [];
@@ -141,7 +141,7 @@ describe("stage start audio", () => {
     };
     hushStageMusic();
     expect(el.loop).toBe(false);
-    expect(paused).toEqual(["sfx"]);
+    expect(paused).toEqual([]);
     (globalThis as { document?: unknown }).document = prev;
   });
 

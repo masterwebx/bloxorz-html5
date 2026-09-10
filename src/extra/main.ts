@@ -1149,9 +1149,14 @@ function padClock(ms: number): string {
 }
 
 function playHudStageName(stageNo: number): string {
-  const card = titleCardCopy();
-  if (card?.title) return card.title;
-  return t("play.stage", { n: String(stageNo).padStart(2, "0") });
+  return padStage(stageNo);
+}
+
+function isClassicPlayHud(): boolean {
+  if (!playSession) return false;
+  if (playSession.card === "classic") return true;
+  if (playSession.kind === "campaign" && !playSession.defs.length) return true;
+  return !!playSession.classicRun;
 }
 
 function syncPlayChrome(on: boolean): void {
@@ -1168,19 +1173,24 @@ function syncPlayChrome(on: boolean): void {
   const stageNo = window.stage?.levelNumber ?? 0;
   const moves = (world?.moves ?? 0) + (window.stage?.totalMoves ?? 0);
   const code = playSession?.defs[Math.max(0, stageNo - 1)]?.code || playDef()?.code || "";
+  const classic = isClassicPlayHud();
   const classicFirst = !!playSession?.classicRun && playSession.kind === "campaign" && stageNo === 1;
   const stageName = playHudStageName(stageNo);
-  const key = `${stageNo}|${moves}|${code}|${classicFirst}|${stageName}|${localeId()}`;
+  const key = `${stageNo}|${moves}|${code}|${classic}|${classicFirst}|${stageName}|${localeId()}`;
   if (key === lastPlayHudKey) return;
   lastPlayHudKey = key;
+  const passBox = $("play-pass");
   const pass = $("play-pass-val");
   const passLab = $("play-pass-lab");
   const moveVal = $("play-moves-val");
   const moveLab = $("play-moves-lab");
+  const stageBox = $("play-stage");
   const stageVal = $("play-stage-val");
   const stageLab = $("play-stage-lab");
   const menu = $("play-menu");
   const help = $("play-help");
+  if (passBox) passBox.hidden = !classic;
+  if (stageBox) stageBox.hidden = !classic;
   if (passLab) passLab.textContent = t("play.passcode") + ":";
   if (moveLab) moveLab.textContent = t("play.moves") + ":";
   if (stageLab) stageLab.textContent = t("hud.stage") + ":";
@@ -3986,6 +3996,11 @@ function syncOverlay(): void {
   }
 
   if (label === "finish" && lastLabel !== "finish") {
+    if (playSession?.replay) {
+      lastLabel = label;
+      leavePlayTo(playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "history");
+      return;
+    }
     if (autoSolve) stopAutoSolve("");
     rumble(220, 0.45, 0.4);
     beaten = playSession?.returnTo === "creator-edit" ? true : beaten;

@@ -140,13 +140,6 @@ function isMusicElement(el: HTMLAudioElement): boolean {
   return el === musicEl || /music/i.test(musicSrcOf(el));
 }
 
-function instanceLoop(inst: SoundInst): number {
-  if (!inst || typeof inst !== "object") return 0;
-  const rec = inst as { loop?: unknown; _loop?: unknown };
-  const n = typeof rec.loop === "number" ? rec.loop : typeof rec._loop === "number" ? rec._loop : 0;
-  return Number.isFinite(n) ? n : 0;
-}
-
 function stopCreatejsMusic(): void {
   try {
     const sound = (window as unknown as { createjs?: { Sound?: { stop?: (id?: string) => void; _instances?: SoundInst[] } } }).createjs
@@ -158,7 +151,7 @@ function stopCreatejsMusic(): void {
       for (const inst of [...rows]) {
         const rec = inst as { src?: string; stop?: () => void };
         const src = `${rec.src || ""}`;
-        if (isMusicId(rec.src) || /music/i.test(src) || instanceLoop(inst) !== 0) inst?.stop?.();
+        if (isMusicId(rec.src) || /music/i.test(src)) inst?.stop?.();
       }
     }
   } catch {
@@ -182,9 +175,8 @@ function hushHtmlAudio(): void {
   try {
     document.querySelectorAll("audio").forEach((el) => {
       if (allowMenuMusic && el === musicEl) return;
-      const looping = el.loop || isMusicElement(el);
       el.loop = false;
-      if (looping) {
+      if (isMusicElement(el)) {
         el.pause();
         try {
           el.currentTime = 0;
@@ -216,13 +208,12 @@ function hookHtmlAudioPlay(): void {
   proto.__bloxPlay = orig;
   proto.play = function bloxPlay(this: HTMLAudioElement, ...args: unknown[]) {
     if (!allowMenuMusic) {
-      const music = isMusicElement(this);
-      const looping = this.loop || music;
-      this.loop = false;
-      if (music || looping) {
+      if (isMusicElement(this)) {
+        this.loop = false;
         this.pause();
         return Promise.resolve();
       }
+      this.loop = false;
     }
     return orig.apply(this, args as []);
   };
@@ -259,10 +250,7 @@ function hookBufferStart(): void {
   const orig = proto.start;
   proto.__bloxStart = orig;
   proto.start = function bloxStart(this: AudioBufferSourceNode, ...args: unknown[]) {
-    if (!allowMenuMusic && this.loop) {
-      this.loop = false;
-      return;
-    }
+    if (!allowMenuMusic && this.loop) this.loop = false;
     return orig.apply(this, args as []);
   };
 }

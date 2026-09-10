@@ -1,17 +1,13 @@
 import { playHomeWhoosh, playUiClick, playUiLatch } from "./audio";
 import {
-  BOARD_SCALE,
   BOARD_VIEW,
   CLIP_OFFSET,
-  boardScreen,
   clipForTile,
-  occupiedCells,
-  pickBoardCell,
   type ClipName,
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
 import { GAUNTLET_QUALITY } from "./generate";
-import { TILE_FACE, TOOL_CH, isoPt, type IsoMetrics } from "./isoBoard";
+import { DEFAULT_ISO, TILE_FACE, TOOL_CH, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
 import { rustFaces } from "./hue";
 import { t } from "./i18n";
 import { currentTheme } from "./settings";
@@ -823,8 +819,12 @@ export class ExtraHud {
     this.add(this.act("creator-test", t("creator.test"), 490, 6, 12, false, 50));
 
     this.board = new createjs.Container();
-    this.refreshCreatorBoard(opts);
     this.add(this.board);
+    try {
+      this.refreshCreatorBoard(opts);
+    } catch {
+      /* keep the rest of the editor even if a clip fails */
+    }
 
     const hit = new createjs.Shape();
     const area = new createjs.Shape();
@@ -835,7 +835,7 @@ export class ExtraHud {
     const cellOf = (ev?: unknown): { x: number; y: number } | null => {
       const e = ev as { localX?: number; localY?: number };
       if (typeof e?.localX !== "number" || typeof e?.localY !== "number") return null;
-      return pickBoardCell(e.localX, e.localY);
+      return pickIsoCell(e.localX, e.localY, DEFAULT_ISO);
     };
     hit.addEventListener("mousedown", (ev?: unknown) => {
       const c = cellOf(ev);
@@ -903,72 +903,34 @@ export class ExtraHud {
     this.board.removeAllChildren();
     const mesh = new createjs.Shape();
     mesh.mouseEnabled = false;
+    const cells: { x: number; y: number; ch: string }[] = [];
     for (let y = 0; y < 10; y++) {
-      for (let x = 0; x < 15; x++) {
-        if ((opts.tiles[y]?.[x] ?? " ") !== " ") continue;
-        drawBoardCell(mesh, x, y, " ");
-      }
+      for (let x = 0; x < 15; x++) cells.push({ x, y, ch: opts.tiles[y]?.[x] ?? " " });
     }
-    this.board.addChild(mesh);
-    const cells = occupiedCells(opts.tiles);
     cells.sort((a, b) => a.y - a.x - (b.y - b.x));
     for (const cell of cells) {
-      const clip = this.placeBoardClip(cell.ch, cell.x, cell.y);
-      if (clip) this.board.addChild(clip);
-      else drawBoardCell(mesh, cell.x, cell.y, cell.ch);
+      drawIsoTile(mesh, cell.x, cell.y, cell.ch, DEFAULT_ISO);
     }
-    const spawn = boardScreen(opts.spawn[0], opts.spawn[1]);
-    const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]) || spawnMarker(spawn.x, spawn.y);
+    this.board.addChild(mesh);
+    for (const cell of cells) {
+      if (cell.ch === " ") continue;
+      const face = this.atlasTile(cell.ch, cell.x, cell.y);
+      if (face) this.board.addChild(face);
+    }
+    const spawn = isoCenter(opts.spawn[0], opts.spawn[1], DEFAULT_ISO);
+    const block = spawnMarker(spawn.x, spawn.y);
     this.board.addChild(block);
     for (const mark of opts.marks) {
-      const p = boardScreen(mark.x, mark.y);
+      const p = isoCenter(mark.x, mark.y, DEFAULT_ISO);
       this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
     }
     if (opts.cursor) {
-      const p = boardScreen(opts.cursor.x, opts.cursor.y);
+      const p = isoCenter(opts.cursor.x, opts.cursor.y, DEFAULT_ISO);
       const ring = new createjs.Shape();
       ring.graphics.beginStroke("#fff4c8").setStrokeStyle(2).beginFill("rgba(255,200,80,0.22)").drawCircle(p.x, p.y - 4, 9);
       ring.mouseEnabled = false;
       this.board.addChild(ring);
     }
-  }
-
-  private placeBoardClip(ch: string, x: number, y: number): HudNode | null {
-    const p = boardScreen(x, y);
-    if (ch === "Block") {
-      const block = this.makeClip?.("Block");
-      if (!block) return null;
-      block.x = p.x;
-      block.y = p.y;
-      block.scaleX = BOARD_SCALE;
-      block.scaleY = BOARD_SCALE;
-      block.mouseEnabled = false;
-      if (block.tickEnabled !== undefined) block.tickEnabled = false;
-      block.gotoAndStop?.(0);
-      return block;
-    }
-    const tile = this.makeTile?.(ch);
-    if (tile) {
-      tile.x = p.x;
-      tile.y = p.y;
-      tile.scaleX = BOARD_SCALE;
-      tile.scaleY = BOARD_SCALE;
-      tile.mouseEnabled = false;
-      if (tile.tickEnabled !== undefined) tile.tickEnabled = false;
-      return tile;
-    }
-    const spec = clipForTile(ch);
-    if (!spec) return null;
-    const clip = this.makeClip?.(spec.name);
-    if (!clip) return null;
-    const [ox, oy] = CLIP_OFFSET[spec.name];
-    clip.x = p.x + ox * BOARD_SCALE;
-    clip.y = p.y + oy * BOARD_SCALE;
-    clip.scaleX = BOARD_SCALE * spec.dim;
-    clip.scaleY = BOARD_SCALE * spec.dim;
-    clip.mouseEnabled = false;
-    if (clip.tickEnabled !== undefined) clip.tickEnabled = false;
-    return clip;
   }
 
   private toolClip(id: string, x: number, y: number): HudNode {
@@ -978,19 +940,30 @@ export class ExtraHud {
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
     const ch = TOOL_CH[id] ?? " ";
-    const icon = ch === " " ? null : this.placeBoardClip(ch, 0, 0);
-    if (icon) {
-      icon.x = 8;
-      icon.y = 12;
-      icon.scaleX = (icon.scaleX || 1) * 0.38;
-      icon.scaleY = (icon.scaleY || 1) * 0.38;
-      wrap.addChild(icon);
-      return wrap;
-    }
     const s = new createjs.Shape();
     drawIsoTile(s, 0, 0, ch, { ox: 2, oy: 10, s: 0.42 });
     wrap.addChild(s);
     return wrap;
+  }
+
+  private atlasTile(ch: string, x: number, y: number): HudNode | null {
+    const spec = clipForTile(ch);
+    if (!spec || !this.makeClip) return null;
+    try {
+      const clip = this.makeClip(spec.name);
+      if (!clip) return null;
+      const p = isoCenter(x, y, DEFAULT_ISO);
+      const [ox, oy] = CLIP_OFFSET[spec.name];
+      clip.x = p.x + ox * 0.5;
+      clip.y = p.y + oy * 0.5;
+      clip.scaleX = 0.5 * spec.dim;
+      clip.scaleY = 0.5 * spec.dim;
+      clip.mouseEnabled = false;
+      if (clip.tickEnabled !== undefined) clip.tickEnabled = false;
+      return clip;
+    } catch {
+      return null;
+    }
   }
 
   drawInGameDev(banner = "", autoSolve = false): void {
@@ -1000,17 +973,6 @@ export class ExtraHud {
     this.add(hitRow("Dev menu", 12, 52, 11, () => this.onAction("dev-menu"), false, 120));
     if (banner) this.add(text(banner, 12, 74, 11, paint().green));
   }
-}
-
-function boardCellPts(x: number, y: number): [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] {
-  return [boardScreen(x, y), boardScreen(x + 1, y), boardScreen(x + 1, y + 1), boardScreen(x, y + 1)];
-}
-
-function drawBoardCell(shape: HudShape, x: number, y: number, ch: string): void {
-  const face = TILE_FACE[ch] || TILE_FACE[" "];
-  const [a, b, c, d] = boardCellPts(x, y);
-  shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(ch === " " ? 0.6 : 1)
-    .moveTo(a.x, a.y).lineTo(b.x, b.y).lineTo(c.x, c.y).lineTo(d.x, d.y).lineTo(a.x, a.y).endFill();
 }
 
 function spawnMarker(x: number, y: number): HudShape {
