@@ -986,12 +986,6 @@ function placeOverlay(el: HTMLElement | null, node: OverlayNode | undefined, liv
   el.style.transform = align === "left" ? "translate(0, -50%)" : align === "right" ? "translate(-100%, -50%)" : "translate(-50%, -50%)";
 }
 
-function liveHowtoNext(inst: { nextButton?: OverlayNode; nextButton2?: OverlayNode } | undefined): OverlayNode | undefined {
-  if (markLive(inst?.nextButton2)) return inst?.nextButton2;
-  if (markLive(inst?.nextButton)) return inst?.nextButton;
-  return undefined;
-}
-
 function clickOverlay(node: OverlayNode | undefined): void {
   node?.dispatchEvent?.({ type: "click" });
 }
@@ -3715,6 +3709,8 @@ function syncOverlay(): void {
     return;
   }
 
+  if (lastLabel === "instructions" && label !== "instructions") stopAllSounds();
+
   if (version) {
     const hide = inRun;
     if (versionHidden !== hide) {
@@ -4046,9 +4042,9 @@ export function startBloxorzShell(): void {
     btn?.menuButton?.dispatchEvent?.({ type: "click" });
     if (!btn?.menuButton) togglePauseMenu();
   });
-  $("howto-next")?.addEventListener("click", () => clickOverlay(liveHowtoNext(instructionClip())));
-  $("howto-prev")?.addEventListener("click", () => clickOverlay(instructionClip()?.prevButton));
-  $("howto-skip")?.addEventListener("click", () => clickOverlay(instructionClip()?.skipButton));
+  $("howto-next")?.addEventListener("click", () => advanceInstructions(1));
+  $("howto-prev")?.addEventListener("click", () => advanceInstructions(-1));
+  $("howto-skip")?.addEventListener("click", () => advanceInstructions(0));
   $("howto-back")?.addEventListener("click", () => clickOverlay(instructionClip()?.backButton));
   $("howto-start")?.addEventListener("click", () => clickOverlay(instructionClip()?.startButton));
   $("pause-return")?.addEventListener("click", () => clickPauseButton("returnToGame"));

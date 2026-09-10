@@ -22,7 +22,7 @@ body.has-theme-media #canvas {
 	inset: 0;
 	z-index: 12;
 	pointer-events: none;
-	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
 	color: #000;
 }
 
@@ -55,7 +55,7 @@ body.has-theme-media #canvas {
 	margin: 0;
 	border: 0;
 	background: transparent;
-	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
 	color: #000;
 	text-shadow:
 		0 0 1px #fff,
@@ -97,7 +97,7 @@ body.has-theme-media #canvas {
 
 #play-pass-val,
 #play-moves-val {
-	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
 	letter-spacing: 0.22em;
 	text-align: left;
 }
@@ -108,7 +108,7 @@ body.has-theme-media #canvas {
 	top: 88.6%;
 	width: 71.5%;
 	margin: 0;
-	font: 700 calc(11 * 100cqh / 300) / 1.2 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1.2 Orbitron, Arial, Helvetica, sans-serif;
 	color: #fff;
 	text-shadow: 0 0 0.3cqh #ff5a18, 0 0 0.6cqh #c43800;
 }
@@ -139,7 +139,7 @@ body.has-theme-media #canvas {
 	pointer-events: none;
 	color: #fff;
 	text-shadow: 0 0 0.4cqh #ff4a12, 0 0 0.8cqh #c43000;
-	font: 700 calc(11 * 100cqh / 300) / 1.45 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1.45 Orbitron, Arial, Helvetica, sans-serif;
 }
 
 #howto-page {
@@ -164,7 +164,7 @@ body.has-theme-media #canvas {
 	top: 44.3%;
 	z-index: 14;
 	pointer-events: none;
-	font: 700 calc(11 * 100cqh / 300) / 1.75 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1.75 Orbitron, Arial, Helvetica, sans-serif;
 	color: #fff;
 	text-shadow: 0 0 0.4cqh #c45a18;
 }
@@ -213,7 +213,7 @@ body.has-theme-media #canvas {
 	border: 0;
 	background: transparent;
 	color: #fff;
-	font: 700 calc(11 * 100cqh / 300) / 1.15 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1.15 Orbitron, Arial, Helvetica, sans-serif;
 	text-shadow: 0 0 0.4cqh #ff4a12, 0 0 0.8cqh #c43000;
 	white-space: nowrap;
 	cursor: pointer;
@@ -270,7 +270,7 @@ body.has-theme-media #canvas {
 	margin: 0;
 	pointer-events: none;
 	transform: translate(-50%, -100%);
-	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
 	color: #fff;
 	text-shadow: 0 0 0.4cqh #ff4a12, 0 0 0.8cqh #c43000;
 	letter-spacing: 0.12em;

@@ -7,5 +7,6 @@ describe("sound loop count", () => {
     expect(soundLoopCount(null)).toBe(0);
     expect(soundLoopCount(-1)).toBe(-1);
     expect(soundLoopCount(2)).toBe(2);
+    expect(soundLoopCount("nope")).toBe(0);
   });
 });

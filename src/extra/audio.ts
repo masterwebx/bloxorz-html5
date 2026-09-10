@@ -3,6 +3,7 @@ import { playThemeSound, stopThemeMusic, themeSoundUrl } from "./themePack";
 
 type SoundInst = {
   volume?: number;
+  loop?: number;
   stop?: () => void;
   playState?: string;
   paused?: boolean;
@@ -61,15 +62,38 @@ export function soundLoopCount(loop: unknown): number {
 
 function playArgs(args: PlayArgs): PlayArgs {
   if (!args.length) return args;
+  if (args.length === 1) {
+    const interrupt =
+      (window as unknown as { createjs?: { Sound?: { INTERRUPT_EARLY?: number } } }).createjs?.Sound?.INTERRUPT_EARLY ?? 0;
+    return [args[0], interrupt, 0, 0, 0];
+  }
   if (args.length >= 5) {
     const next = args.slice();
     next[4] = soundLoopCount(args[4]);
     return next;
   }
+  if (args.length === 2 && args[1] && typeof args[1] === "object") {
+    const props = args[1] as { loop?: unknown };
+    return [args[0], { ...props, loop: soundLoopCount(props.loop) }];
+  }
   if (args.length === 2 && (typeof args[1] === "number" || args[1] == null)) {
     return [args[0], 0, 0, 0, soundLoopCount(args[1])];
   }
-  return args;
+  const next = args.slice();
+  while (next.length < 5) next.push(0);
+  next[4] = soundLoopCount(next[4]);
+  return next;
+}
+
+function unloopHtmlAudio(): void {
+  try {
+    document.querySelectorAll("audio").forEach((el) => {
+      if (el === musicEl) return;
+      el.loop = false;
+    });
+  } catch {
+    /* ignore */
+  }
 }
 
 function playNow(args: PlayArgs): SoundInst {
@@ -91,7 +115,10 @@ function playNow(args: PlayArgs): SoundInst {
   if (inst && typeof inst === "object") {
     const s = loadSettings();
     inst.volume = s.sfx;
+    const loop = play.length >= 5 ? soundLoopCount(play[4]) : 0;
+    if (loop === 0) inst.loop = 0;
   }
+  unloopHtmlAudio();
   return inst;
 }
 
@@ -223,6 +250,16 @@ export function stopAllSounds(): void {
   stopMenuMusic();
   stopThemeMusic();
   queued = [];
+  unloopHtmlAudio();
+  try {
+    document.querySelectorAll("audio").forEach((el) => {
+      if (el === musicEl) return;
+      el.pause();
+      el.currentTime = 0;
+    });
+  } catch {
+    /* ignore */
+  }
   try {
     (window as unknown as { createjs?: { Sound?: { stop?: () => void } } }).createjs?.Sound?.stop?.();
   } catch {
