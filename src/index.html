@@ -23,6 +23,21 @@
 	<style>html,body{margin:0;background:#000}</style>
 	<script>
 		(function () {
+			if (typeof HTMLCanvasElement === "undefined") return;
+			var proto = HTMLCanvasElement.prototype;
+			if (proto.__bloxHit) return;
+			proto.__bloxHit = true;
+			var orig = proto.getContext;
+			proto.getContext = function (type, attrs) {
+				if (type === "2d") {
+					return orig.call(this, type, Object.assign({}, attrs || {}, { willReadFrequently: true }));
+				}
+				return orig.call(this, type, attrs);
+			};
+		})();
+	</script>
+	<script>
+		(function () {
 			var theme = "original";
 			try {
 				var params = new URLSearchParams(window.location.search);
@@ -90,6 +105,7 @@
 					<button type="button" id="pause-quit"></button>
 				</div>
 				<p id="play-select" hidden></p>
+				<div id="ach-toasts" aria-live="polite"></div>
 				<div id="hud-modal">
 					<div class="hud-modal-card">
 						<p id="hud-modal-title">Enter code</p>

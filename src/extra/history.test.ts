@@ -3,16 +3,10 @@ import { Stage } from "./engine";
 import type { LevelDef } from "./types";
 import { H, W } from "./engine";
 import {
-  GhostRunner,
-  ghostKey,
-  ghostsForStage,
   loadFinishedStages,
   loadRuns,
-  loadSeeGhosts,
-  pushGhost,
   saveFinishedStage,
   saveRun,
-  saveSeeGhosts,
   setHistoryStorage,
   winningTape,
   type RunRecord,
@@ -139,26 +133,6 @@ describe("run history", () => {
     expect(winningTape(runs[0].levels[0])).toEqual(["right", "right"]);
   });
 
-  it("keeps unique ghost tapes per stage", () => {
-    setHistoryStorage(memoryStore());
-    pushGhost(0, ["right"]);
-    pushGhost(0, ["right"]);
-    pushGhost(0, ["left"]);
-    pushGhost(1, ["up"]);
-    expect(ghostsForStage(0)).toEqual([["right"], ["left"]]);
-    expect(ghostsForStage(0, ["left"])).toEqual([["right"]]);
-    expect(ghostsForStage(1)).toEqual([["up"]]);
-  });
-
-  it("stores ghosts under campaign and seed keys", () => {
-    setHistoryStorage(memoryStore());
-    pushGhost(ghostKey("campaign", 3), ["right"]);
-    pushGhost(ghostKey("daily", 1, "BXS.ABC"), ["left", "down"]);
-    expect(ghostsForStage("c:3")).toEqual([["right"]]);
-    expect(ghostsForStage(3)).toEqual([["right"]]);
-    expect(ghostsForStage("s:BXS.ABC")).toEqual([["left", "down"]]);
-  });
-
   it("keeps custom and puzzle finishes with a seed", () => {
     setHistoryStorage(memoryStore());
     saveFinishedStage({
@@ -176,35 +150,6 @@ describe("run history", () => {
     expect(row.kind).toBe("daily");
     expect(row.seed).toBe("BXS.TEST");
     expect(row.title).toBe("DAILY PUZZLE");
-  });
-
-  it("defaults see-ghosts to on", () => {
-    setHistoryStorage(memoryStore());
-    expect(loadSeeGhosts()).toBe(true);
-    saveSeeGhosts(false);
-    expect(loadSeeGhosts()).toBe(false);
-  });
-});
-
-describe("ghost playback", () => {
-  it("replays a short winning tape onto the exit", () => {
-    const def = mini(["bbbe"], [0, 0]);
-    const ghost = new GhostRunner(def, ["right", "right"]);
-    for (let i = 0; i < 80; i++) ghost.tick(0.05);
-    expect(ghost.finished).toBe(true);
-    expect(ghost.stage.won).toBe(true);
-    expect(ghost.stage.block).toEqual({ x: 3, y: 0, ori: "up" });
-  });
-
-  it("marks a falling tape finished without resetting attempts on the live stage", () => {
-    const def = mini(["bbbe"], [1, 0]);
-    const live = new Stage(def);
-    live.attempts = 3;
-    const ghost = new GhostRunner(def, ["left"]);
-    for (let i = 0; i < 80; i++) ghost.tick(0.05);
-    expect(ghost.finished).toBe(true);
-    expect(ghost.stage.failed).toBe(true);
-    expect(live.attempts).toBe(3);
   });
 });
 

@@ -687,6 +687,65 @@ body.is-mobile .hud-modal-row button {
 	padding: 10px 16px;
 }
 
+#ach-toasts {
+	position: absolute;
+	right: 2.2%;
+	top: 8%;
+	z-index: 60;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 8px;
+	pointer-events: none;
+	width: min(46%, 220px);
+}
+
+.ach-toast {
+	box-sizing: border-box;
+	width: 100%;
+	padding: 8px 10px 9px;
+	background: rgba(20, 12, 8, 0.92);
+	border: 1px solid #c45a18;
+	box-shadow: 0 0 16px rgba(255, 120, 30, 0.28);
+	color: #ffe6c4;
+	font: 700 11px/1.25 Orbitron, sans-serif;
+	animation: ach-in 280ms ease-out;
+}
+
+.ach-toast b {
+	display: block;
+	margin: 0 0 4px;
+	color: #fff;
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.ach-toast.is-out {
+	opacity: 0;
+	transform: translateY(-8px);
+	transition: opacity 280ms ease, transform 280ms ease;
+}
+
+@keyframes ach-in {
+	from { opacity: 0; transform: translateY(10px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+body.is-creator-edit.is-pad-on #touch-pad {
+	padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+	align-items: flex-end;
+}
+
+body.is-creator-edit.is-pad-on #touch-pad .tp-dpad {
+	width: min(30vw, 132px);
+	height: min(30vw, 132px);
+}
+
+body.is-creator-edit.is-pad-on .tp-actions {
+	width: min(18vw, 76px);
+}
+
 @media (orientation: landscape) and (max-height: 500px) {
 	#install-hint {
 		display: none !important;

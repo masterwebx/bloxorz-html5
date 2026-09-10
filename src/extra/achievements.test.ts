@@ -10,6 +10,7 @@ import {
   noteCopiedSeed,
   noteFall,
   noteWin,
+  onAchievementsUnlocked,
   recordRows,
   padAch,
   parMoves,
@@ -101,5 +102,16 @@ describe("achievements", () => {
     setAchievementsStorage(memoryStore());
     expect(noteCopiedSeed().length).toBeGreaterThan(0);
     expect(noteCopiedSeed().length).toBe(0);
+  });
+
+  it("notifies when new achievements unlock", () => {
+    setAchievementsStorage(memoryStore());
+    const seen: string[] = [];
+    onAchievementsUnlocked((rows) => {
+      seen.push(...rows.map((row) => row.name));
+    });
+    noteFall();
+    expect(seen).toContain("First Tumble");
+    onAchievementsUnlocked(null);
   });
 });

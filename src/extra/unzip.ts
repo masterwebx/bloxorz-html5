@@ -26,11 +26,23 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   return out;
 }
 
-export async function unzip(buffer: ArrayBuffer): Promise<ZipFiles> {
+export type ZipEntry = {
+  name: string;
+  method: number;
+  dataOff: number;
+  comp: number;
+};
+
+export function zipBase(name: string): string {
+  const parts = name.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || name;
+}
+
+export function listZipEntries(buffer: ArrayBuffer): ZipEntry[] {
   const buf = new Uint8Array(buffer);
-  const files: ZipFiles = new Map();
   const eocd = findEocd(buf);
   if (eocd < 0) throw new Error("zip");
+  const entries: ZipEntry[] = [];
   let off = u32(buf, eocd + 16);
   const count = u16(buf, eocd + 10);
   for (let n = 0; n < count; n++) {
@@ -44,17 +56,36 @@ export async function unzip(buffer: ArrayBuffer): Promise<ZipFiles> {
     const name = TD.decode(buf.subarray(off + 46, off + 46 + nameLen)).replace(/\\/g, "/");
     off += 46 + nameLen + extraLen + commentLen;
     if (!name || name.endsWith("/")) continue;
+    if (localOff + 30 > buf.length) continue;
     const localNameLen = u16(buf, localOff + 26);
     const localExtra = u16(buf, localOff + 28);
     const dataOff = localOff + 30 + localNameLen + localExtra;
-    const raw = buf.subarray(dataOff, dataOff + comp);
+    entries.push({ name, method, dataOff, comp });
+  }
+  return entries;
+}
+
+export async function inflateZipEntry(buffer: ArrayBuffer, entry: ZipEntry): Promise<Uint8Array> {
+  const buf = new Uint8Array(buffer);
+  const raw = buf.subarray(entry.dataOff, entry.dataOff + entry.comp);
+  if (entry.method === 0) return raw.slice();
+  if (entry.method === 8) return inflateRaw(raw);
+  throw new Error("zip method");
+}
+
+export async function unzip(buffer: ArrayBuffer, keep?: (name: string) => boolean): Promise<ZipFiles> {
+  const files: ZipFiles = new Map();
+  for (const entry of listZipEntries(buffer)) {
+    if (keep && !keep(entry.name) && !keep(zipBase(entry.name))) continue;
     let data: Uint8Array;
-    if (method === 0) data = raw.slice();
-    else if (method === 8) data = await inflateRaw(raw);
-    else continue;
-    files.set(name, data);
-    const base = name.split("/").pop();
-    if (base && base !== name && !files.has(base)) files.set(base, data);
+    try {
+      data = await inflateZipEntry(buffer, entry);
+    } catch {
+      continue;
+    }
+    files.set(entry.name, data);
+    const base = zipBase(entry.name);
+    if (base && base !== entry.name && !files.has(base)) files.set(base, data);
   }
   return files;
 }

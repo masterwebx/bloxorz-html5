@@ -1,5 +1,4 @@
-import { Stage, type Dir } from "./engine";
-import type { LevelDef } from "./types";
+import type { Dir } from "./engine";
 
 export type TapeCmd = Dir | "swap";
 
@@ -34,12 +33,8 @@ export type HistoryStorage = {
 
 const RUNS_KEY = "bloxorz-history-v1";
 const FINISHED_KEY = "bloxorz-finished-v1";
-const GHOSTS_KEY = "bloxorz-ghosts-v1";
-const GHOSTS_PREF = "bloxorz-see-ghosts";
 const MAX_RUNS = 24;
 const MAX_FINISHED = 48;
-const MAX_GHOSTS_PER_STAGE = 32;
-export const MAX_GHOST_DRAW = 16;
 
 export type HistoryKind = "campaign" | "custom" | "daily" | "gauntlet" | "seeded";
 
@@ -133,100 +128,7 @@ export function saveFinishedStage(row: FinishedStage): void {
   store().setItem(FINISHED_KEY, JSON.stringify(rows.slice(0, MAX_FINISHED)));
 }
 
-export function loadGhostBank(): Record<string, TapeCmd[][]> {
-  const bank = readJson<Record<string, TapeCmd[][]>>(GHOSTS_KEY, {});
-  return bank && typeof bank === "object" ? bank : {};
-}
-
-export function ghostKey(kind: HistoryKind | string, stage: number, seed = ""): string {
-  if (kind === "campaign" || !kind) return `c:${stage}`;
-  if (seed) return `s:${seed}`;
-  return `${kind}:${stage}`;
-}
-
-export function pushGhost(stage: number | string, cmds: TapeCmd[]): void {
-  if (!cmds.length) return;
-  const bank = loadGhostBank();
-  const key = String(stage);
-  const list = bank[key] ?? [];
-  if (list.some((t) => sameTape(t, cmds))) return;
-  list.push(cmds);
-  bank[key] = list.slice(-MAX_GHOSTS_PER_STAGE);
-  store().setItem(GHOSTS_KEY, JSON.stringify(bank));
-}
-
-export function ghostsForStage(stage: number | string, exclude: TapeCmd[] = []): TapeCmd[][] {
-  const bank = loadGhostBank();
-  const keys = new Set<string>([String(stage)]);
-  if (typeof stage === "number") keys.add(`c:${stage}`);
-  const out: TapeCmd[][] = [];
-  for (const key of keys) {
-    for (const tape of bank[key] ?? []) {
-      if (!tape.length || sameTape(tape, exclude)) continue;
-      if (out.some((t) => sameTape(t, tape))) continue;
-      out.push(tape);
-    }
-  }
-  return out.slice(-MAX_GHOST_DRAW);
-}
-
-export function loadSeeGhosts(): boolean {
-  return store().getItem(GHOSTS_PREF) !== "0";
-}
-
-export function saveSeeGhosts(on: boolean): void {
-  store().setItem(GHOSTS_PREF, on ? "1" : "0");
-}
-
 export function winningTape(level: LevelStat): TapeCmd[] | null {
   const win = [...level.tapes].reverse().find((t) => t.won && t.cmds.length);
   return win?.cmds.length ? win.cmds : null;
-}
-
-export class GhostRunner {
-  readonly stage: Stage;
-  i = 0;
-  finished = false;
-
-  constructor(
-    def: LevelDef,
-    readonly cmds: TapeCmd[],
-  ) {
-    this.stage = new Stage(def);
-    this.stage.assemble = 1;
-    this.stage.dropIn();
-  }
-
-  tick(dt: number): void {
-    if (this.finished) return;
-    this.stage.tick(dt);
-    if (this.stage.anim) {
-      if (this.stage.anim.t < this.stage.anim.dur) return;
-      const kind = this.stage.anim.kind;
-      if (kind === "roll") {
-        const result = this.stage.finishMove(() => undefined);
-        if (this.stage.anim?.kind === "roll") this.stage.anim = null;
-        if (result === "fail") this.stage.beginFall();
-        else if (result === "win") this.stage.beginSink();
-        else if (result === "split") this.stage.beginSplit();
-      } else if (kind === "fall" || kind === "sink") {
-        this.stage.anim = null;
-        this.finished = true;
-      } else {
-        this.stage.anim = null;
-      }
-      return;
-    }
-    if (this.i >= this.cmds.length) {
-      this.finished = true;
-      return;
-    }
-    const cmd = this.cmds[this.i];
-    if (cmd === "swap") {
-      this.stage.swapSplit();
-      this.i++;
-      return;
-    }
-    if (this.stage.tryMove(cmd)) this.i++;
-  }
 }

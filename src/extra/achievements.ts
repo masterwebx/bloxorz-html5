@@ -70,9 +70,9 @@ export type AchStats = {
   passcodeWins: number;
   resumeWins: number;
   screenshots: number;
-  ghostWatches: number;
-  ghostImproves: number;
-  ghostImproveStages: string[];
+  replayWatches: number;
+  bestImproves: number;
+  bestImproveStages: string[];
   playMs: number;
   byDay: Record<string, string[]>;
   noFallStreak: number;
@@ -103,8 +103,6 @@ export type WinNote = {
   gauntletDiff?: string;
   gauntletLen?: number;
   gauntletNoFallRun?: boolean;
-  improvedGhost?: boolean;
-  ghostStageKey?: string;
   comeback?: boolean;
   stubborn?: boolean;
   day?: string;
@@ -176,9 +174,9 @@ function blankStats(): AchStats {
     passcodeWins: 0,
     resumeWins: 0,
     screenshots: 0,
-    ghostWatches: 0,
-    ghostImproves: 0,
-    ghostImproveStages: [],
+    replayWatches: 0,
+    bestImproves: 0,
+    bestImproveStages: [],
     playMs: 0,
     byDay: {},
     noFallStreak: 0,
@@ -192,6 +190,11 @@ function blankStats(): AchStats {
 }
 
 let cached: AchStats | null = null;
+let unlockHook: ((rows: AchievementDef[]) => void) | null = null;
+
+export function onAchievementsUnlocked(fn: ((rows: AchievementDef[]) => void) | null): void {
+  unlockHook = fn;
+}
 
 export function loadAchievements(): AchStats {
   if (cached) return cached;
@@ -203,6 +206,12 @@ export function loadAchievements(): AchStats {
     }
     const parsed = JSON.parse(raw) as Partial<AchStats>;
     cached = { ...blankStats(), ...parsed };
+    cached.replayWatches = Number(cached.replayWatches || (parsed as { ghostWatches?: number }).ghostWatches || 0);
+    cached.bestImproves = Number(cached.bestImproves || (parsed as { ghostImproves?: number }).ghostImproves || 0);
+    const oldGhostStages = (parsed as { ghostImproveStages?: string[] }).ghostImproveStages;
+    if (!Array.isArray(cached.bestImproveStages) || !cached.bestImproveStages.length) {
+      cached.bestImproveStages = Array.isArray(oldGhostStages) ? oldGhostStages : [];
+    }
     if (!Array.isArray(cached.campaign) || cached.campaign.length !== 33) {
       const next = Array.from({ length: 33 }, (_, i) => cached!.campaign[i] ?? { ...EMPTY_BIT });
       cached.campaign = next;
@@ -251,7 +260,7 @@ export function recordRows(scroll = 0, page = REC_PAGE, s = loadAchievements()):
     { id: "custom", label: "records.custom", meta: String(s.custom.length) },
     { id: "swaps", label: "records.swaps", meta: String(s.swaps) },
     { id: "screenshots", label: "records.screenshots", meta: String(s.screenshots) },
-    { id: "ghosts", label: "records.ghosts", meta: String(s.ghostWatches) },
+    { id: "replays", label: "records.replays", meta: String(s.replayWatches) },
     { id: "themes", label: "records.themes", meta: String(Object.keys(s.themes).length) },
   ];
   return all.slice(scroll, scroll + page);
@@ -368,7 +377,10 @@ function evaluate(s: AchStats): number[] {
     s.unlocked[id] = Date.now();
     fresh.push(def.n);
   }
-  if (fresh.length) saveAchievements(s);
+  if (fresh.length) {
+    saveAchievements(s);
+    unlockHook?.(fresh.map((n) => ACHIEVEMENTS[n - 1]).filter((row): row is AchievementDef => !!row));
+  }
   return fresh;
 }
 
@@ -393,9 +405,12 @@ export function noteWin(note: WinNote): number[] {
   if (note.via === "code") s.loadedCode = true;
   if (note.via === "saved") s.playedSaved = true;
   if (note.via === "creator-test") s.beatOwn = true;
-  if (note.improvedGhost) {
-    s.ghostImproves += 1;
-    if (note.ghostStageKey) s.ghostImproveStages = addUnique(s.ghostImproveStages, note.ghostStageKey);
+  if (note.kind === "campaign") {
+    const prevBest = bit(s, note.stageNo).bestMoves;
+    if (prevBest > 0 && note.moves > 0 && note.moves < prevBest) {
+      s.bestImproves += 1;
+      s.bestImproveStages = addUnique(s.bestImproveStages, note.uniqueKey);
+    }
   }
   const day = note.day || "";
   if (day) {
@@ -507,9 +522,9 @@ export function noteScreenshot(): number[] {
   return evaluate(s);
 }
 
-export function noteGhostWatch(): number[] {
+export function noteReplayWatch(): number[] {
   const s = loadAchievements();
-  s.ghostWatches += 1;
+  s.replayWatches += 1;
   saveAchievements(s);
   return evaluate(s);
 }
@@ -720,9 +735,9 @@ function buildCatalog(): AchievementDef[] {
   add("Passcode Five", "Finish 5 stages after loading them by passcode.", (s) => s.passcodeWins >= 5);
   add("Picked Up Where", "Resume a campaign and finish the resumed stage.", (s) => s.resumeWins >= 1);
   add("Share Shot", "Take a screenshot from a finish screen.", (s) => s.screenshots >= 1);
-  add("Ghost Watch", "Watch a History ghost replay.", (s) => s.ghostWatches >= 1);
-  add("Beat Your Ghost", "Finish a stage in fewer moves than a saved ghost.", (s) => s.ghostImproves >= 1);
-  add("Five Ghosts Better", "Beat your ghost on 5 different stages.", (s) => s.ghostImproveStages.length >= 5);
+  add("History Buff", "Replay a finished stage from History.", (s) => s.replayWatches >= 1);
+  add("Personal Best", "Finish a campaign stage in fewer moves than your previous best.", (s) => s.bestImproves >= 1);
+  add("Five Personal Bests", "Beat your previous move count on 5 different campaign stages.", (s) => s.bestImproveStages.length >= 5);
   add("Twenty Minutes", "Spend 20 minutes actually in a stage.", (s) => s.playMs >= 20 * 60 * 1000);
   add("Ninety Minutes", "Spend 90 minutes actually in a stage.", (s) => s.playMs >= 90 * 60 * 1000);
   add("Four Hours Rolling", "Spend 4 hours actually in a stage.", (s) => s.playMs >= 4 * 60 * 60 * 1000);

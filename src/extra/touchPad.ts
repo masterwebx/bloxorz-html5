@@ -104,7 +104,6 @@ export class TouchChrome {
     this.bindPad();
     this.bindInstall();
     window.addEventListener("beforeinstallprompt", (ev) => {
-      ev.preventDefault();
       this.deferred = ev as unknown as { prompt: () => Promise<void> };
       this.sync();
     });
@@ -141,14 +140,15 @@ export class TouchChrome {
     document.body.classList.toggle("is-rotated", rotate);
     if (wasRotated !== rotate) this.releaseAll();
     if (wasRotated !== rotate && !this.settling) window.dispatchEvent(new Event("resize"));
+    const creator = document.body.classList.contains("is-creator-edit");
     if (this.pad) {
       this.pad.hidden = !showVirtualPad(enabled);
       const swap = this.pad.querySelector(".tp-swap");
-      if (swap) swap.textContent = swapPadLabel(this.playing);
+      if (swap) swap.textContent = creator ? t("touch.paint") : swapPadLabel(this.playing);
       const menu = this.pad.querySelector(".tp-menu");
-      if (menu) menu.textContent = t("touch.pause");
+      if (menu) menu.textContent = creator ? t("common.back") : t("touch.pause");
       const rotateBtn = this.pad.querySelector(".tp-rotate");
-      if (rotateBtn) rotateBtn.textContent = t("touch.rotate");
+      if (rotateBtn) rotateBtn.textContent = creator ? t("touch.tool") : t("touch.rotate");
     }
     if (this.landscape) this.landscape.hidden = true;
     if (this.install) {

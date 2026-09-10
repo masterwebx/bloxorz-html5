@@ -57,4 +57,17 @@ describe("unzip", () => {
     const files = await unzip(buf);
     expect(zipText(files, "theme.json")).toBe('{"id":"pack"}');
   });
+
+  it("finds theme.json one folder down", async () => {
+    const buf = storeZip("mewga/theme.json", '{"id":"original","name":"Original"}');
+    const files = await unzip(buf);
+    expect(zipText(files, "theme.json")).toBe('{"id":"original","name":"Original"}');
+    expect(files.has("mewga/theme.json")).toBe(true);
+  });
+
+  it("can skip unused zip entries", async () => {
+    const buf = storeZip("mewga/misc/skip.png", "nope");
+    const files = await unzip(buf, (name) => name.endsWith("theme.json"));
+    expect(files.size).toBe(0);
+  });
 });

@@ -2,7 +2,7 @@ import original from "../../themes/original/theme.json";
 import gray from "../../themes/gray/theme.json";
 import holiday from "../../themes/holiday/theme.json";
 import solid3d from "../../themes/solid3d/theme.json";
-import { unzip, zipText } from "./unzip";
+import { inflateZipEntry, listZipEntries, zipBase, type ZipEntry } from "./unzip";
 
 export type ThemeRender = "atlas" | "solid3d";
 export type ThemeBgType = "sky" | "image" | "gif" | "video";
@@ -291,21 +291,99 @@ export async function bootThemes(saved?: string | null): Promise<string> {
   return currentId;
 }
 
-export async function installThemeZip(buffer: ArrayBuffer): Promise<ThemePack> {
-  const files = await unzip(buffer);
-  const jsonText = zipText(files, "theme.json");
-  if (!jsonText) throw new Error("theme.json");
-  const raw = JSON.parse(jsonText) as RawTheme;
-  const stored: Record<string, ArrayBuffer> = {};
-  for (const [name, data] of files) {
-    if (name.endsWith(".json")) continue;
-    const copy = new Uint8Array(data.byteLength);
-    copy.set(data);
-    stored[name] = copy.buffer;
+function themeFolder(jsonName: string): string {
+  const n = jsonName.replace(/\\/g, "/");
+  const i = n.lastIndexOf("/");
+  return i > 0 ? n.slice(0, i) : "";
+}
+
+function sanitizeThemeId(id: string): string {
+  return id
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function uniqueCustomId(rawId: string, folder: string): string {
+  seedBuiltins();
+  const folderId = sanitizeThemeId(folder);
+  const wanted = sanitizeThemeId(rawId);
+  const builtinHit = (id: string): boolean => {
+    const pack = packs.get(id);
+    return !!pack?.builtin;
+  };
+  let id = folderId && builtinHit(wanted) ? folderId : wanted || folderId || "custom";
+  if (!id) id = "custom";
+  if (builtinHit(id)) id = folderId && folderId !== id ? folderId : `${id}-pack`;
+  if (builtinHit(id)) {
+    let n = 2;
+    while (packs.has(`${id}-${n}`)) n += 1;
+    id = `${id}-${n}`;
   }
-  const pack = normalizePack(raw, raw.id || "custom", false);
-  await idbPut(pack.id, { json: raw, files: stored });
-  const live = registerStored({ json: raw, files: stored }) ?? pack;
+  return id;
+}
+
+function neededThemeFiles(raw: RawTheme): Set<string> {
+  const names = new Set<string>(["atlas.png"]);
+  if (raw.atlas) names.add(raw.atlas.replace(/^\/+/, ""));
+  if (raw.background?.src) names.add(raw.background.src.replace(/^\/+/, ""));
+  if (raw.audio?.music) names.add(raw.audio.music.replace(/^\/+/, ""));
+  for (const src of Object.values(raw.audio?.sfx ?? {})) {
+    if (src) names.add(src.replace(/^\/+/, ""));
+  }
+  return names;
+}
+
+function matchesNeeded(entryName: string, folder: string, needed: Set<string>): boolean {
+  const base = zipBase(entryName);
+  const rel = folder && entryName.startsWith(folder + "/") ? entryName.slice(folder.length + 1) : entryName;
+  return needed.has(entryName) || needed.has(base) || needed.has(rel);
+}
+
+function copyBuf(data: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(data.byteLength);
+  copy.set(data);
+  return copy.buffer;
+}
+
+export async function installThemeZip(buffer: ArrayBuffer): Promise<ThemePack> {
+  const entries = listZipEntries(buffer);
+  const jsonEntry = entries.find((e) => zipBase(e.name).toLowerCase() === "theme.json");
+  if (!jsonEntry) throw new Error("theme.json");
+  const jsonBytes = await inflateZipEntry(buffer, jsonEntry);
+  const jsonText = new TextDecoder().decode(jsonBytes);
+  const raw = JSON.parse(jsonText) as RawTheme;
+  const folder = themeFolder(jsonEntry.name);
+  const id = uniqueCustomId(raw.id || folder || "custom", folder);
+  const display = folder && (raw.id === "original" || !raw.name) ? folder : raw.name || id;
+  const savedJson: RawTheme = { ...raw, id, name: display };
+  const needed = neededThemeFiles(raw);
+  const stored: Record<string, ArrayBuffer> = {};
+  const want = entries.filter((e) => matchesNeeded(e.name, folder, needed));
+  const inflates: { entry: ZipEntry; key: string }[] = [];
+  for (const entry of want) {
+    const rel = folder && entry.name.startsWith(folder + "/") ? entry.name.slice(folder.length + 1) : zipBase(entry.name);
+    if (rel.toLowerCase().endsWith(".json")) continue;
+    inflates.push({ entry, key: rel });
+  }
+  for (const row of inflates) {
+    try {
+      const data = await inflateZipEntry(buffer, row.entry);
+      stored[row.key] = copyBuf(data);
+      const base = zipBase(row.key);
+      if (base !== row.key && !stored[base]) stored[base] = stored[row.key]!;
+    } catch {
+      /* skip a bad optional asset */
+    }
+  }
+  try {
+    await idbPut(id, { json: savedJson, files: stored });
+  } catch {
+    /* keep the pack live even if IDB quota rejects a huge pack */
+  }
+  const live = registerStored({ json: savedJson, files: stored }) ?? normalizePack(savedJson, id, false);
   const hasAtlas = Object.keys(stored).some((k) => /(^|\/)atlas\.png$/i.test(k));
   if (!hasAtlas) live.atlas = atlasUrlFor("original");
   return live;

@@ -170,10 +170,6 @@ function text(str: string, x: number, y: number, size: number, color?: string, a
   return t;
 }
 
-function hitFill(): string {
-  return wantsVirtualPad() ? "rgba(255,180,80,0.16)" : "rgba(255,180,80,0.08)";
-}
-
 function hitRow(label: string, x: number, y: number, size: number, fn: () => void, disabled = false, minW = 220, focused = false): HudNode {
   const theme = paint();
   const row = new createjs.Container();
@@ -187,9 +183,11 @@ function hitRow(label: string, x: number, y: number, size: number, fn: () => voi
   const h = Math.max(pad ? 32 : 24, size + (pad ? 16 : 10));
   row.hitW = w;
   const area = new createjs.Shape();
-  area.graphics.beginFill(hitFill()).drawRect(-8, -6, w, h);
-  area.mouseEnabled = !disabled;
-  area.cursor = disabled ? "default" : "pointer";
+  area.graphics.beginFill("#000").drawRect(-8, -6, w, h);
+  row.hitArea = area;
+  row.cursor = disabled ? "default" : "pointer";
+  row.mouseEnabled = !disabled;
+  row.mouseChildren = false;
   if (!disabled) {
     const ink = theme.ink;
     const hot = theme.hot;
@@ -201,22 +199,19 @@ function hitRow(label: string, x: number, y: number, size: number, fn: () => voi
       playUiLatch();
       fn();
     };
-    area.addEventListener("click", fire);
-    area.addEventListener("mousedown", fire);
-    area.addEventListener("mouseover", () => {
+    row.addEventListener("click", fire);
+    row.addEventListener("mousedown", fire);
+    row.addEventListener("mouseover", () => {
       playUiClick();
       t.color = hot;
       glow(t, true, theme);
     });
-    area.addEventListener("mouseout", () => {
+    row.addEventListener("mouseout", () => {
       t.color = focused ? hot : ink;
       glow(t, focused, theme);
     });
   }
-  row.addChild(area);
   row.addChild(t);
-  row.mouseEnabled = true;
-  row.mouseChildren = true;
   return row;
 }
 
@@ -239,8 +234,10 @@ function slider(x: number, y: number, w: number, value: number, onSet: (v: numbe
   fill.graphics.beginFill(theme.fill).drawRect(28, 4, Math.max(2, w * value), 10);
   const minus = hitRow("-", 0, 0, 14, () => onSet(Math.max(0, Math.round((value - 0.1) * 10) / 10)), false, 24);
   const plus = hitRow("+", 36 + w, 0, 14, () => onSet(Math.min(1, Math.round((value + 0.1) * 10) / 10)), false, 24);
-    const hit = new createjs.Shape();
-    hit.graphics.beginFill(hitFill()).drawRect(28, 0, w, 22);
+  const hit = new createjs.Shape();
+  const area = new createjs.Shape();
+  area.graphics.beginFill("#000").drawRect(28, 0, w, 22);
+  hit.hitArea = area;
   hit.cursor = "pointer";
   hit.mouseEnabled = true;
   hit.addEventListener("click", (ev?: unknown) => {
@@ -400,7 +397,9 @@ export class ExtraHud {
     this.hideMascot();
     const theme = paint();
     const hit = new createjs.Shape();
-    hit.graphics.beginFill("rgba(255,180,80,0.04)").drawRect(0, 0, 550, 300);
+    const area = new createjs.Shape();
+    area.graphics.beginFill("#000").drawRect(0, 0, 550, 300);
+    hit.hitArea = area;
     hit.mouseEnabled = true;
     hit.cursor = "pointer";
     hit.addEventListener("click", () => {
@@ -704,7 +703,6 @@ export class ExtraHud {
 
   drawHistory(opts: {
     rows: { title: string; meta: string; replay?: () => void }[];
-    seeGhosts: boolean;
     scroll?: number;
     total?: number;
     pageSize?: number;
@@ -717,22 +715,21 @@ export class ExtraHud {
     const total = opts.total ?? opts.rows.length;
     this.add(this.act("back", t("common.back"), 24, 16, 12, false, 80));
     this.add(text(t("history.title"), 275, 16, 18, theme.ink, "center"));
-    this.add(this.act("toggle-ghosts", `${opts.seeGhosts ? "> " : "  "}${t("history.ghosts")}   ${opts.seeGhosts ? t("common.on") : t("common.off")}`, 40, 48, 14, false, 280));
     if (!opts.rows.length) {
-      this.add(text(t("history.empty"), 40, 96, 12, theme.muted));
-      this.add(text(t("history.emptyLine2"), 40, 114, 12, theme.muted));
+      this.add(text(t("history.empty"), 40, 80, 12, theme.muted));
+      this.add(text(t("history.emptyLine2"), 40, 98, 12, theme.muted));
       return;
     }
     opts.rows.slice(0, pageSize).forEach((row, i) => {
-      const y = 86 + i * 38;
+      const y = 56 + i * 42;
       this.add(text(row.title, 40, y, 11));
       this.add(text(row.meta, 40, y + 14, 10, theme.muted));
       if (row.replay) this.add(this.act("replay:" + (scroll + i), t("history.replay"), 420, y, 11, false, 80));
     });
     if (total > pageSize) {
-      const trackH = 186;
+      const trackH = 210;
       const trackX = 528;
-      const trackY = 86;
+      const trackY = 52;
       const bar = new createjs.Shape();
       bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
       const thumbH = Math.max(18, trackH * (pageSize / total));
@@ -820,7 +817,9 @@ export class ExtraHud {
     this.add(this.board);
 
     const hit = new createjs.Shape();
-    hit.graphics.beginFill("rgba(255,180,80,0.04)").drawRect(BOARD_VIEW.x, BOARD_VIEW.y, BOARD_VIEW.w, BOARD_VIEW.h);
+    const area = new createjs.Shape();
+    area.graphics.beginFill("#000").drawRect(BOARD_VIEW.x, BOARD_VIEW.y, BOARD_VIEW.w, BOARD_VIEW.h);
+    hit.hitArea = area;
     hit.mouseEnabled = true;
     hit.cursor = "pointer";
     const cellOf = (ev?: unknown): { x: number; y: number } | null => {
@@ -839,20 +838,23 @@ export class ExtraHud {
     hit.addEventListener("pressup", () => this.onAction("paint-end"));
     this.add(hit);
 
+    const pad = wantsVirtualPad();
     EDITOR_TOOLS.forEach((tool, i) => {
-      const col = i < 6 ? 0 : 1;
-      const row = i < 6 ? i : i - 6;
-      const x = 300 + col * 128;
-      const y = 32 + row * 28;
+      const col = pad ? i % 3 : i < 6 ? 0 : 1;
+      const row = pad ? Math.floor(i / 3) : i < 6 ? i : i - 6;
+      const x = pad ? 292 + col * 84 : 300 + col * 128;
+      const y = pad ? 28 + row * 36 : 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
-      const icon = this.toolClip(tool.id, x, y);
-      if (icon) this.add(icon);
+      if (!pad) {
+        const icon = this.toolClip(tool.id, x, y);
+        if (icon) this.add(icon);
+      }
       const label = t("editor." + tool.id);
-      this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, 11, false, col === 0 ? 104 : 88));
+      this.add(this.act("tool:" + tool.id, mark + label, pad ? x : x + 16, y, pad ? 12 : 11, false, pad ? 78 : col === 0 ? 104 : 88));
     });
 
-    if (opts.hint) this.add(text(opts.hint, 10, 236, 10, theme.muted));
-    this.add(text(t("creator.padHint"), 10, 250, 9, theme.muted));
+    if (opts.hint) this.add(text(opts.hint, 10, pad ? 214 : 236, 10, theme.muted));
+    this.add(text(t(pad ? "creator.padHintMobile" : "creator.padHint"), 10, pad ? 228 : 250, 9, theme.muted));
     const bar = [
       { id: "creator-new", label: t("creator.new"), off: false },
       { id: "creator-clear", label: t("creator.clear"), off: false },
@@ -864,9 +866,8 @@ export class ExtraHud {
     ];
     const tray = new createjs.Container();
     tray.x = 8;
-    tray.y = 266;
+    tray.y = pad ? 242 : 266;
     let barX = 0;
-    const pad = wantsVirtualPad();
     let size = 11;
     const extra = pad ? 36 : 24;
     const guess = (label: string): number => Math.max(36, Math.ceil(label.length * size * 0.62) + extra);

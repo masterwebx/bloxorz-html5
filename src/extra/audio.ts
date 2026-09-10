@@ -14,10 +14,11 @@ let unlocked = false;
 let ctxReady = false;
 let origPlay: ((...args: unknown[]) => SoundInst) | null = null;
 let menuMusic: SoundInst = null;
-let musicInsts: NonNullable<SoundInst>[] = [];
 let queued: PlayArgs[] = [];
 let whooshOnce = false;
 let allowMenuMusic = false;
+let musicEl: HTMLAudioElement | null = null;
+let musicSrc = "";
 
 function isMusicId(id: unknown): boolean {
   return id === "Music" || id === "music";
@@ -53,29 +54,23 @@ function audioContext(): { resume?: () => Promise<unknown>; state?: string } | u
 }
 
 function playNow(args: PlayArgs): SoundInst {
+  if (isMusicId(args[0])) {
+    if (!allowMenuMusic) return null;
+    ensureMenuMusic();
+    return menuMusic;
+  }
   if (!origPlay) return null;
   const id = typeof args[0] === "string" ? args[0] : "";
   if (id && themeSoundUrl(id)) {
-    if (isMusicId(id) && !allowMenuMusic) return null;
-    if (isMusicId(id)) stopTrackedMusic();
-    const loop = isMusicId(id);
-    const html = playThemeSound(id, loop);
+    const html = playThemeSound(id, false);
     const s = loadSettings();
-    if (html) html.volume = isMusicId(id) ? s.music : s.sfx;
+    if (html) html.volume = s.sfx;
     return html as SoundInst;
-  }
-  if (isMusicId(args[0])) {
-    if (!allowMenuMusic) return null;
-    stopTrackedMusic();
   }
   const inst = origPlay(...args);
   if (inst && typeof inst === "object") {
     const s = loadSettings();
-    inst.volume = isMusicId(args[0]) ? s.music : s.sfx;
-    if (isMusicId(args[0])) {
-      menuMusic = inst;
-      musicInsts.push(inst);
-    }
+    inst.volume = s.sfx;
   }
   return inst;
 }
@@ -84,17 +79,12 @@ function flushQueue(): void {
   const pending = queued;
   queued = [];
   for (const args of pending) {
-    if (isMusicId(args[0]) && !allowMenuMusic) continue;
-    if (isMusicId(args[0]) && musicAlive()) continue;
+    if (isMusicId(args[0])) {
+      if (allowMenuMusic) ensureMenuMusic();
+      continue;
+    }
     playNow(args);
   }
-}
-
-function musicAlive(): boolean {
-  if (!menuMusic || !ctxReady) return false;
-  const st = menuMusic.playState;
-  if (st === "playFinished" || st === "playFailed" || st === "playInterrupted") return false;
-  return true;
 }
 
 function markReady(): void {
@@ -126,7 +116,6 @@ export function unlockAudio(after?: () => void): boolean {
   if (p && typeof (p as Promise<unknown>).then === "function") {
     void (p as Promise<unknown>).then(finish).catch(finish);
   } else {
-    // Some browsers only unlock after a second tick.
     window.setTimeout(finish, 0);
   }
   return first;
@@ -135,6 +124,32 @@ export function unlockAudio(after?: () => void): boolean {
 export function setMenuMusicAllowed(on: boolean): void {
   allowMenuMusic = on;
   if (!on) stopMenuMusic();
+}
+
+function defaultMusicUrl(): string {
+  return themeSoundUrl("Music") || "sounds/Music.mp3";
+}
+
+function bindMusicElement(el: HTMLAudioElement): SoundInst {
+  const inst: NonNullable<SoundInst> = {
+    get volume() {
+      return el.volume;
+    },
+    set volume(v: number) {
+      el.volume = v;
+    },
+    get paused() {
+      return el.paused;
+    },
+    stop() {
+      el.pause();
+    },
+  };
+  return inst;
+}
+
+function musicPlaying(): boolean {
+  return !!musicEl && !musicEl.paused && !musicEl.ended;
 }
 
 export function ensureMenuMusic(): void {
@@ -146,41 +161,57 @@ export function ensureMenuMusic(): void {
     return;
   }
   if (!ctxReady) {
+    queued = queued.filter((args) => !isMusicId(args[0]));
     queued.push(["Music", { loop: -1 }]);
     return;
   }
-  if (musicAlive()) {
-    menuMusic!.volume = s.music;
+  const url = defaultMusicUrl();
+  if (musicEl && musicSrc === url) {
+    musicEl.volume = s.music;
+    menuMusic = bindMusicElement(musicEl);
+    if (!musicPlaying()) void musicEl.play().catch(() => undefined);
     return;
   }
-  playNow(["Music", { loop: -1 }]);
+  stopTrackedMusic();
+  const el = new Audio(url);
+  el.loop = true;
+  el.preload = "auto";
+  el.volume = s.music;
+  musicEl = el;
+  musicSrc = url;
+  menuMusic = bindMusicElement(el);
+  void el.play().catch(() => undefined);
 }
 
 function stopTrackedMusic(): void {
-  for (const inst of musicInsts) inst.stop?.();
-  menuMusic?.stop?.();
-  musicInsts = [];
+  if (musicEl) {
+    musicEl.pause();
+    musicEl.removeAttribute("src");
+    musicEl.load();
+  }
+  musicEl = null;
+  musicSrc = "";
   menuMusic = null;
 }
 
 export function stopMenuMusic(): void {
   stopTrackedMusic();
   queued = queued.filter((args) => !isMusicId(args[0]));
-  const stage = (window as unknown as { stage?: { menuMusic?: SoundInst } }).stage;
-  if (stage?.menuMusic) {
-    stage.menuMusic.stop?.();
-    stage.menuMusic = null;
-  }
 }
 
 export function applyVolumes(): void {
   const s = loadSettings();
+  if (musicEl) musicEl.volume = s.music;
   if (menuMusic) menuMusic.volume = s.music;
   const cjs = (window as unknown as { createjs?: { Sound?: { volume: number } } }).createjs;
   if (cjs?.Sound) cjs.Sound.volume = 1;
 }
 
 function playId(id: string): void {
+  if (isMusicId(id)) {
+    ensureMenuMusic();
+    return;
+  }
   if (!origPlay) gateSoundPlay();
   if (!ctxReady) {
     queued.push([id]);
@@ -212,7 +243,6 @@ export function playHomeWhoosh(): void {
 }
 
 export function playDevJingle(): void {
-  // Remake uses whoosh_2 for the DEV unlock. Coolmath's matching clip is blox2wav.
   if (!ctxReady) {
     queued.push(["blox2wav"]);
     queued.push(["blox003wav"]);
