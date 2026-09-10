@@ -1,8 +1,6 @@
 {
   "id": "holiday",
   "name": "Holiday",
-  "atlas": "atlas.png",
-  "atlasScale": 1,
   "hd": false,
   "render": "atlas",
   "paint": {

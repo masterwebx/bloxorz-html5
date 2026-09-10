@@ -150,11 +150,12 @@ body.has-theme-media #canvas {
 }
 
 #howto-copy {
-	left: 1.64%;
+	left: 1.6%;
 	top: 47.2%;
-	width: 68.5%;
-	height: 45%;
+	width: 96.8%;
+	height: 34%;
 	white-space: pre-wrap;
+	overflow: hidden;
 }
 
 #pause-stats {
@@ -190,6 +191,18 @@ body.has-theme-media #canvas {
 	pointer-events: none;
 }
 
+#howto-nav {
+	inset: auto 0 0 0;
+	height: 16%;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto auto;
+	align-items: center;
+	column-gap: 1.4%;
+	padding: 0 1.8% 1.4%;
+	box-sizing: border-box;
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.18) 70%, transparent);
+}
+
 #howto-nav button,
 #pause-nav button {
 	pointer-events: auto;
@@ -200,18 +213,24 @@ body.has-theme-media #canvas {
 	border: 0;
 	background: transparent;
 	color: #fff;
-	font: 700 calc(11 * 100cqh / 300) / 1 Arial, Helvetica, sans-serif;
+	font: 700 calc(11 * 100cqh / 300) / 1.15 Arial, Helvetica, sans-serif;
 	text-shadow: 0 0 0.4cqh #ff4a12, 0 0 0.8cqh #c43000;
 	white-space: nowrap;
 	cursor: pointer;
 	text-align: center;
-	overflow: visible;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 #howto-nav button {
+	position: relative;
+	left: auto;
+	top: auto;
 	width: auto;
 	height: auto;
-	transform: translate(-50%, -50%);
+	max-width: 100%;
+	transform: none;
+	min-width: 0;
 }
 
 #howto-nav button.is-focus,
@@ -219,11 +238,27 @@ body.has-theme-media #canvas {
 	text-shadow: 0 0 0.5cqh #fff, 0 0 1cqh #ff6a18;
 }
 
-#howto-back { left: 56.4%; top: 90.1%; }
-#howto-skip { left: 79.5%; top: 90.1%; }
-#howto-prev { left: 85.6%; top: 90.1%; }
-#howto-next { left: 97%; top: 90.1%; }
-#howto-start { left: 97%; top: 90.1%; }
+#howto-back {
+	grid-column: 1;
+	justify-self: start;
+	text-align: left;
+}
+
+#howto-skip {
+	grid-column: 2;
+	justify-self: end;
+}
+
+#howto-prev {
+	grid-column: 3;
+	justify-self: end;
+}
+
+#howto-next,
+#howto-start {
+	grid-column: 4;
+	justify-self: end;
+}
 
 #pause-return { left: 10%; top: 47.6%; width: auto; height: auto; text-align: left; }
 #pause-sound { left: 10%; top: 54.6%; width: auto; height: auto; text-align: left; }

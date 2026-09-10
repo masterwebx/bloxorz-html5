@@ -1,8 +1,6 @@
 {
   "id": "original",
   "name": "Original",
-  "atlas": "atlas.png",
-  "atlasScale": 1,
   "hd": false,
   "render": "atlas",
   "paint": {

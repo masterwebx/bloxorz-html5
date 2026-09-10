@@ -26,7 +26,7 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, pollGamepad, pollMenuPad, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopMenuMusic, unlockAudio } from "./audio";
+import { applyVolumes, ensureMenuMusic, gateSoundPlay, playDevJingle, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import {
   loadFinishedStages,
   saveFinishedStage,
@@ -57,7 +57,6 @@ import {
 import { applyDocumentLocale, bootLocales, listLocales, loadExtraLocales, localeId, setLocale, t, usesHdType } from "./i18n";
 import { LOCALE_TABLE } from "./locale.gen";
 import {
-  atlasUrlFor,
   bootThemes,
   currentThemeId,
   getTheme,
@@ -67,6 +66,7 @@ import {
   setCurrentThemeId,
   themeMenuItems,
 } from "./themePack";
+import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
 import { clearTheme3d, syncTheme3d } from "./theme3d";
 import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./hue";
 import { solveLevel } from "./solve";
@@ -100,7 +100,7 @@ import {
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthrough";
 import type { ClipName } from "./coolmathBoard";
 import { looksLikeMobile, registerServiceWorker, TouchChrome } from "./touchPad";
-import { howtoSlide, padStage } from "./howto";
+import { fitHowtoNav, fitOverlayCopy, howtoNavIds, howtoSlide, padStage } from "./howto";
 
 type Screen =
   | "splash"
@@ -159,6 +159,7 @@ type OverlayNode = BitmapMark & {
   y?: number;
   _off?: boolean;
   currentFrame?: number;
+  mouseEnabled?: boolean;
   dispatchEvent?: (ev: unknown) => void;
   localToGlobal?: (x: number, y: number) => { x: number; y: number };
   getBounds?: () => { x: number; y: number; width: number; height: number } | null;
@@ -276,11 +277,6 @@ type LibCtor = {
 const NAME_KEY = "bloxorz-player-name";
 const LIST_PAGE = 6;
 const LIST_HISTORY = 5;
-const ATLAS_SRC: Record<string, string> = {
-  original: "themes/original/atlas.png",
-  gray: "themes/gray/atlas.png",
-  holiday: "themes/holiday/atlas.png",
-};
 const VANILLA_BUTTONS = ["startNewGame", "resumeGame", "loadStage", "toggleSound", "credits"];
 const KEY_CMD: Record<string, TapeCmd> = {
   ArrowUp: "up",
@@ -347,7 +343,6 @@ let editCursor = { x: 2, y: 4 };
 let editorPaintHeld = false;
 let replayExclude: TapeCmd[] = [];
 let prevCreatorPad = new Set<number>();
-const atlasImages: Partial<Record<ThemeId, HTMLImageElement>> = {};
 let lastFinished: RunRecord | null = null;
 let finishReturnTo: Screen = "home";
 let finishKind: PlayCard = "classic";
@@ -812,16 +807,12 @@ function bindSettingsChrome(): void {
     void file.arrayBuffer().then(async (buf) => {
       try {
         const pack = await installThemeZip(buf);
+        forgetThemeAtlas();
         try {
-          applyTheme(pack.id, false);
+          applyTheme(pack.id, true);
         } catch {
-          /* pack is already in the list even if live apply fails */
+          window.location.reload();
         }
-        themeUploadMsg = t("theme.uploadOk");
-        lastHudPaint = "";
-        markHudDirty();
-        placeSettingsChrome(extraView === "settings", true);
-        paintHud();
       } catch {
         themeUploadMsg = t("theme.uploadBad");
         lastHudPaint = "";
@@ -963,12 +954,13 @@ function markLive(node: OverlayNode | undefined): boolean {
 
 function setGlyphVisible(node: OverlayNode | undefined, show: boolean): void {
   if (!node) return;
-  const kids = node.children;
-  if (kids?.length) {
-    for (const child of kids) child.visible = show;
-    return;
+  node.visible = show;
+  node.alpha = show ? 1 : 0;
+  node.mouseEnabled = show;
+  for (const child of node.children ?? []) {
+    child.visible = show;
+    if (!show) child.alpha = 0;
   }
-  if (show && node.alpha === 0) node.alpha = 1;
 }
 
 function stageScale(): { sx: number; sy: number } {
@@ -1073,9 +1065,7 @@ function syncHowto(on: boolean): void {
     page.hidden = true;
     if (nav) nav.hidden = true;
     setInstructionBitmaps(true);
-    for (const btn of [inst?.nextButton, inst?.nextButton2, inst?.prevButton, inst?.skipButton, inst?.backButton, inst?.startButton]) {
-      setGlyphVisible(btn, true);
-    }
+    for (const btn of instructionGlyphs()) setGlyphVisible(btn, true);
     return;
   }
   setInstructionBitmaps(false);
@@ -1096,15 +1086,23 @@ function syncHowto(on: boolean): void {
   if (prev) prev.textContent = t("howto.prev");
   if (next) next.textContent = t("howto.next");
   if (start) start.textContent = t("howto.start");
-  const nextSrc = liveHowtoNext(inst);
-  placeOverlay(back, inst?.backButton, markLive(inst?.backButton));
-  placeOverlay(skip, inst?.skipButton, markLive(inst?.skipButton));
-  placeOverlay(prev, inst?.prevButton, markLive(inst?.prevButton));
-  placeOverlay(next, nextSrc, markLive(nextSrc));
-  placeOverlay(start, inst?.startButton, markLive(inst?.startButton));
-  for (const btn of [inst?.nextButton, inst?.nextButton2, inst?.prevButton, inst?.skipButton, inst?.backButton, inst?.startButton]) {
-    setGlyphVisible(btn, false);
+  const live = new Set(howtoNavIds(slide));
+  if (back) back.hidden = !live.has("back");
+  if (skip) skip.hidden = !live.has("skip");
+  if (prev) prev.hidden = !live.has("prev");
+  if (next) next.hidden = !live.has("next");
+  if (start) start.hidden = !live.has("start");
+  for (const el of [back, skip, prev, next, start]) {
+    if (!el) continue;
+    el.style.left = "";
+    el.style.top = "";
+    el.style.width = "";
+    el.style.height = "";
+    el.style.transform = "";
   }
+  fitOverlayCopy(copy);
+  if (nav) fitHowtoNav(nav);
+  for (const btn of instructionGlyphs()) setGlyphVisible(btn, false);
 }
 
 function syncPauseStats(on: boolean): void {
@@ -2081,18 +2079,8 @@ function applyTheme(theme: ThemeId, reload = false): void {
   ensureMenuMusic();
 }
 
-function loadAtlasImage(theme: ThemeId): Promise<HTMLImageElement> {
-  const hit = atlasImages[theme];
-  if (hit?.complete && hit.naturalWidth) return Promise.resolve(hit);
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      atlasImages[theme] = img;
-      resolve(img);
-    };
-    img.onerror = () => reject(new Error("atlas"));
-    img.src = atlasUrlFor(theme) || ATLAS_SRC[theme] || ATLAS_SRC.original;
-  });
+function loadAtlasImage(theme: ThemeId): Promise<HTMLCanvasElement> {
+  return composeThemeAtlas(theme);
 }
 
 async function swapAtlasLive(theme: ThemeId): Promise<void> {
@@ -2781,7 +2769,7 @@ function startMenuAudio(): void {
 
 function hushPlayAudio(): void {
   setMenuMusicAllowed(false);
-  stopMenuMusic();
+  stopAllSounds();
 }
 
 function finishCopy(): { title: string; cleared: string } {
@@ -2802,7 +2790,7 @@ function rememberFinish(session: PlaySession | null): void {
   finishTitle = session?.title || t("finish.title");
   finishSubtitle = session?.subtitle || session?.seed || "";
   const back = session?.returnTo;
-  finishReturnTo = back === "puzzles" || back === "puzzles-seeded" || back === "puzzles-gauntlet" ? back : "home";
+  finishReturnTo = back && back !== "auto" && back !== "finish" ? back : "home";
 }
 
 async function shareWinShot(): Promise<void> {
@@ -3303,8 +3291,18 @@ function instructionClip(): {
   skipButton?: OverlayNode;
   backButton?: OverlayNode;
   startButton?: OverlayNode;
+  instance?: OverlayNode;
+  instance_1?: OverlayNode;
+  instance_2?: OverlayNode;
+  instance_3?: OverlayNode;
 } | undefined {
   return window.exportRoot?.inst;
+}
+
+function instructionGlyphs(): OverlayNode[] {
+  const inst = instructionClip();
+  if (!inst) return [];
+  return [inst.nextButton, inst.nextButton2, inst.prevButton, inst.skipButton, inst.backButton, inst.startButton, inst.instance, inst.instance_1, inst.instance_2, inst.instance_3].filter((n): n is OverlayNode => !!n);
 }
 
 function advanceInstructions(dir: 1 | -1 | 0): void {
@@ -3392,7 +3390,10 @@ function handleTouchPadPause(): void {
     togglePauseMenu();
     return;
   }
-  if (currentLabel() === "instructions" || currentLabel() === "stagetitle" || playSession) return;
+  if (currentLabel() === "instructions" || currentLabel() === "stagetitle" || playSession) {
+    quitPlay();
+    return;
+  }
   if (extraView !== "home" && extraView !== "name" && extraView !== "splash") goBack();
 }
 
@@ -3708,7 +3709,7 @@ function syncOverlay(): void {
   syncLetterbox(onTitle);
   setVanillaTitleVisible(false);
 
-  if (playSession && !playLaunching && !labeledRun && (extraView === "auto" || label === "menu" || label === "splash")) {
+  if (playSession && !playLaunching && !labeledRun && label !== "finish" && (extraView === "auto" || label === "menu" || label === "splash")) {
     const back = playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
     leavePlayTo(back);
     return;
@@ -3763,33 +3764,11 @@ function syncOverlay(): void {
       saveRun(run);
       run = null;
     }
-    const back = playSession?.returnTo;
     rememberFinish(playSession);
     lastLabel = label;
     overlayMode = "";
     menuParked = false;
-    const puzzleWin = back === "puzzles" || back === "puzzles-seeded" || back === "puzzles-gauntlet";
-    if (
-      back === "creator" ||
-      back === "creator-edit" ||
-      back === "creator-play" ||
-      back === "creator-make" ||
-      back === "history" ||
-      back === "load" ||
-      back === "creator-saved"
-    ) {
-      parkCreateJsMenu();
-      setExportRootMouse(false);
-      setMouseOverRate(5);
-      playSession = null;
-      hud?.setVisible(true);
-      raiseHud();
-      openPanel(back);
-      startMenuAudio();
-      overlayMode = "menu";
-      return;
-    }
-    if (!puzzleWin && !usesHdType() && playSession?.classicRun && playSession.kind === "campaign") {
+    if (!usesHdType() && playSession?.classicRun && playSession.kind === "campaign") {
       setVanillaCongraVisible(true);
       hud?.setVisible(false);
       setExportRootMouse(true);
@@ -3997,6 +3976,7 @@ declare global {
     __bloxTileIdleFrame?: (type: string, doorOpen?: boolean) => number | null;
     __bloxDenseBoard?: boolean;
     applyLiveTheme?: (theme: string) => void;
+    __bloxLoadThemeAtlas?: (theme: string) => Promise<HTMLCanvasElement>;
     AdobeAn?: {
       getComposition: (id: string) => {
         getLibrary: () => LibCtor;
@@ -4008,6 +3988,7 @@ declare global {
       Sound?: {
         volume: number;
         play?: (...args: unknown[]) => unknown;
+        stop?: () => void;
         activePlugin?: { context?: { resume?: () => Promise<unknown> } };
       };
       WebAudioPlugin?: { context?: { resume?: () => Promise<unknown> } };
@@ -4155,6 +4136,10 @@ export function startBloxorzShell(): void {
 }
 
 window.startBloxorzShell = startBloxorzShell;
+window.__bloxLoadThemeAtlas = async (theme: string) => {
+  const id = await bootThemes(theme);
+  return composeThemeAtlas(id, true);
+};
 
 (function patchHitCanvas(): void {
   if (typeof HTMLCanvasElement === "undefined") return;

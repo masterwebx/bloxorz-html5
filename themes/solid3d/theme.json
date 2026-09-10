@@ -1,8 +1,6 @@
 {
   "id": "solid3d",
   "name": "Solid 3D",
-  "atlas": "atlas.png",
-  "atlasScale": 1,
   "hd": true,
   "render": "solid3d",
   "paint": {

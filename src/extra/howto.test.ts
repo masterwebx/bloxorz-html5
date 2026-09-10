@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { howtoSlide, padStage } from "./howto";
+import { howtoNavIds, howtoSlide, padStage } from "./howto";
 
 describe("howto slides", () => {
   it("maps the official stop frames to slides 0–8", () => {
@@ -12,6 +12,12 @@ describe("howto slides", () => {
     expect(howtoSlide(133)).toBe(6);
     expect(howtoSlide(153)).toBe(7);
     expect(howtoSlide(173)).toBe(8);
+  });
+
+  it("keeps step 1 nav as a row that can reflow by language", () => {
+    expect(howtoNavIds(0)).toEqual(["back", "skip", "next"]);
+    expect(howtoNavIds(1)).toEqual(["prev", "next"]);
+    expect(howtoNavIds(8)).toEqual(["start"]);
   });
 
   it("pads stage numbers like the original title card", () => {

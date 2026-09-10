@@ -36,21 +36,6 @@
 			};
 		})();
 	</script>
-	<script>
-		(function () {
-			var theme = "original";
-			try {
-				var params = new URLSearchParams(window.location.search);
-				theme = params.get("img") || (window.localStorage && window.localStorage.getItem("theme")) || "original";
-			} catch (e) {}
-			if (theme !== "gray" && theme !== "holiday") theme = "original";
-			var link = document.createElement("link");
-			link.rel = "preload";
-			link.as = "image";
-			link.href = "themes/" + theme + "/atlas.png";
-			document.head.appendChild(link);
-		})();
-	</script>
 </head>
 
 <body>
@@ -194,7 +179,7 @@
 
 		function getThemeFromUrl() {
 			var params = new URLSearchParams(window.location.search);
-			return normalizeTheme(params.get("img"));
+			return params.get("img") || "";
 		}
 
 		function getStoredTheme() {
@@ -212,10 +197,13 @@
 			return url.toString();
 		}
 
-		function atlasSrc(theme) {
-			var t = theme || "original";
-			if (t !== "gray" && t !== "holiday") t = "original";
-			return "themes/" + t + "/atlas.png";
+		function loadThemeAtlas(theme) {
+			if (typeof window.__bloxLoadThemeAtlas === "function") {
+				return window.__bloxLoadThemeAtlas(theme).catch(function () {
+					return window.__bloxLoadThemeAtlas("original");
+				});
+			}
+			return Promise.reject(new Error("atlas"));
 		}
 
 		function loadScript(src) {
@@ -241,20 +229,8 @@
 			if (versionEl) {
 				versionEl.textContent = "v" + (window.GAME_VERSION || "2.5.0");
 			}
-			var wanted = getThemeFromUrl() || getStoredTheme();
-			var atlas = new Image();
-			var atlasReady = new Promise(function (resolve, reject) {
-				atlas.onload = function () { resolve(atlas); };
-				atlas.onerror = function () {
-					if (atlas.getAttribute("data-fallback") === "1") {
-						reject(new Error("atlas"));
-						return;
-					}
-					atlas.setAttribute("data-fallback", "1");
-					atlas.src = "themes/original/atlas.png";
-				};
-			});
-			atlas.src = atlasSrc(wanted);
+			var wanted = getThemeFromUrl() || getStoredTheme() || "original";
+			var atlasReady = loadThemeAtlas(wanted);
 			Promise.all([
 				atlasReady,
 				loadScript("code.jquery.com/jquery-2.2.4.min.js").then(function () {
@@ -383,7 +359,7 @@
 		}
 
 		function playSound(id, loop) {
-			return createjs.Sound.play(id, createjs.Sound.INTERRUPT_EARLY, 0, 0, loop);
+			return createjs.Sound.play(id, createjs.Sound.INTERRUPT_EARLY, 0, 0, loop || 0);
 		}
 
 		setTimeout(function () {

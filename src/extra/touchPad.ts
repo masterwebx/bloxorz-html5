@@ -33,6 +33,10 @@ export function swapPadLabel(playing: boolean): string {
   return playing ? t("touch.split") : t("touch.ok");
 }
 
+export function padMenuLabel(playing: boolean): string {
+  return playing ? t("touch.pause") : t("common.back").toLocaleUpperCase();
+}
+
 const INSTALL_KEY = "bloxorz-install-hint";
 
 export function isCoarsePointer(): boolean {
@@ -146,7 +150,7 @@ export class TouchChrome {
       const swap = this.pad.querySelector(".tp-swap");
       if (swap) swap.textContent = creator ? t("touch.paint") : swapPadLabel(this.playing);
       const menu = this.pad.querySelector(".tp-menu");
-      if (menu) menu.textContent = creator ? t("common.back") : t("touch.pause");
+      if (menu) menu.textContent = padMenuLabel(this.playing);
       const rotateBtn = this.pad.querySelector(".tp-rotate");
       if (rotateBtn) rotateBtn.textContent = creator ? t("touch.tool") : t("touch.rotate");
     }

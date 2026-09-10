@@ -1,5 +1,5 @@
 import { loadSettings } from "./settings";
-import { playThemeSound, themeSoundUrl } from "./themePack";
+import { playThemeSound, stopThemeMusic, themeSoundUrl } from "./themePack";
 
 type SoundInst = {
   volume?: number;
@@ -53,21 +53,41 @@ function audioContext(): { resume?: () => Promise<unknown>; state?: string } | u
   return cjs?.WebAudioPlugin?.context || cjs?.Sound?.activePlugin?.context;
 }
 
+/** Animate's playSound passes `undefined` as loop, which HTMLAudio treats as infinite. */
+export function soundLoopCount(loop: unknown): number {
+  if (typeof loop === "number" && Number.isFinite(loop)) return loop;
+  return 0;
+}
+
+function playArgs(args: PlayArgs): PlayArgs {
+  if (!args.length) return args;
+  if (args.length >= 5) {
+    const next = args.slice();
+    next[4] = soundLoopCount(args[4]);
+    return next;
+  }
+  if (args.length === 2 && (typeof args[1] === "number" || args[1] == null)) {
+    return [args[0], 0, 0, 0, soundLoopCount(args[1])];
+  }
+  return args;
+}
+
 function playNow(args: PlayArgs): SoundInst {
-  if (isMusicId(args[0])) {
+  const play = playArgs(args);
+  if (isMusicId(play[0])) {
     if (!allowMenuMusic) return null;
     ensureMenuMusic();
     return menuMusic;
   }
   if (!origPlay) return null;
-  const id = typeof args[0] === "string" ? args[0] : "";
+  const id = typeof play[0] === "string" ? play[0] : "";
   if (id && themeSoundUrl(id)) {
     const html = playThemeSound(id, false);
     const s = loadSettings();
     if (html) html.volume = s.sfx;
     return html as SoundInst;
   }
-  const inst = origPlay(...args);
+  const inst = origPlay(...play);
   if (inst && typeof inst === "object") {
     const s = loadSettings();
     inst.volume = s.sfx;
@@ -197,6 +217,17 @@ function stopTrackedMusic(): void {
 export function stopMenuMusic(): void {
   stopTrackedMusic();
   queued = queued.filter((args) => !isMusicId(args[0]));
+}
+
+export function stopAllSounds(): void {
+  stopMenuMusic();
+  stopThemeMusic();
+  queued = [];
+  try {
+    (window as unknown as { createjs?: { Sound?: { stop?: () => void } } }).createjs?.Sound?.stop?.();
+  } catch {
+    /* plugin may not be ready */
+  }
 }
 
 export function applyVolumes(): void {

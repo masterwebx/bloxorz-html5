@@ -1,7 +1,7 @@
 """Slice theme atlases into editable folders and pack them back.
 
 Coolmath logo frames are dropped. Missing files fall back to Original.
-Packed atlas.png is what the game loads at runtime.
+Packed folder files are what the game loads at runtime.
 """
 from __future__ import annotations
 
@@ -88,9 +88,16 @@ def build_map() -> dict:
             row["srcY"] = 0
             block_n += 1
         rows.append(row)
-    orig = Image.open(THEMES / "original" / "atlas.png")
-    payload = {"width": orig.width, "height": orig.height, "frames": rows}
-    orig.close()
+    orig_atlas = open_rgba(THEMES / "original" / "atlas.png")
+    if orig_atlas:
+        width, height = orig_atlas.size
+        orig_atlas.close()
+    elif MAP_PATH.exists():
+        prev = json.loads(MAP_PATH.read_text(encoding="utf-8"))
+        width, height = int(prev.get("width") or 4096), int(prev.get("height") or 4096)
+    else:
+        width, height = 4096, 4096
+    payload = {"width": width, "height": height, "frames": rows}
     MAP_PATH.write_text(json.dumps(payload) + "\n", encoding="utf-8")
     return payload
 
@@ -183,9 +190,6 @@ def main() -> None:
     payload = build_map()
     for theme in ("original", "gray", "holiday", "solid3d"):
         slice_theme(theme, payload)
-    parts = load_original_parts(payload)
-    for theme in ("original", "gray", "holiday", "solid3d"):
-        pack_theme(theme, payload, parts)
     print("wrote", MAP_PATH)
 
 

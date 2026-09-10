@@ -158,10 +158,7 @@ export function atlasUrlFor(id: string): string {
     if (hit) return hit[1];
   }
   if (pack.atlas && pack.builtin) return themeFileUrl(pack.id, pack.atlas);
-  if (id === "gray") return "themes/gray/atlas.png";
-  if (id === "holiday") return "themes/holiday/atlas.png";
-  if (id === "solid3d") return "themes/solid3d/atlas.png";
-  return "themes/original/atlas.png";
+  return "";
 }
 
 export function mediaUrlFor(pack: ThemePack): string | null {
@@ -294,9 +291,6 @@ export async function bootThemes(saved?: string | null): Promise<string> {
       const raw = (await fetch(`themes/${id}/theme.json`).then((r) => (r.ok ? r.json() : null))) as RawTheme | null;
       if (!raw) continue;
       const pack = normalizePack(raw, id, true);
-      if (pack.atlas && !pack.atlas.startsWith("blob:") && !pack.atlas.startsWith("http") && !pack.atlas.startsWith("themes/")) {
-        pack.atlas = themeFileUrl(id, pack.atlas);
-      }
       packs.set(pack.id, pack);
     }
   } catch {
@@ -346,8 +340,12 @@ function fileKey(name: string): string {
   return name.replace(/\\/g, "/").replace(/^\/+/, "").toLowerCase();
 }
 
+function isThemeAsset(name: string): boolean {
+  return /\.(png|jpe?g|gif|webp|mp3|wav|ogg|mp4|webm)$/i.test(name);
+}
+
 function neededThemeFiles(raw: RawTheme): Set<string> {
-  const names = new Set<string>(["atlas.png"]);
+  const names = new Set<string>();
   if (raw.atlas) names.add(fileKey(raw.atlas));
   if (raw.background?.src) names.add(fileKey(raw.background.src));
   if (raw.audio?.music) names.add(fileKey(raw.audio.music));
@@ -362,6 +360,8 @@ function matchesNeeded(entryName: string, folder: string, needed: Set<string>): 
   const base = fileKey(zipBase(entryName));
   const prefix = fileKey(folder);
   const rel = prefix && n.startsWith(prefix + "/") ? n.slice(prefix.length + 1) : n;
+  if (/(^|\/)atlas\.png$/.test(rel) || rel.endsWith(".json")) return false;
+  if (isThemeAsset(rel)) return true;
   return needed.has(n) || needed.has(base) || needed.has(rel);
 }
 
@@ -407,8 +407,6 @@ export async function installThemeZip(buffer: ArrayBuffer): Promise<ThemePack> {
     /* keep the pack live even if IDB quota rejects a huge pack */
   }
   const live = registerStored({ json: savedJson, files: stored }) ?? normalizePack(savedJson, id, false);
-  const hasAtlas = Object.keys(stored).some((k) => /(^|\/)atlas\.png$/i.test(k));
-  if (!hasAtlas) live.atlas = atlasUrlFor("original");
   return live;
 }
 

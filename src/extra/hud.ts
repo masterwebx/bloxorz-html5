@@ -38,6 +38,7 @@ type HudNode = {
   scaleY?: number;
   hitW?: number;
   visible: boolean;
+  alpha?: number;
   mouseEnabled: boolean;
   mouseChildren?: boolean;
   cursor?: string;
@@ -45,6 +46,7 @@ type HudNode = {
   shadow?: unknown;
   parent?: unknown;
   cacheID?: number;
+  gotoAndStop?: (n: string | number) => void;
   addChild: (...c: HudNode[]) => void;
   removeChild?: (c: HudNode) => void;
   removeAllChildren: () => void;
@@ -840,17 +842,15 @@ export class ExtraHud {
 
     const pad = wantsVirtualPad();
     EDITOR_TOOLS.forEach((tool, i) => {
-      const col = pad ? i % 3 : i < 6 ? 0 : 1;
-      const row = pad ? Math.floor(i / 3) : i < 6 ? i : i - 6;
-      const x = pad ? 292 + col * 84 : 300 + col * 128;
-      const y = pad ? 28 + row * 36 : 32 + row * 28;
+      const col = pad ? i % 2 : i < 6 ? 0 : 1;
+      const row = pad ? Math.floor(i / 2) : i < 6 ? i : i - 6;
+      const x = pad ? 372 + col * 86 : 300 + col * 128;
+      const y = pad ? 28 + row * 26 : 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
-      if (!pad) {
-        const icon = this.toolClip(tool.id, x, y);
-        if (icon) this.add(icon);
-      }
+      const icon = this.toolClip(tool.id, x, y);
+      this.add(icon);
       const label = t("editor." + tool.id);
-      this.add(this.act("tool:" + tool.id, mark + label, pad ? x : x + 16, y, pad ? 12 : 11, false, pad ? 78 : col === 0 ? 104 : 88));
+      this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, pad ? 9 : 11, false, pad ? 80 : col === 0 ? 104 : 88));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, pad ? 214 : 236, 10, theme.muted));
@@ -950,23 +950,32 @@ export class ExtraHud {
     }
   }
 
-  private toolClip(id: string, x: number, y: number): HudNode | null {
+  private toolClip(id: string, x: number, y: number): HudNode {
     const ch = id === "erase" ? " " : id === "spawn" ? "b" : id === "link" ? "s" : id === "exit" ? "e" : id === "stone" ? "b" : id === "soft" ? "s" : id === "heavy" ? "h" : id === "fragile" ? "f" : id === "split" ? "v" : id === "bridgeL" ? "l" : id === "bridgeR" ? "r" : " ";
     const spec = clipForTile(ch);
-    if (!spec) {
-      const s = new createjs.Shape();
-      s.graphics.beginFill("rgba(255,255,255,0.08)").drawRect(x, y, 12, 10);
-      s.mouseEnabled = false;
-      return s;
+    const wrap = new createjs.Container();
+    wrap.x = x;
+    wrap.y = y;
+    wrap.mouseEnabled = false;
+    wrap.mouseChildren = false;
+    const clip = spec ? this.makeClip?.(spec.name) : null;
+    if (clip) {
+      const [ox, oy] = CLIP_OFFSET[spec!.name];
+      clip.x = 6 - ox * 0.22;
+      clip.y = 8 - oy * 0.22;
+      clip.scaleX = 0.22;
+      clip.scaleY = 0.22;
+      clip.mouseEnabled = false;
+      clip.visible = true;
+      clip.alpha = 1;
+      clip.gotoAndStop?.(0);
+      wrap.addChild(clip);
+      return wrap;
     }
-    const clip = this.makeClip?.(spec.name);
-    if (!clip) return null;
-    clip.x = x;
-    clip.y = y;
-    clip.scaleX = 0.28;
-    clip.scaleY = 0.28;
-    clip.mouseEnabled = false;
-    return clip;
+    const s = new createjs.Shape();
+    s.graphics.beginFill("rgba(255,255,255,0.22)").drawRect(1, 2, 12, 10);
+    wrap.addChild(s);
+    return wrap;
   }
 
   drawInGameDev(banner = "", autoSolve = false): void {

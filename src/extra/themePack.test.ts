@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atlasUrlFor, getTheme, installThemeZip, isHdTheme, isSolid3d, setCurrentThemeId, themeMenuItems } from "./themePack";
+import { getTheme, installThemeZip, isHdTheme, isSolid3d, setCurrentThemeId, themeMenuItems } from "./themePack";
 
 function crc32(buf: Uint8Array): number {
   let c = 0xffffffff;
@@ -93,24 +93,24 @@ describe("theme packs", () => {
     expect(getTheme("solid3d").render).toBe("solid3d");
   });
 
-  it("resolves builtin atlas paths", () => {
+  it("does not require a packed atlas.png", () => {
     setCurrentThemeId("gray");
-    expect(atlasUrlFor("gray")).toContain("gray");
-    expect(atlasUrlFor("original")).toContain("original");
+    expect(getTheme("gray").builtin).toBe(true);
+    expect(getTheme("original").atlas).toBeUndefined();
   });
 
   it("puts a nested custom pack in the same list the theme dropdown uses", async () => {
-    const json = JSON.stringify({ id: "original", name: "Original", atlas: "atlas.png" });
+    const json = JSON.stringify({ id: "original", name: "Original" });
     const buf = await zipOf([
       { name: "mewga/theme.json", body: json, deflate: true },
-      { name: "mewga/atlas.png", body: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]), deflate: true },
+      { name: "mewga/tiles/metal_v2.png", body: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]), deflate: true },
       { name: "mewga/animations/skip.png", body: "unused" },
     ]);
     const pack = await installThemeZip(buf);
     expect(pack.id).toBe("mewga");
     expect(pack.builtin).toBe(false);
     expect(pack.name).toBe("mewga");
-    expect(pack.atlas).toMatch(/^(blob:|data:)/);
+    expect(pack.files?.["tiles/metal_v2.png"] || pack.files?.["metal_v2.png"]).toMatch(/^(blob:|data:)/);
     const menu = themeMenuItems();
     expect(menu.map((p) => p.id)).toContain("mewga");
     expect(menu.find((p) => p.id === "mewga")?.name).toBe("mewga");
