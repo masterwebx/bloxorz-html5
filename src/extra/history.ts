@@ -35,6 +35,7 @@ const RUNS_KEY = "bloxorz-history-v1";
 const FINISHED_KEY = "bloxorz-finished-v1";
 const MAX_RUNS = 24;
 const MAX_FINISHED = 48;
+export const REPLAY_VERSION = 2;
 
 export type HistoryKind = "campaign" | "custom" | "daily" | "gauntlet" | "seeded";
 
@@ -48,6 +49,7 @@ export interface FinishedStage {
   title?: string;
   kind?: HistoryKind;
   seed?: string;
+  ver?: number;
 }
 
 let storageOverride: HistoryStorage | null = null;
@@ -118,17 +120,26 @@ function migrateFinishedFromRuns(): FinishedStage[] {
 export function loadFinishedStages(): FinishedStage[] {
   const rows = readJson<FinishedStage[]>(FINISHED_KEY, []);
   const src = Array.isArray(rows) && rows.length ? rows : migrateFinishedFromRuns();
-  return src.filter(isCompletedFinish);
+  const live = src.filter(isCurrentFinish);
+  if (src.length && live.length !== src.length) {
+    store().setItem(FINISHED_KEY, JSON.stringify(live.slice(0, MAX_FINISHED)));
+  }
+  return live;
 }
 
 function isCompletedFinish(row: FinishedStage | null | undefined): row is FinishedStage {
   return !!row && Array.isArray(row.cmds) && row.cmds.length > 0;
 }
 
+function isCurrentFinish(row: FinishedStage | null | undefined): row is FinishedStage {
+  return isCompletedFinish(row) && row.ver === REPLAY_VERSION;
+}
+
 export function saveFinishedStage(row: FinishedStage): void {
-  if (!isCompletedFinish(row)) return;
-  const rows = loadFinishedStages().filter((r) => r.id !== row.id);
-  rows.unshift(row);
+  const next = { ...row, ver: REPLAY_VERSION };
+  if (!isCompletedFinish(next)) return;
+  const rows = loadFinishedStages().filter((r) => r.id !== next.id);
+  rows.unshift(next);
   store().setItem(FINISHED_KEY, JSON.stringify(rows.slice(0, MAX_FINISHED)));
 }
 
@@ -141,4 +152,11 @@ export function winningTape(level: LevelStat): TapeCmd[] | null {
 export function acceptTapeCmd(cmd: TapeCmd, view: { idle: boolean; split: boolean }): boolean {
   if (cmd === "swap") return view.split;
   return view.idle;
+}
+
+/** Coolmath onMove axis/change after a roll actually starts. */
+export function tapeCmdFromRoll(axis: string, change: number): TapeCmd | null {
+  if (axis === "x") return change > 0 ? "right" : change < 0 ? "left" : null;
+  if (axis === "y") return change > 0 ? "down" : change < 0 ? "up" : null;
+  return null;
 }

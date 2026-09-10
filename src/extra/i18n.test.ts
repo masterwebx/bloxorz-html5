@@ -3,10 +3,10 @@ import { bootLocales, detectLocale, listLocales, setLocale, t, usesHdType } from
 import { LOCALE_TABLE } from "./locale.gen";
 
 describe("i18n", () => {
-  it("defaults English speakers to classic wording", () => {
+  it("defaults English speakers to HD wording", () => {
     bootLocales(LOCALE_TABLE, null);
-    expect(detectLocale("en-US")).toBe("en-classic");
-    expect(detectLocale("en")).toBe("en-classic");
+    expect(detectLocale("en-US")).toBe("en");
+    expect(detectLocale("en")).toBe("en");
   });
 
   it("picks a shipped language when the browser matches", () => {
@@ -21,7 +21,7 @@ describe("i18n", () => {
     const ids = listLocales().map((row) => row.id);
     expect(ids).toContain("en");
     expect(ids).toContain("en-classic");
-    expect(listLocales().find((row) => row.id === "en")?.name).toBe("English HD");
+    expect(listLocales().find((row) => row.id === "en")?.name).toBe("English (HD)");
     expect(ids).toContain("es");
     expect(ids).toContain("zh");
     expect(ids).toContain("ja");

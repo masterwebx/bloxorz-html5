@@ -29,6 +29,11 @@ export const BOARD_SCALE = Math.min(
 export const BOARD_OX = BOARD_VIEW.x - SRC_MIN_X * BOARD_SCALE;
 export const BOARD_OY = BOARD_VIEW.y - SRC_MIN_Y * BOARD_SCALE;
 
+export function boardScreen(x: number, y: number): { x: number; y: number } {
+  const [gx, gy] = gamePos(x, y);
+  return { x: BOARD_OX + gx * BOARD_SCALE, y: BOARD_OY + gy * BOARD_SCALE };
+}
+
 export const TILE_LABEL: Record<string, string> = {
   b: "normalblock",
   s: "softswitch",

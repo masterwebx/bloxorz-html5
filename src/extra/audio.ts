@@ -22,7 +22,8 @@ let musicEl: HTMLAudioElement | null = null;
 let musicSrc = "";
 
 function isMusicId(id: unknown): boolean {
-  return id === "Music" || id === "music";
+  if (id === "Music" || id === "music") return true;
+  return typeof id === "string" && /music/i.test(id);
 }
 
 export function isAudioUnlocked(): boolean {
@@ -45,6 +46,7 @@ export function gateSoundPlay(): void {
   hookHtmlAudioPlay();
   hookHtmlAudioLoop();
   hookBufferStart();
+  hookWindowPlaySound();
   watchSoundLoads();
   const sound = (window as unknown as { createjs?: { Sound?: { play: (...a: unknown[]) => SoundInst } } }).createjs
     ?.Sound;
@@ -149,9 +151,11 @@ function stopCreatejsMusic(): void {
   try {
     const sound = (window as unknown as { createjs?: { Sound?: { stop?: (id?: string) => void; _instances?: SoundInst[] } } }).createjs
       ?.Sound;
+    sound?.stop?.("Music");
+    sound?.stop?.("music");
     const rows = sound?._instances;
     if (Array.isArray(rows)) {
-      for (const inst of rows) {
+      for (const inst of [...rows]) {
         const rec = inst as { src?: string; stop?: () => void };
         const src = `${rec.src || ""}`;
         if (isMusicId(rec.src) || /music/i.test(src) || instanceLoop(inst) !== 0) inst?.stop?.();
@@ -261,6 +265,23 @@ function hookBufferStart(): void {
     }
     return orig.apply(this, args as []);
   };
+}
+
+let origWindowPlay: ((id: string, loop?: number) => SoundInst) | null = null;
+
+function hookWindowPlaySound(): void {
+  const w = window as unknown as { playSound?: (id: string, loop?: number) => SoundInst };
+  if (!w.playSound || w.playSound === gatedWindowPlay) return;
+  origWindowPlay = w.playSound.bind(window);
+  w.playSound = gatedWindowPlay;
+}
+
+function gatedWindowPlay(id: string, loop?: number): SoundInst {
+  if (isMusicId(id) && !allowMenuMusic) {
+    hushStageMusic();
+    return mutedMusic;
+  }
+  return origWindowPlay ? origWindowPlay(id, loop) : mutedMusic;
 }
 
 function watchSoundLoads(): void {

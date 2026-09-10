@@ -14,7 +14,7 @@ const packs = new Map<string, Dict>([
   ["en", en as Dict],
   ["en-classic", enClassic as Dict],
 ]);
-let current = "en-classic";
+let current = "en";
 let ready = false;
 
 export function localeId(): LocaleId {
@@ -55,10 +55,10 @@ export function registerLocale(id: string, dict: Dict): void {
 export function detectLocale(nav = typeof navigator !== "undefined" ? navigator.language : "en"): LocaleId {
   const raw = (nav || "en").toLowerCase();
   const base = raw.split("-")[0] ?? "en";
-  if (raw.startsWith("en")) return packs.has("en-classic") ? "en-classic" : "en";
-  if (base === "zh") return packs.has("zh") ? "zh" : "en-classic";
+  if (raw.startsWith("en")) return packs.has("en") ? "en" : "en-classic";
+  if (base === "zh") return packs.has("zh") ? "zh" : "en";
   if (packs.has(base)) return base;
-  return packs.has("en-classic") ? "en-classic" : "en";
+  return packs.has("en") ? "en" : "en-classic";
 }
 
 export function bootLocales(table: Record<string, Dict>, saved?: string | null): LocaleId {

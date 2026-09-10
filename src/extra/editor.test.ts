@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { occupiedCells } from "./coolmathBoard";
+import { occupiedCells, boardScreen, clipForTile, pickBoardCell } from "./coolmathBoard";
 import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, isPlayable, occupiedTileCount, parseShare, setTile, shareFromLocation, stageId } from "./customLevels";
 import type { LevelDef } from "./types";
 import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
@@ -182,5 +182,17 @@ describe("reverse seeds", () => {
     paintEditorCell(def, 3, 4, state);
     paintEditorCell(def, 5, 4, state);
     expect(solveLevel(def, 80_000).ok).toBe(true);
+  });
+});
+
+describe("stage creator board assets", () => {
+  it("maps tiles onto Coolmath atlas clips and the playfield projection", () => {
+    expect(clipForTile("b")?.name).toBe("metal_v2");
+    expect(clipForTile("s")?.name).toBe("softswitch_v3");
+    expect(clipForTile("e")?.name).toBe("stoneexit_v2");
+    const origin = boardScreen(0, 0);
+    expect(pickBoardCell(origin.x, origin.y)).toEqual({ x: 0, y: 0 });
+    const mid = boardScreen(4, 4);
+    expect(pickBoardCell(mid.x, mid.y)).toEqual({ x: 4, y: 4 });
   });
 });

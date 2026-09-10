@@ -28,10 +28,10 @@ import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import {
-  acceptTapeCmd,
   loadFinishedStages,
   saveFinishedStage,
   saveRun,
+  tapeCmdFromRoll,
   winningTape,
   type FinishedStage,
   type HistoryKind,
@@ -214,10 +214,12 @@ type PauseMenuClip = {
 type BloxWorld = {
   destroy?: () => void;
   blocks?: { roll?: { idle?: boolean }; x?: number; y?: number; scaleX?: number; scaleY?: number; alpha?: number }[];
-  keys?: { code?: string; tick?: () => void };
+  keys?: { code?: string; tick?: () => void; focusIndex?: number };
   transitionOutLevelQuit?: () => void;
   pauseMenu?: PauseMenuClip;
   __bloxQuit?: boolean;
+  __bloxTape?: boolean;
+  onMove?: (mc: unknown, axis: string, change: number, position?: unknown) => void;
   layerTiles?: { x?: number; y?: number; scaleX?: number; scaleY?: number };
   layerBlocks?: unknown;
   tiles?: { x?: number; y?: number; type?: string; alpha?: number; visible?: boolean }[];
@@ -231,6 +233,7 @@ type StageLike = {
   levelNumber: number;
   triggerKeyDown?: (evt: { code: string }) => void;
   triggerKeyUp?: (evt: { code: string }) => void;
+  __bloxTapeKeys?: boolean;
   doneIntro?: boolean;
   addChild?: (c: unknown) => void;
   addChildAt?: (c: unknown, i: number) => void;
@@ -1145,6 +1148,12 @@ function padClock(ms: number): string {
   return `${hours}:${minutes}:${seconds}`;
 }
 
+function playHudStageName(stageNo: number): string {
+  const card = titleCardCopy();
+  if (card?.title) return card.title;
+  return t("play.stage", { n: String(stageNo).padStart(2, "0") });
+}
+
 function syncPlayChrome(on: boolean): void {
   const box = $("play-chrome");
   if (!box) return;
@@ -1160,19 +1169,24 @@ function syncPlayChrome(on: boolean): void {
   const moves = (world?.moves ?? 0) + (window.stage?.totalMoves ?? 0);
   const code = playSession?.defs[Math.max(0, stageNo - 1)]?.code || playDef()?.code || "";
   const classicFirst = !!playSession?.classicRun && playSession.kind === "campaign" && stageNo === 1;
-  const key = `${stageNo}|${moves}|${code}|${classicFirst}|${localeId()}`;
+  const stageName = playHudStageName(stageNo);
+  const key = `${stageNo}|${moves}|${code}|${classicFirst}|${stageName}|${localeId()}`;
   if (key === lastPlayHudKey) return;
   lastPlayHudKey = key;
   const pass = $("play-pass-val");
   const passLab = $("play-pass-lab");
   const moveVal = $("play-moves-val");
   const moveLab = $("play-moves-lab");
+  const stageVal = $("play-stage-val");
+  const stageLab = $("play-stage-lab");
   const menu = $("play-menu");
   const help = $("play-help");
   if (passLab) passLab.textContent = t("play.passcode") + ":";
   if (moveLab) moveLab.textContent = t("play.moves") + ":";
+  if (stageLab) stageLab.textContent = t("hud.stage") + ":";
   if (pass) pass.textContent = code || String(stageNo).padStart(2, "0");
   if (moveVal) moveVal.textContent = String(moves);
+  if (stageVal) stageVal.textContent = stageName;
   if (menu) menu.textContent = t("play.menu");
   if (help) {
     help.hidden = !classicFirst;
@@ -1279,9 +1293,6 @@ function syncPauseStats(on: boolean): void {
   if (!show) {
     for (const mark of digitMarks) setMarkAlpha(mark, 1, false);
     for (const mark of btnMarks) setMarkAlpha(mark, 1, true);
-    box.style.left = "";
-    box.style.top = "";
-    box.style.transform = "";
     return;
   }
   for (const mark of digitMarks) setMarkAlpha(mark, 0, false);
@@ -1318,7 +1329,6 @@ function syncPauseStats(on: boolean): void {
   placeOverlay(ret, buttons?.returnToGame, true, "left");
   placeOverlay(sound, buttons?.toggleSound, true, "left");
   placeOverlay(quit, buttons?.quitToMenu, true, "left");
-  placeOverlay(box, stats, true, "left");
 }
 
 function syncSelectPrompt(on: boolean): void {
@@ -2366,9 +2376,35 @@ function sessionSeed(stageNo: number): string {
 function recordCmd(cmd: TapeCmd): void {
   if (!playSession?.record || autoSolve) return;
   if (currentLabel() !== "game") return;
-  if (!acceptTapeCmd(cmd, { idle: blocksIdle(), split: playBlocks().length > 1 })) return;
+  if (cmd === "swap" && playBlocks().length <= 1) return;
   tape.push(cmd);
   if (cmd === "swap") noteSwap();
+}
+
+let rawKeyDown: ((evt: { code: string }) => void) | undefined;
+function tapedKeyDown(evt: { code: string }): void {
+  rawKeyDown?.(evt);
+  if (evt.code === "Space") recordCmd("swap");
+}
+
+let rawOnMove: ((mc: unknown, axis: string, change: number, position?: unknown) => void) | undefined;
+function tapedOnMove(mc: unknown, axis: string, change: number, position?: unknown): void {
+  rawOnMove?.(mc, axis, change, position);
+  const cmd = tapeCmdFromRoll(axis, change);
+  if (cmd) recordCmd(cmd);
+}
+
+function hookReplayCapture(): void {
+  const st = window.stage;
+  if (st?.triggerKeyDown && st.triggerKeyDown !== tapedKeyDown) {
+    rawKeyDown = st.triggerKeyDown.bind(st);
+    st.triggerKeyDown = tapedKeyDown;
+  }
+  const world = st?.bloxWorld;
+  if (world?.onMove && world.onMove !== tapedOnMove) {
+    rawOnMove = world.onMove.bind(world);
+    world.onMove = tapedOnMove;
+  }
 }
 
 function persistWonStage(stageNo: number): void {
@@ -3558,9 +3594,8 @@ function handleTouchPadDown(code: string): void {
       const cmd = KEY_CMD[code];
       if (cmd) {
         noteKeyboardPlay();
-        recordCmd(cmd);
+        window.stage?.triggerKeyDown?.({ code });
       }
-      window.stage?.triggerKeyDown?.({ code });
     return;
   }
   if (code === "ArrowUp") handleMenuNav("up");
@@ -3864,9 +3899,6 @@ function bind(): void {
       const cmd = KEY_CMD[code];
       if (cmd) {
         noteKeyboardPlay();
-        recordCmd(cmd);
-      }
-      if (cmd) {
         ev.preventDefault();
         window.stage?.triggerKeyDown?.({ code });
       }
@@ -4032,6 +4064,7 @@ function syncOverlay(): void {
       raiseHud();
     }
     hookWorldQuit();
+    hookReplayCapture();
     touchChrome?.sync(playing && !isPauseMenuOpen());
     if (label === "instructions") pollInstructionsPad();
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
@@ -4045,7 +4078,7 @@ function syncOverlay(): void {
       syncStageCard(false);
       tickSolve();
       if (isPauseMenuOpen()) pollPauseMenuPad();
-      else if (!autoSolve) pollGamepad(stage, togglePauseMenu, recordCmd);
+      else if (!autoSolve) pollGamepad(stage, togglePauseMenu);
       if (!playSession) return;
       syncHelpText();
       const world3 = window.stage?.bloxWorld;
@@ -4313,12 +4346,37 @@ export function startBloxorzShell(): void {
     hud.makeMascot = makeSpin;
     hud.makePreview = makeSpin;
     hud.makeClip = (name: ClipName) => {
-      if (name === "Block") return null;
       try {
         const lib = adobeLib() as unknown as Record<string, new () => unknown>;
         const Ctor = lib?.[name];
         if (!Ctor) return null;
         return new Ctor() as never;
+      } catch {
+        return null;
+      }
+    };
+    hud.makeTile = (ch: string) => {
+      const Tile = adobeLib()?.Tile;
+      if (!Tile) return null;
+      try {
+        const tile = new Tile() as {
+          gotoAndStop?: (n: string | number) => void;
+          tickEnabled?: boolean;
+          mouseEnabled?: boolean;
+          flasher?: { visible?: boolean; filters?: unknown };
+        };
+        if (ch === "b") tile.gotoAndStop?.(24);
+        else {
+          const idle = tileIdleFrame(ch, ch === "k" || ch === "q");
+          if (idle != null) tile.gotoAndStop?.(idle);
+        }
+        tile.tickEnabled = false;
+        tile.mouseEnabled = false;
+        if (tile.flasher) {
+          tile.flasher.visible = false;
+          tile.flasher.filters = null;
+        }
+        return tile as never;
       } catch {
         return null;
       }

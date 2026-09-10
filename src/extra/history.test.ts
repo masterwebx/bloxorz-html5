@@ -6,9 +6,11 @@ import {
   acceptTapeCmd,
   loadFinishedStages,
   loadRuns,
+  REPLAY_VERSION,
   saveFinishedStage,
   saveRun,
   setHistoryStorage,
+  tapeCmdFromRoll,
   winningTape,
   type RunRecord,
 } from "./history";
@@ -93,6 +95,7 @@ describe("history finished stages", () => {
     const rows = loadFinishedStages();
     expect(rows).toHaveLength(1);
     expect(rows[0].title).toBe("Stage 01");
+    expect(rows[0].ver).toBe(REPLAY_VERSION);
   });
 
   it("does not list in-progress or empty tapes", () => {
@@ -112,7 +115,7 @@ describe("history finished stages", () => {
       "bloxorz-finished-v1",
       JSON.stringify([
         { id: "partial", at: 5, player: "BLOX", stage: 2, moves: 2, cmds: [] },
-        { id: "won", at: 6, player: "BLOX", stage: 1, moves: 3, cmds: ["right", "right", "down"] },
+        { id: "won", at: 6, player: "BLOX", stage: 1, moves: 3, cmds: ["right", "right", "down"], ver: REPLAY_VERSION },
       ]),
     );
     const rows = loadFinishedStages();
@@ -201,6 +204,30 @@ describe("run history", () => {
     expect(acceptTapeCmd("swap", { idle: true, split: true })).toBe(true);
     expect(acceptTapeCmd("right", { idle: false, split: false })).toBe(false);
     expect(acceptTapeCmd("right", { idle: true, split: false })).toBe(true);
+  });
+
+  it("maps a Coolmath roll into the tape command that actually moved", () => {
+    expect(tapeCmdFromRoll("x", 1)).toBe("right");
+    expect(tapeCmdFromRoll("x", -1)).toBe("left");
+    expect(tapeCmdFromRoll("y", 1)).toBe("down");
+    expect(tapeCmdFromRoll("y", -1)).toBe("up");
+  });
+
+  it("drops finished tapes that are not on the current replay version", () => {
+    const store = memoryStore();
+    setHistoryStorage(store);
+    store.setItem(
+      "bloxorz-finished-v1",
+      JSON.stringify([
+        { id: "old", at: 1, player: "BLOX", stage: 1, moves: 2, cmds: ["right", "down"] },
+        { id: "v1", at: 2, player: "BLOX", stage: 1, moves: 2, cmds: ["left", "up"], ver: 1 },
+        { id: "live", at: 3, player: "BLOX", stage: 2, moves: 1, cmds: ["right"], ver: REPLAY_VERSION },
+      ]),
+    );
+    const rows = loadFinishedStages();
+    expect(rows.map((r) => r.id)).toEqual(["live"]);
+    const saved = JSON.parse(store.getItem("bloxorz-finished-v1") || "[]") as { id: string }[];
+    expect(saved.map((r) => r.id)).toEqual(["live"]);
   });
 });
 
