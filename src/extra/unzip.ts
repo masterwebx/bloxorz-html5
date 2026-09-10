@@ -13,8 +13,15 @@ function u32(b: Uint8Array, o: number): number {
 }
 
 function findEocd(buf: Uint8Array): number {
-  for (let i = buf.length - 22; i >= 0 && i >= buf.length - 22 - 0xffff; i--) {
-    if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) return i;
+  const min = Math.max(0, buf.length - 22 - 0xffff);
+  for (let i = buf.length - 22; i >= min; i--) {
+    if (buf[i] !== 0x50 || buf[i + 1] !== 0x4b || buf[i + 2] !== 0x05 || buf[i + 3] !== 0x06) continue;
+    const comment = u16(buf, i + 20);
+    if (i + 22 + comment !== buf.length) continue;
+    const off = u32(buf, i + 16);
+    const count = u16(buf, i + 10);
+    if (count === 0) return i;
+    if (off < buf.length && u32(buf, off) === 0x02014b50) return i;
   }
   return -1;
 }

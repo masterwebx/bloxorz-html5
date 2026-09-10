@@ -106,6 +106,10 @@ export function listThemes(): ThemePack[] {
   });
 }
 
+export function themeMenuItems(): { id: string; name: string; builtin: boolean }[] {
+  return listThemes().map((pack) => ({ id: pack.id, name: pack.name, builtin: pack.builtin }));
+}
+
 export function getTheme(id: string): ThemePack {
   seedBuiltins();
   return packs.get(id) || packs.get("original")!;
@@ -248,20 +252,33 @@ function filesToUrls(files: Record<string, ArrayBuffer>): Record<string, string>
     const url = URL.createObjectURL(new Blob([new Uint8Array(buf)]));
     objectUrls.push(url);
     out[name] = url;
+    const base = zipBase(name);
+    if (base !== name && !out[base]) out[base] = url;
   }
   return out;
+}
+
+function lookupFile(files: Record<string, string>, name?: string): string | undefined {
+  if (!name) return undefined;
+  if (files[name]) return files[name];
+  const want = fileKey(name);
+  const hit = Object.entries(files).find(([k]) => fileKey(k) === want || fileKey(zipBase(k)) === want);
+  return hit?.[1];
 }
 
 function registerStored(row: StoredPack): ThemePack | null {
   if (!row?.json) return null;
   const urls = filesToUrls(row.files ?? {});
   const pack = normalizePack(row.json, row.json.id || "custom", false, urls);
-  if (pack.atlas && urls[pack.atlas]) pack.atlas = urls[pack.atlas];
-  if (pack.background.src && urls[pack.background.src]) pack.background.src = urls[pack.background.src];
-  if (pack.audio.music && urls[pack.audio.music]) pack.audio.music = urls[pack.audio.music];
+  const atlas = lookupFile(urls, pack.atlas);
+  if (atlas) pack.atlas = atlas;
+  const bg = lookupFile(urls, pack.background.src);
+  if (bg) pack.background.src = bg;
+  const music = lookupFile(urls, pack.audio.music);
+  if (music) pack.audio.music = music;
   if (pack.audio.sfx) {
     const mapped: Record<string, string> = {};
-    for (const [k, v] of Object.entries(pack.audio.sfx)) mapped[k] = urls[v] ?? v;
+    for (const [k, v] of Object.entries(pack.audio.sfx)) mapped[k] = lookupFile(urls, v) ?? v;
     pack.audio.sfx = mapped;
   }
   packs.set(pack.id, pack);
@@ -325,21 +342,27 @@ function uniqueCustomId(rawId: string, folder: string): string {
   return id;
 }
 
+function fileKey(name: string): string {
+  return name.replace(/\\/g, "/").replace(/^\/+/, "").toLowerCase();
+}
+
 function neededThemeFiles(raw: RawTheme): Set<string> {
   const names = new Set<string>(["atlas.png"]);
-  if (raw.atlas) names.add(raw.atlas.replace(/^\/+/, ""));
-  if (raw.background?.src) names.add(raw.background.src.replace(/^\/+/, ""));
-  if (raw.audio?.music) names.add(raw.audio.music.replace(/^\/+/, ""));
+  if (raw.atlas) names.add(fileKey(raw.atlas));
+  if (raw.background?.src) names.add(fileKey(raw.background.src));
+  if (raw.audio?.music) names.add(fileKey(raw.audio.music));
   for (const src of Object.values(raw.audio?.sfx ?? {})) {
-    if (src) names.add(src.replace(/^\/+/, ""));
+    if (src) names.add(fileKey(src));
   }
   return names;
 }
 
 function matchesNeeded(entryName: string, folder: string, needed: Set<string>): boolean {
-  const base = zipBase(entryName);
-  const rel = folder && entryName.startsWith(folder + "/") ? entryName.slice(folder.length + 1) : entryName;
-  return needed.has(entryName) || needed.has(base) || needed.has(rel);
+  const n = fileKey(entryName);
+  const base = fileKey(zipBase(entryName));
+  const prefix = fileKey(folder);
+  const rel = prefix && n.startsWith(prefix + "/") ? n.slice(prefix.length + 1) : n;
+  return needed.has(n) || needed.has(base) || needed.has(rel);
 }
 
 function copyBuf(data: Uint8Array): ArrayBuffer {

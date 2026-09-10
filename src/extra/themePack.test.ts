@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atlasUrlFor, getTheme, installThemeZip, isHdTheme, isSolid3d, listThemes, setCurrentThemeId } from "./themePack";
+import { atlasUrlFor, getTheme, installThemeZip, isHdTheme, isSolid3d, setCurrentThemeId, themeMenuItems } from "./themePack";
 
 function crc32(buf: Uint8Array): number {
   let c = 0xffffffff;
@@ -10,50 +10,77 @@ function crc32(buf: Uint8Array): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-function storeZip(name: string, body: string): ArrayBuffer {
-  const nameBytes = new TextEncoder().encode(name);
-  const data = new TextEncoder().encode(body);
-  const crc = crc32(data);
-  const local = 30 + nameBytes.length + data.length;
-  const central = 46 + nameBytes.length;
-  const out = new Uint8Array(local + central + 22);
-  const w = (o: number, n: number, bytes: number) => {
-    for (let i = 0; i < bytes; i++) out[o + i] = (n >>> (8 * i)) & 0xff;
+async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function zipOf(files: { name: string; body: string | Uint8Array; deflate?: boolean }[]): Promise<ArrayBuffer> {
+  const enc = new TextEncoder();
+  const parts: { local: Uint8Array; central: Uint8Array }[] = [];
+  let offset = 0;
+  const w = (buf: Uint8Array, o: number, n: number, bytes: number) => {
+    for (let i = 0; i < bytes; i++) buf[o + i] = (n >>> (8 * i)) & 0xff;
   };
-  out[0] = 0x50;
-  out[1] = 0x4b;
-  out[2] = 0x03;
-  out[3] = 0x04;
-  w(18, data.length, 4);
-  w(22, data.length, 4);
-  w(26, nameBytes.length, 2);
-  out.set(nameBytes, 30);
-  out.set(data, 30 + nameBytes.length);
-  const c = local;
-  out[c] = 0x50;
-  out[c + 1] = 0x4b;
-  out[c + 2] = 0x01;
-  out[c + 3] = 0x02;
-  w(c + 16, crc, 4);
-  w(c + 20, data.length, 4);
-  w(c + 24, data.length, 4);
-  w(c + 28, nameBytes.length, 2);
-  out.set(nameBytes, c + 46);
-  const e = local + central;
-  out[e] = 0x50;
-  out[e + 1] = 0x4b;
-  out[e + 2] = 0x05;
-  out[e + 3] = 0x06;
-  w(e + 8, 1, 2);
-  w(e + 10, 1, 2);
-  w(e + 12, central, 4);
-  w(e + 16, local, 4);
+  for (const f of files) {
+    const nameBytes = enc.encode(f.name);
+    const data = typeof f.body === "string" ? enc.encode(f.body) : f.body;
+    const payload = f.deflate ? await deflateRaw(data) : data;
+    const method = f.deflate ? 8 : 0;
+    const crc = crc32(data);
+    const local = new Uint8Array(30 + nameBytes.length + payload.length);
+    local[0] = 0x50;
+    local[1] = 0x4b;
+    local[2] = 0x03;
+    local[3] = 0x04;
+    w(local, 8, method, 2);
+    w(local, 14, crc, 4);
+    w(local, 18, payload.length, 4);
+    w(local, 22, data.length, 4);
+    w(local, 26, nameBytes.length, 2);
+    local.set(nameBytes, 30);
+    local.set(payload, 30 + nameBytes.length);
+    const central = new Uint8Array(46 + nameBytes.length);
+    central[0] = 0x50;
+    central[1] = 0x4b;
+    central[2] = 0x01;
+    central[3] = 0x02;
+    w(central, 10, method, 2);
+    w(central, 16, crc, 4);
+    w(central, 20, payload.length, 4);
+    w(central, 24, data.length, 4);
+    w(central, 28, nameBytes.length, 2);
+    w(central, 42, offset, 4);
+    central.set(nameBytes, 46);
+    parts.push({ local, central });
+    offset += local.length;
+  }
+  const centralSize = parts.reduce((s, p) => s + p.central.length, 0);
+  const out = new Uint8Array(offset + centralSize + 22);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p.local, o);
+    o += p.local.length;
+  }
+  const cd = o;
+  for (const p of parts) {
+    out.set(p.central, o);
+    o += p.central.length;
+  }
+  out[o] = 0x50;
+  out[o + 1] = 0x4b;
+  out[o + 2] = 0x05;
+  out[o + 3] = 0x06;
+  w(out, o + 8, parts.length, 2);
+  w(out, o + 10, parts.length, 2);
+  w(out, o + 12, centralSize, 4);
+  w(out, o + 16, cd, 4);
   return out.buffer;
 }
 
 describe("theme packs", () => {
   it("ships original, gray, holiday, and solid 3D", () => {
-    const ids = listThemes().map((p) => p.id);
+    const ids = themeMenuItems().map((p) => p.id);
     expect(ids).toContain("original");
     expect(ids).toContain("gray");
     expect(ids).toContain("holiday");
@@ -72,12 +99,21 @@ describe("theme packs", () => {
     expect(atlasUrlFor("original")).toContain("original");
   });
 
-  it("installs a nested zip without colliding with the Original builtin", async () => {
-    const buf = storeZip("mewga/theme.json", JSON.stringify({ id: "original", name: "Original", atlas: "atlas.png" }));
+  it("puts a nested custom pack in the same list the theme dropdown uses", async () => {
+    const json = JSON.stringify({ id: "original", name: "Original", atlas: "atlas.png" });
+    const buf = await zipOf([
+      { name: "mewga/theme.json", body: json, deflate: true },
+      { name: "mewga/atlas.png", body: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]), deflate: true },
+      { name: "mewga/animations/skip.png", body: "unused" },
+    ]);
     const pack = await installThemeZip(buf);
     expect(pack.id).toBe("mewga");
     expect(pack.builtin).toBe(false);
-    expect(listThemes().map((p) => p.id)).toContain("mewga");
+    expect(pack.name).toBe("mewga");
+    expect(pack.atlas).toMatch(/^(blob:|data:)/);
+    const menu = themeMenuItems();
+    expect(menu.map((p) => p.id)).toContain("mewga");
+    expect(menu.find((p) => p.id === "mewga")?.name).toBe("mewga");
     expect(getTheme("original").builtin).toBe(true);
   });
 });

@@ -64,8 +64,8 @@ import {
   installThemeZip,
   isHdTheme,
   isSolid3d,
-  listThemes,
   setCurrentThemeId,
+  themeMenuItems,
 } from "./themePack";
 import { clearTheme3d, syncTheme3d } from "./theme3d";
 import { bakeFrameBackup, collectBlockFrameIndexes, type FrameBackup } from "./hue";
@@ -340,7 +340,7 @@ let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
 let lastTintKey = "";
 let lastPlayHudKey = "";
-let lastTileFp = "";
+let themeUploadMsg = "";
 let settingsChromeBound = false;
 let editCursor = { x: 2, y: 4 };
 let editorPaintHeld = false;
@@ -702,17 +702,25 @@ function toggleSettingsDropdown(wrap: HTMLElement): void {
   $("animation_container")?.classList.add("is-dd-open");
 }
 
+function themeSelectOpts(): { id: string; name: string }[] {
+  return themeMenuItems().map((pack) => ({
+    id: pack.id,
+    name: pack.builtin ? themePackLabel(pack.id, pack.name) : pack.name,
+  }));
+}
+
 function fillSettingsDropdown(
   wrap: HTMLElement | null,
   opts: { id: string; name: string }[],
   current: string,
+  force = false,
 ): void {
   if (!wrap) return;
   const btn = wrap.querySelector(".hud-dd-btn") as HTMLButtonElement | null;
   const menu = wrap.querySelector(".hud-dd-menu") as HTMLElement | null;
   if (!btn || !menu) return;
   const key = localeId() + ":" + opts.map((o) => o.id).join(",");
-  if (wrap.dataset.ids !== key) {
+  if (force || wrap.dataset.ids !== key) {
     menu.innerHTML = "";
     for (const opt of opts) {
       const item = document.createElement("button");
@@ -734,7 +742,7 @@ function fillSettingsDropdown(
   }
 }
 
-function placeSettingsChrome(on: boolean): void {
+function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const themeSel = $("hud-theme-select");
   const localeSel = $("hud-locale-select");
   const upload = $("hud-theme-upload") as HTMLInputElement | null;
@@ -744,15 +752,12 @@ function placeSettingsChrome(on: boolean): void {
     el.hidden = !on;
   }
   if (upload) upload.hidden = true;
+  if (uploadBtn) uploadBtn.textContent = themeUploadMsg || t("settings.upload");
   if (!on) {
     closeSettingsDropdowns();
     return;
   }
-  fillSettingsDropdown(
-    themeSel,
-    listThemes().map((pack) => ({ id: pack.id, name: themePackLabel(pack.id, pack.name) })),
-    currentTheme(),
-  );
+  fillSettingsDropdown(themeSel, themeSelectOpts(), currentThemeId(), forceTheme);
   fillSettingsDropdown(
     localeSel,
     listLocales().map((loc) => ({ id: loc.id, name: loc.name })),
@@ -806,13 +811,21 @@ function bindSettingsChrome(): void {
     void file.arrayBuffer().then(async (buf) => {
       try {
         const pack = await installThemeZip(buf);
-        applyTheme(pack.id, false);
+        try {
+          applyTheme(pack.id, false);
+        } catch {
+          /* pack is already in the list even if live apply fails */
+        }
+        themeUploadMsg = t("theme.uploadOk");
         lastHudPaint = "";
         markHudDirty();
+        placeSettingsChrome(extraView === "settings", true);
         paintHud();
       } catch {
-        loadError = t("theme.uploadBad");
+        themeUploadMsg = t("theme.uploadBad");
+        lastHudPaint = "";
         markHudDirty();
+        placeSettingsChrome(extraView === "settings", true);
         paintHud();
       }
     });
@@ -1502,7 +1515,7 @@ function navItems(): NavItem[] {
       { id: "toggle-mobile-pad" },
       { id: "toggle-timer" },
       ...(s.mobilePad ? [{ id: "toggle-rotate" }] : []),
-      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(listThemes().map((p) => p.id), currentTheme(), d), true) },
+      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems().map((p) => p.id), currentThemeId(), d), true) },
       { id: "locale-cycle", adjust: (d) => applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), d)) },
       { id: "toggle-theme-bg" },
       { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
@@ -1776,7 +1789,9 @@ function hudKey(): string {
     String(s.blockHue),
     String(s.music),
     String(s.sfx),
-    currentTheme(),
+    currentThemeId(),
+    themeMenuItems().map((p) => p.id).join(","),
+    themeUploadMsg,
     localeId(),
     finishKind,
     finishTitle,
@@ -2034,7 +2049,20 @@ function applyTheme(theme: ThemeId, reload = false): void {
     return;
   }
   const sel = $("image_select") as HTMLSelectElement | null;
-  if (sel && (id === "original" || id === "gray" || id === "holiday")) sel.value = id;
+  if (sel) {
+    const ids = themeMenuItems();
+    if (sel.dataset.ids !== ids.map((p) => p.id).join(",")) {
+      sel.innerHTML = "";
+      for (const pack of ids) {
+        const opt = document.createElement("option");
+        opt.value = pack.id;
+        opt.textContent = pack.builtin ? themePackLabel(pack.id, pack.name) : pack.name;
+        sel.appendChild(opt);
+      }
+      sel.dataset.ids = ids.map((p) => p.id).join(",");
+    }
+    sel.value = id;
+  }
   setHdRendering(isHdTheme(id));
   void swapAtlasLive(id);
   applyLooks();
@@ -2080,16 +2108,14 @@ async function swapAtlasLive(theme: ThemeId): Promise<void> {
 
 function refreshPlayTilesAfterTheme(): void {
   const world = window.stage?.bloxWorld as
-    | { tiles?: { image?: unknown; type?: string; uncache?: () => void; cache?: (x: number, y: number, w: number, h: number) => void }[]; __bloxTileCache?: boolean }
+    | { tiles?: { image?: unknown; uncache?: () => void }[] }
     | undefined;
   if (!world?.tiles?.length) return;
-  lastTileFp = "";
   const stamp = window.__bloxGetStoneStamp?.();
   for (const tile of world.tiles) {
     if (tile.image && stamp) tile.image = stamp;
     else tile.uncache?.();
   }
-  cacheStaticWorldTiles();
 }
 
 function rawCampaignDefs(): LevelDef[] {
@@ -2439,7 +2465,7 @@ function handleHudAction(act: string): void {
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
-    applyTheme(cycleList(listThemes().map((p) => p.id), currentTheme(), 1), true);
+    applyTheme(cycleList(themeMenuItems().map((p) => p.id), currentThemeId(), 1), true);
   } else if (act === "locale-cycle") {
     applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), 1));
   } else if (act.startsWith("locale:")) {
@@ -2831,7 +2857,6 @@ function leavePlayTo(view: Screen): void {
   flags.setSplit?.(0);
   playSession = null;
   lastTintKey = "";
-  lastTileFp = "";
   syncPlayChrome(false);
   syncHowto(false);
   syncStageCard(false);
@@ -2879,7 +2904,6 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   overlayMode = "run";
   playLaunching = true;
   lastTintKey = "";
-  lastTileFp = "";
   enterPlayVisuals();
   hushPlayAudio();
   unlockAudio();
@@ -3068,69 +3092,6 @@ function beatCurrentStage(): void {
   solveCode = "";
   window.stage?.bloxWorld?.destroy?.();
   window.exportRoot?.gotoAndPlay?.("restart");
-}
-
-type PlayTile = {
-  type?: string;
-  image?: unknown;
-  x?: number;
-  y?: number;
-  visible?: boolean;
-  cache?: (x: number, y: number, w: number, h: number) => void;
-  uncache?: () => void;
-  gotoAndStop?: (n: number | string) => void;
-  stop?: () => void;
-  play?: () => void;
-  mouseEnabled?: boolean;
-  mouseChildren?: boolean;
-  tickEnabled?: boolean;
-  flasher?: { visible?: boolean; filters?: unknown; tickEnabled?: boolean };
-};
-
-function hardenPlayTile(tile: PlayTile): void {
-  tile.mouseEnabled = false;
-  tile.mouseChildren = false;
-  tile.tickEnabled = false;
-  tile.stop?.();
-  if (tile.flasher) {
-    tile.flasher.visible = false;
-    tile.flasher.filters = null;
-    tile.flasher.tickEnabled = false;
-  }
-  tile.play = () => undefined;
-}
-
-function cacheStaticWorldTiles(): void {
-  const world = window.stage?.bloxWorld as
-    | {
-        tiles?: PlayTile[];
-        layerTiles?: PlayTile & { cache?: (x: number, y: number, w: number, h: number) => void; uncache?: () => void };
-      }
-    | null
-    | undefined;
-  if (!world?.tiles?.length) return;
-  const tiles = world.tiles;
-  const fp = tiles
-    .map((t) => `${t.type ?? ""}:${t.visible !== false}:${Math.round(t.x ?? 0)}:${Math.round(t.y ?? 0)}`)
-    .join("|");
-  if (fp === lastTileFp) return;
-  lastTileFp = fp;
-  const gc = window.stage?.gameContainer as { mouseEnabled?: boolean; mouseChildren?: boolean } | undefined;
-  if (gc) {
-    gc.mouseEnabled = false;
-    gc.mouseChildren = false;
-  }
-  if (world.layerTiles) {
-    world.layerTiles.mouseEnabled = false;
-    world.layerTiles.mouseChildren = false;
-    world.layerTiles.tickEnabled = false;
-  }
-  for (const tile of tiles) hardenPlayTile(tile);
-  const layer = world.layerTiles;
-  if (tiles.length >= 20 && layer?.cache) {
-    layer.uncache?.();
-    layer.cache(-60, -90, 760, 460);
-  }
 }
 
 function syncHelpText(): void {
@@ -3885,7 +3846,6 @@ function syncOverlay(): void {
       if (isPauseMenuOpen()) pollPauseMenuPad();
       else pollGamepad(stage, togglePauseMenu, recordCmd);
       if (!playSession) return;
-      cacheStaticWorldTiles();
       syncHelpText();
       const world3 = window.stage?.bloxWorld;
       if (isSolid3d()) {
@@ -4165,7 +4125,18 @@ export function startBloxorzShell(): void {
   applyBlockHue();
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;
-  if (sel) sel.value = currentTheme();
+  if (sel) {
+    const ids = themeMenuItems();
+    sel.innerHTML = "";
+    for (const pack of ids) {
+      const opt = document.createElement("option");
+      opt.value = pack.id;
+      opt.textContent = pack.builtin ? themePackLabel(pack.id, pack.name) : pack.name;
+      sel.appendChild(opt);
+    }
+    sel.dataset.ids = ids.map((p) => p.id).join(",");
+    sel.value = currentThemeId();
+  }
   window.applyLiveTheme = (theme: string) => applyTheme(normalizeTheme(theme), false);
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
   if (applyPendingShare()) {
