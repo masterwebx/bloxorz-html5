@@ -78,6 +78,7 @@ describe("history finished stages", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].levels).toHaveLength(1);
     expect(rows[0].levels[0].stage).toBe(1);
+    expect(rows[0].levels[0].tapes).toEqual([{ cmds: ["right", "down"], won: true }]);
     expect(winningTape(rows[0].levels[0])).toEqual(["right", "down"]);
   });
 

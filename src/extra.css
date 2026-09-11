@@ -107,14 +107,14 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	left: 71.45%;
 	width: 27.3%;
 	top: 7.2%;
-	height: 5%;
-	display: flex;
+	height: 6.67%;
+	display: grid;
+	grid-template-columns: 57% 43%;
 	align-items: center;
-	justify-content: flex-end;
-	padding-right: 2%;
+	column-gap: 0;
 	box-sizing: border-box;
-	font: 700 calc(10 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
-	letter-spacing: 0.16em;
+	letter-spacing: 0;
+	white-space: nowrap;
 	color: #fff;
 	text-shadow: 0 0 0.4cqh #c45a18;
 	pointer-events: none;
@@ -143,13 +143,15 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #play-chrome.has-pass #play-moves { top: 6.83%; }
 
 #play-pass-lab,
-#play-moves-lab {
+#play-moves-lab,
+#play-time-lab {
 	text-align: right;
 	padding-right: 4%;
 }
 
 #play-pass-val,
-#play-moves-val {
+#play-moves-val,
+#play-time-val {
 	font: 700 calc(11 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
 	letter-spacing: 0.22em;
 	text-align: left;
@@ -549,6 +551,17 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	margin: 4px 0;
 	color: rgba(255, 210, 160, 0.7);
 	font: 700 11px Orbitron, sans-serif;
+}
+
+#hud-theme-manage-back {
+	display: block;
+	margin-top: 8px;
+	padding: 4px 10px;
+	font: 700 11px Orbitron, sans-serif;
+	color: #ffe6c4;
+	background: #1a120c;
+	border: 1px solid #c45a18;
+	cursor: pointer;
 }
 
 #hud-theme-select[hidden],

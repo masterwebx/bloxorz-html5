@@ -28,7 +28,7 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { clipHueAction, wrapHue } from "./hue";
+import { blitHueRects, collectBlockFrameIndexes, wrapHue, type AtlasRect } from "./hue";
 import { armStageTitleClip, freezeStageTitleClip, pinStageTitleClip, stageTitleShouldArm, stageTitleShouldFreeze, type StageTitleClip } from "./stageTitle";
 import {
   loadFinishedStages,
@@ -369,6 +369,11 @@ let finishSubtitle = "";
 let showStats = false;
 let webcamStream: MediaStream | null = null;
 let tabCastStream: MediaStream | null = null;
+let tabCastPrompt: Promise<void> | null = null;
+let atlasRects: AtlasRect[] | null = null;
+let atlasCanvas: HTMLCanvasElement | null = null;
+let atlasOriginal: HTMLCanvasElement | null = null;
+let bakedHue = -1;
 let beatBanner = "";
 let autoSolve = false;
 let solveTape: TapeCmd[] = [];
@@ -482,6 +487,13 @@ function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): HT
     for (let i = 0; i < sheet._images.length; i++) sheet._images[i] = canvas;
   }
   for (const frame of sheet._frames ?? []) frame.image = canvas;
+  // Invalidate hue bake only when the sheet is rebuilt from a fresh bitmap.
+  if (source instanceof HTMLImageElement) {
+    atlasRects = null;
+    atlasCanvas = null;
+    atlasOriginal = null;
+    bakedHue = -1;
+  }
   return canvas;
 }
 
@@ -501,58 +513,66 @@ function liveBlockHue(): number {
   return wrapHue(loadSettings().blockHue);
 }
 
-type HueClip = {
-  visible?: boolean;
-  cacheID?: number;
-  filters?: unknown;
-  __bloxHue?: number;
-  cache?: (x: number, y: number, w: number, h: number) => void;
-  updateCache?: () => void;
-  uncache?: () => void;
-  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
-};
+function snapshotAtlas(src: HTMLCanvasElement): HTMLCanvasElement | null {
+  const copy = document.createElement("canvas");
+  copy.width = src.width;
+  copy.height = src.height;
+  const ctx = copy.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(src, 0, 0);
+  return copy;
+}
 
-function applyClipHue(clip: HueClip | null | undefined, hue: number, animating: boolean): void {
-  if (!clip) return;
-  const action = clipHueAction(clip.__bloxHue, hue, animating);
-  if (action === "skip") return;
-  if (action === "clear") {
-    clip.filters = null;
-    clip.uncache?.();
-    clip.__bloxHue = 0;
-    return;
+function collectBlockAtlas(): { live: HTMLCanvasElement; original: HTMLCanvasElement; rects: AtlasRect[] } | null {
+  const sheet = atlasSheet();
+  const lib = adobeLib() as unknown as Record<string, unknown>;
+  if (!sheet?.getFrame || !lib) return null;
+  const indexes = collectBlockFrameIndexes(lib);
+  if (!indexes.length) return null;
+  let source: CanvasImageSource | null = null;
+  const rects: AtlasRect[] = [];
+  for (const i of indexes) {
+    const frame = sheet.getFrame(i);
+    if (!frame?.rect || !frame.image) continue;
+    source = frame.image;
+    rects.push(frame.rect);
   }
-  if (action === "apply") {
-    const cjs = window.createjs as {
-      ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
-      ColorMatrixFilter?: new (m: unknown) => unknown;
-    };
-    const Matrix = cjs?.ColorMatrix;
-    const Filter = cjs?.ColorMatrixFilter;
-    if (!Matrix || !Filter) return;
-    const mtx = new Matrix();
-    mtx.adjustHue(hue);
-    clip.filters = [new Filter(mtx)];
-    if (clip.cacheID) clip.updateCache?.();
-    else {
-      const box = clip.getBounds?.();
-      clip.cache?.(box?.x ?? -120, box?.y ?? -140, Math.max(40, box?.width ?? 240), Math.max(40, box?.height ?? 220));
+  if (!source || !rects.length) return null;
+  const live = adoptAtlasCanvas(sheet, source);
+  if (!live) return null;
+  const original = snapshotAtlas(live);
+  if (!original) return null;
+  return { live, original, rects };
+}
+
+function clearPlayBlockHueFilters(): void {
+  for (const block of playBlocks()) {
+    const clip = block as { filters?: unknown; uncache?: () => void; __bloxHue?: number };
+    if (clip.filters || clip.__bloxHue) {
+      clip.filters = null;
+      clip.uncache?.();
+      clip.__bloxHue = 0;
     }
-    clip.__bloxHue = wrapHue(hue);
-    return;
   }
-  clip.updateCache?.();
 }
 
 function applyBlockHue(): void {
   const hue = liveBlockHue();
-  for (const clip of hud?.hueClips() ?? []) {
-    if (!hue || clip.visible !== false) applyClipHue(clip, hue, true);
+  if (atlasRects && atlasOriginal && atlasCanvas && bakedHue >= 0 && hue === bakedHue) return;
+  if (!atlasRects || !atlasCanvas || !atlasOriginal) {
+    const atlas = collectBlockAtlas();
+    if (!atlas) return;
+    atlasRects = atlas.rects;
+    atlasCanvas = atlas.live;
+    atlasOriginal = atlas.original;
   }
-  if (overlayMode === "run") {
-    for (const block of playBlocks()) applyClipHue(block, hue, !block.roll?.idle);
-  }
+  const ctx = atlasCanvas.getContext("2d");
+  if (!ctx) return;
+  blitHueRects(ctx, atlasOriginal, atlasRects, hue);
+  bakedHue = hue;
+  clearPlayBlockHueFilters();
 }
+
 
 function ensureSky(): void {
   const st = window.stage;
@@ -704,7 +724,12 @@ function applyThemeMedia(): void {
     if (cam) cam.hidden = false;
     if (s.tabCastBg) {
       stopWebcam();
-      void startTabCast(cam);
+      if (!tabCastStream && !tabCastPrompt) void startTabCast(cam);
+      else if (tabCastStream && cam && cam.srcObject !== tabCastStream) {
+        cam.srcObject = tabCastStream;
+        cam.hidden = false;
+        void cam.play().catch(() => undefined);
+      }
     } else {
       stopTabCast();
       void startWebcam(cam);
@@ -806,48 +831,63 @@ async function startTabCast(cam: HTMLVideoElement | null): Promise<void> {
     void cam.play().catch(() => undefined);
     return;
   }
-  try {
-    const display = navigator.mediaDevices as MediaDevices & {
-      getDisplayMedia?: (opts: DisplayMediaStreamOptions) => Promise<MediaStream>;
-    };
-    if (!display.getDisplayMedia) throw new Error("unsupported");
-    const stream = await display.getDisplayMedia({
-      video: {
-        // @ts-expect-error preferCurrentTab is Chromium-only
-        preferCurrentTab: true,
-        displaySurface: "browser",
-      } as MediaTrackConstraints,
-      audio: false,
-      // @ts-expect-error selfBrowserSurface is Chromium-only
-      selfBrowserSurface: "include",
-      preferCurrentTab: true,
-    } as DisplayMediaStreamOptions);
-    if (!loadSettings().tabCastBg) {
-      for (const track of stream.getTracks()) track.stop();
-      return;
+  if (tabCastPrompt) {
+    await tabCastPrompt;
+    if (tabCastStream && cam.srcObject !== tabCastStream) {
+      cam.srcObject = tabCastStream;
+      cam.hidden = false;
+      void cam.play().catch(() => undefined);
     }
-    tabCastStream = stream;
-    cam.srcObject = stream;
-    cam.hidden = false;
-    void cam.play().catch(() => undefined);
-    stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+    return;
+  }
+  tabCastPrompt = (async () => {
+    try {
+      const display = navigator.mediaDevices as MediaDevices & {
+        getDisplayMedia?: (opts: DisplayMediaStreamOptions) => Promise<MediaStream>;
+      };
+      if (!display.getDisplayMedia) throw new Error("unsupported");
+      // Prefer the richest picker the browser offers (screen / window / tab).
+      // Avoid preferCurrentTab + displaySurface:"browser" — those force a current-tab-only
+      // prompt and were re-fired from applyLooks, stacking dialogs.
+      const stream = await display.getDisplayMedia({
+        video: true,
+        audio: false,
+        selfBrowserSurface: "include",
+        surfaceSwitching: "include",
+        monitorTypeSurfaces: "include",
+      } as DisplayMediaStreamOptions & Record<string, unknown>);
+      if (!loadSettings().tabCastBg) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+      stopTabCast();
+      tabCastStream = stream;
+      cam.srcObject = stream;
+      cam.hidden = false;
+      void cam.play().catch(() => undefined);
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        const s = loadSettings();
+        s.tabCastBg = false;
+        saveSettings(s);
+        stopTabCast();
+        applyLooks();
+        markHudDirty();
+        paintHud();
+      });
+    } catch {
       const s = loadSettings();
       s.tabCastBg = false;
       saveSettings(s);
-      stopTabCast();
-      applyLooks();
+      cam.hidden = true;
       markHudDirty();
       paintHud();
-    });
-  } catch {
-    const s = loadSettings();
-    s.tabCastBg = false;
-    saveSettings(s);
-    if (cam) cam.hidden = true;
-    markHudDirty();
-    paintHud();
-  }
+    } finally {
+      tabCastPrompt = null;
+    }
+  })();
+  await tabCastPrompt;
 }
+
 
 function setHdRendering(on: boolean): void {
   document.body.classList.toggle("is-hd", on);
@@ -967,6 +1007,8 @@ function fillThemeManage(): void {
   const list = $("hud-theme-manage-list");
   const empty = $("hud-theme-manage-empty");
   if (!panel || !list || !empty) return;
+  const back = $("hud-theme-manage-back");
+  if (back) back.textContent = t("common.back");
   const rows = listCustomThemes();
   list.replaceChildren();
   empty.hidden = rows.length > 0;
@@ -1057,6 +1099,10 @@ function bindSettingsChrome(): void {
   manageBtn?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     toggleThemeManage();
+  });
+  $("hud-theme-manage-back")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleThemeManage(false);
   });
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   tintColor?.addEventListener("input", () => {
@@ -1272,11 +1318,6 @@ function setVanillaCongraVisible(on: boolean): void {
   clip.alpha = on ? 1 : 0;
 }
 
-function markLive(node: OverlayNode | undefined): boolean {
-  if (!node || node._off || node.visible === false) return false;
-  return (node.alpha ?? 1) > 0.15;
-}
-
 function setGlyphVisible(node: OverlayNode | undefined, show: boolean): void {
   if (!node) return;
   node.visible = show;
@@ -1319,15 +1360,17 @@ function placePauseStats(el: HTMLElement | null, node: OverlayNode | undefined, 
     el.style.transform = "";
     return;
   }
-  const b = node.getBounds?.() ?? node.nominalBounds;
-  const { sx, sy } = stageScale();
+  // Prefer stable registration / nominalBounds — live getBounds() jitters as digit glyphs change.
+  const b = node.nominalBounds;
   const localX = b?.x ?? 0;
   const localY = b?.y ?? 0;
+  const { sx, sy } = stageScale();
   const p = node.localToGlobal(localX, localY);
   el.style.left = (p.x / sx / 550) * 100 + "%";
   el.style.top = (p.y / sy / 300) * 100 + "%";
   el.style.transform = "none";
 }
+
 
 function clickOverlay(node: OverlayNode | undefined): void {
   node?.dispatchEvent?.({ type: "click" });
@@ -1438,7 +1481,11 @@ function syncPlayChrome(on: boolean): void {
   if (moveVal) moveVal.textContent = String(moves);
   if (timeEl) {
     timeEl.hidden = !settings.showPlayTime;
-    timeEl.textContent = clock;
+    const timeLab = $("play-time-lab");
+    const timeVal = $("play-time-val");
+    if (timeLab) timeLab.textContent = t("hud.time") + ":";
+    if (timeVal) timeVal.textContent = clock;
+    if (!timeLab && !timeVal) timeEl.textContent = t("hud.time") + ": " + clock;
   }
   if (menu) menu.textContent = t("play.menu");
   if (help) {
@@ -1524,7 +1571,8 @@ function syncPauseStats(on: boolean): void {
   const box = $("pause-stats");
   const nav = $("pause-nav");
   if (!box) return;
-  const show = on && usesHdType();
+  const settled = on && usesHdType() && pauseMenuFrame() === 12;
+  const show = settled;
   box.hidden = !show;
   if (nav) nav.hidden = !show;
   const menu = pauseMenuClip();
@@ -2130,6 +2178,7 @@ function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
     lastPaintCell = "";
   }
   lastPaintCell = key;
+  editCursor = { x, y };
   paintEditorCell(draft, x, y, paint);
   beaten = false;
   hud?.refreshCreatorBoard({ tiles: draft.tiles, spawn: draft.spawn, marks: editorMarks(draft), cursor: editCursor });
@@ -2368,7 +2417,7 @@ function paintHud(): void {
     placeHudInput(true, "7.3%", "37.5%", "51%", t("puzzles.seed"), puzzleSeed, 24);
   } else if (extraView === "puzzles-gauntlet") {
     hud.drawGauntlet(puzzleDiff, gauntletCount);
-    placeHudInput(true, "7.3%", "53.5%", "51%", t("puzzles.seed"), gauntletSeed, 24);
+    placeHudInput(true, "7.3%", "62%", "51%", t("puzzles.seed"), gauntletSeed, 24);
   } else if (extraView === "history") {
     const all = loadFinishedStages();
     const maxScroll = Math.max(0, all.length - LIST_HISTORY);
@@ -2463,7 +2512,7 @@ function paintHud(): void {
       marks: editorMarks(draft),
       cursor: editCursor,
     });
-    placeHudInput(true, "21.5%", "2.1%", "36%", t("creator.placeholder"), draftName, 24);
+    placeHudInput(true, "21.5%", "2.1%", "18%", t("creator.placeholder"), draftName, 24);
   }
 }
 
@@ -2534,7 +2583,7 @@ function applyTheme(theme: ThemeId, reload = false): void {
   setHdRendering(isHdTheme(id));
   void swapAtlasLive(id);
   applyLooks();
-  for (const clip of hud?.hueClips() ?? []) clip.__bloxHue = undefined;
+  for (const clip of hud?.hueClips() ?? []) (clip as { __bloxHue?: number }).__bloxHue = undefined;
   applyBlockHue();
   lastTintKey = "";
   window.__bloxResetStoneStamp?.();
@@ -3484,7 +3533,7 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   wrapLocalSave();
   if (!keepRunTotals(session) || levelNumber <= 1) resetStageTotals();
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
-  syncSidePanel(!!session.classicRun && loadSettings().showTimer);
+  syncSidePanel(!!session.classicRun && session.entry === "start" && loadSettings().showTimer);
   if (session.replay) {
     window.exportRoot?.gotoAndPlay?.("game");
     return;
@@ -3774,9 +3823,12 @@ function commitTape(won: boolean, stageNo: number): void {
       run.levels.push(lv);
     }
     lv.attempts += 1;
-    lv.tapes.push({ cmds: tape.slice(), won });
-    if (won) lv.moves = tape.length;
-    else run.fails += 1;
+    if (won) {
+      lv.tapes = [{ cmds: tape.slice(), won: true }];
+      lv.moves = tape.length;
+    } else {
+      run.fails += 1;
+    }
   }
   tape = [];
 }
@@ -4455,7 +4507,7 @@ function syncOverlay(): void {
     hookReplayCapture();
     touchChrome?.sync(playing && !isPauseMenuOpen());
     if (label === "instructions") pollInstructionsPad();
-    syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
+    syncSidePanel(playing && !!playSession?.classicRun && playSession.entry === "start" && loadSettings().showTimer);
     applyPlayTint();
     applyBlockHue();
     syncPlayChrome(playing);

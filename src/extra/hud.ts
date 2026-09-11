@@ -677,7 +677,6 @@ export class ExtraHud {
     this.add(this.act("puzzle-daily", t("puzzles.playDaily"), 40, 128, 16, false, 200));
     this.add(this.act("puzzles-seeded", t("puzzles.seeded"), 40, 208, 14, false, 140));
     this.add(this.act("puzzles-gauntlet", t("puzzles.gauntlet"), 200, 208, 14, false, 140));
-    this.add(text(t("puzzles.share"), 40, 248, 11, theme.muted));
   }
 
   drawSeeded(): void {
@@ -713,7 +712,6 @@ export class ExtraHud {
     this.add(text(t("gauntlet.seed"), 40, 168, 12, theme.muted));
     this.add(fieldBox(40, 186, 280));
     this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 226, 14, false, 180));
-    this.add(text(t("gauntlet.countHint", { n: count }), 40, 258, 11, theme.muted));
   }
 
   drawTitleCard(title: string, subtitle = ""): void {
@@ -838,7 +836,7 @@ export class ExtraHud {
     const theme = paint();
     this.add(this.act("creator-make", t("common.back"), 10, 6, 12, false, 56));
     this.add(text(t("creator.name"), 72, 8, 12));
-    this.add(fieldBox(118, 6, 200));
+    this.add(fieldBox(118, 6, 100));
     this.add(text(opts.badge, 330, 8, 11, theme.green));
     this.add(this.act("creator-test", t("creator.test"), 490, 6, 12, false, 50));
 
@@ -876,7 +874,7 @@ export class ExtraHud {
     EDITOR_TOOLS.forEach((tool, i) => {
       const col = pad ? i % 2 : i < 6 ? 0 : 1;
       const row = pad ? Math.floor(i / 2) : i < 6 ? i : i - 6;
-      const x = pad ? 372 + col * 86 : 300 + col * 128;
+      const x = pad ? 372 + col * 86 : 372 + col * 88;
       const y = pad ? 28 + row * 26 : 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
       const icon = this.toolClip(tool.id, x, y);
@@ -951,7 +949,7 @@ export class ExtraHud {
     if (opts.cursor) {
       const p = boardScreen(opts.cursor.x, opts.cursor.y);
       const ring = new createjs.Shape();
-      ring.graphics.beginStroke("#fff4c8").setStrokeStyle(2).beginFill("rgba(255,200,80,0.22)").drawCircle(p.x, p.y - 4, 9);
+      ring.graphics.beginStroke("#fff4c8").setStrokeStyle(3).beginFill("rgba(255,200,80,0.28)").drawCircle(p.x, p.y - 4, 12);
       ring.mouseEnabled = false;
       this.board.addChild(ring);
     }
@@ -1006,8 +1004,9 @@ export class ExtraHud {
     if (icon) {
       icon.x = 8;
       icon.y = 12;
-      icon.scaleX = (icon.scaleX || 1) * 0.38;
-      icon.scaleY = (icon.scaleY || 1) * 0.38;
+      const boost = id === "bridgeL" || id === "bridgeR" ? 0.72 : 0.38;
+      icon.scaleX = (icon.scaleX || 1) * boost;
+      icon.scaleY = (icon.scaleY || 1) * boost;
       wrap.addChild(icon);
       return wrap;
     }

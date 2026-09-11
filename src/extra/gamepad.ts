@@ -47,8 +47,8 @@ let menuHoldFrames = 0;
 let menuHoldEv: MenuPadEvent | null = null;
 let padDriving = false;
 
-const MENU_REPEAT_INITIAL = 14;
-const MENU_REPEAT_MIN = 3;
+const MENU_REPEAT_INITIAL = 6;
+const MENU_REPEAT_RATE = 4;
 
 export function noteKeyboardPlay(): void {
   padDriving = false;
@@ -115,10 +115,8 @@ export function pollGamepad(
 
 export type MenuPadEvent = "up" | "down" | "left" | "right" | "confirm" | "back";
 
-function menuRepeatDelay(heldFrames: number): number {
-  if (heldFrames < MENU_REPEAT_INITIAL) return MENU_REPEAT_INITIAL;
-  const accel = Math.floor((heldFrames - MENU_REPEAT_INITIAL) / 10);
-  return Math.max(MENU_REPEAT_MIN, 8 - accel);
+function menuRepeatDelay(_heldFrames: number): number {
+  return MENU_REPEAT_RATE;
 }
 
 /** Extra menus: edge-triggered pad events with hold-to-repeat for stick/d-pad. */

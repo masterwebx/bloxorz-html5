@@ -134,6 +134,26 @@ describe("gamepad pause and menu confirm", () => {
     expect(saw).toBe(true);
   });
 
+  it("keeps a steady hold-repeat rate without ramping up", () => {
+    hold([]);
+    pollMenuPad();
+    hold([13]);
+    expect(pollMenuPad()).toEqual(["down"]);
+    const gaps: number[] = [];
+    let since = 0;
+    for (let i = 0; i < 80; i++) {
+      since++;
+      const ev = pollMenuPad();
+      if (ev.includes("down")) {
+        gaps.push(since);
+        since = 0;
+      }
+    }
+    expect(gaps.length).toBeGreaterThan(3);
+    const steady = gaps.slice(1);
+    expect(Math.max(...steady) - Math.min(...steady)).toBeLessThanOrEqual(1);
+  });
+
   it("does not rumble for keyboard play even if a pad is plugged in", () => {
     const playEffect = vi.fn();
     Object.defineProperty(navigator, "getGamepads", {

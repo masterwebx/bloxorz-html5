@@ -89,7 +89,13 @@ export function loadRuns(): RunRecord[] {
 }
 
 export function saveRun(run: RunRecord): void {
-  const levels = run.levels.filter((lv) => lv.tapes.some((t) => t.won && t.cmds.length));
+  const levels = run.levels
+    .map((lv) => {
+      const win = [...lv.tapes].reverse().find((t) => t.won && t.cmds.length);
+      if (!win) return null;
+      return { ...lv, tapes: [win], moves: lv.moves || win.cmds.length };
+    })
+    .filter((lv): lv is RunRecord["levels"][number] => !!lv);
   if (!levels.length) return;
   const next = { ...run, levels, complete: true };
   const runs = loadRuns().filter((r) => r.id !== next.id);
