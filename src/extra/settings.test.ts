@@ -37,8 +37,11 @@ describe("mobile settings", () => {
     expect(s.mobilePadChoice).toBe("");
     expect(s.rotateScreen).toBe(false);
     expect(s.showTimer).toBe(false);
-    expect(s.showStageName).toBe(false);
+    expect(s.showStageName).toBe(true);
+    expect(s.showPlayTime).toBe(false);
     expect(s.webcamBg).toBe(false);
+    expect(s.tabCastBg).toBe(false);
+    expect(s.blockHue).toBe(0);
   });
 
   it("keeps an explicit speedrun timer on", () => {
@@ -49,12 +52,14 @@ describe("mobile settings", () => {
     expect(loadSettings().showTimer).toBe(true);
   });
 
-  it("keeps stage name off unless turned on", () => {
+  it("defaults stage name on, and keeps an explicit off", () => {
+    expect(loadSettings().showStageName).toBe(true);
     localStorage.setItem(
       "bloxorz-settings-v1",
-      JSON.stringify({ showStageName: true }),
+      JSON.stringify({ showStageName: false }),
     );
-    expect(loadSettings().showStageName).toBe(true);
+    invalidateSettingsCache();
+    expect(loadSettings().showStageName).toBe(false);
   });
 
   it("records an explicit mobile-pad choice", () => {

@@ -145,6 +145,10 @@ describe("seeded generator", () => {
     expect(run[0].def.tiles.join("")).not.toBe(run[1].def.tiles.join(""));
   });
 
+  it("allows gauntlet lengths up to 33", () => {
+    expect(generateRun("long", "easy", 33)).toHaveLength(33);
+  });
+
   it("fills most of the 15×10 board and leaves unused walls empty", () => {
     const p = generateFullBoard("fill-check");
     expect(filledCellCount(p.def.tiles)).toBeGreaterThanOrEqual(120);

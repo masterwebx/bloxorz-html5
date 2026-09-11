@@ -43,7 +43,12 @@ function gActuator(pad: Gamepad | null): GamepadHapticActuator | undefined {
 let prevHeld: Record<string, boolean> = {};
 let prevMenu: Record<string, boolean> = {};
 let menuCool = 0;
+let menuHoldFrames = 0;
+let menuHoldEv: MenuPadEvent | null = null;
 let padDriving = false;
+
+const MENU_REPEAT_INITIAL = 14;
+const MENU_REPEAT_MIN = 3;
 
 export function noteKeyboardPlay(): void {
   padDriving = false;
@@ -110,7 +115,13 @@ export function pollGamepad(
 
 export type MenuPadEvent = "up" | "down" | "left" | "right" | "confirm" | "back";
 
-/** Extra menus: edge-triggered pad events with repeat delay. */
+function menuRepeatDelay(heldFrames: number): number {
+  if (heldFrames < MENU_REPEAT_INITIAL) return MENU_REPEAT_INITIAL;
+  const accel = Math.floor((heldFrames - MENU_REPEAT_INITIAL) / 10);
+  return Math.max(MENU_REPEAT_MIN, 8 - accel);
+}
+
+/** Extra menus: edge-triggered pad events with hold-to-repeat for stick/d-pad. */
 export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] {
   if (menuCool > 0) menuCool--;
   const settings = loadSettings();
@@ -128,13 +139,37 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
   if ((opts?.pauseConfirms ?? true) && held.has(settings.pads.pause)) now.confirm = true;
 
   const out: MenuPadEvent[] = [];
+  const dirs: MenuPadEvent[] = ["up", "down", "left", "right"];
+  const heldDir = dirs.find((ev) => now[ev]) ?? null;
+
   for (const ev of Object.keys(now) as MenuPadEvent[]) {
     if (!prevMenu[ev] && menuCool === 0) {
       padDriving = true;
       out.push(ev);
-      menuCool = ev === "confirm" || ev === "back" ? 12 : 8;
+      if (dirs.includes(ev)) {
+        menuHoldEv = ev;
+        menuHoldFrames = 0;
+        menuCool = MENU_REPEAT_INITIAL;
+      } else {
+        menuHoldEv = null;
+        menuHoldFrames = 0;
+        menuCool = 12;
+      }
     }
   }
+
+  if (heldDir && menuHoldEv === heldDir && !out.length) {
+    menuHoldFrames++;
+    if (menuCool === 0) {
+      padDriving = true;
+      out.push(heldDir);
+      menuCool = menuRepeatDelay(menuHoldFrames);
+    }
+  } else if (!heldDir) {
+    menuHoldEv = null;
+    menuHoldFrames = 0;
+  }
+
   prevMenu = now;
   return out;
 }
@@ -144,12 +179,16 @@ export function absorbHeldMenuConfirm(): void {
   prevMenu = { ...prevMenu, confirm: true };
   prevHeld = { ...prevHeld, pause: true };
   menuCool = 16;
+  menuHoldEv = null;
+  menuHoldFrames = 0;
 }
 
 export function resetPadState(): void {
   prevHeld = {};
   prevMenu = {};
   menuCool = 0;
+  menuHoldEv = null;
+  menuHoldFrames = 0;
   padDriving = false;
 }
 

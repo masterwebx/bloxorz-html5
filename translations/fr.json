@@ -94,7 +94,6 @@
   "action.swap": "Échanger le bloc fendu",
   "puzzles.title": "Puzzles",
   "puzzles.daily": "QUOTIDIEN",
-  "puzzles.dailyHint": "Le même puzzle de fin de campagne pour tout le monde aujourd’hui.",
   "puzzles.playDaily": "Jouer le quotidien",
   "puzzles.seeded": "Graine",
   "puzzles.gauntlet": "Défi",
@@ -275,5 +274,12 @@
   "settings.export": "Exporter les données",
   "settings.import": "Importer une sauvegarde",
   "settings.importConfirm": "Remplacer la sauvegarde de cet appareil par le fichier ?",
-  "settings.importBad": "Impossible de lire ce fichier de sauvegarde."
+  "settings.importBad": "Impossible de lire ce fichier de sauvegarde.",
+  "settings.playTime": "Show time under moves",
+  "settings.tabCast": "Cast tab background",
+  "settings.tabCrop": "Crop cast",
+  "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
+  "gauntlet.stages": "Stages",
+  "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
+  "settings.blockHue": "Block hue"
 }

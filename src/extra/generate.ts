@@ -53,6 +53,8 @@ const DONOR: Record<"mid" | "late" | "end", [number, number]> = {
   end: [28, 32],
 };
 export const GAUNTLET_LEN = 5;
+export const GAUNTLET_COUNTS = [5, 10, 15, 33] as const;
+export type GauntletCount = (typeof GAUNTLET_COUNTS)[number];
 export const HARD_BFS = 80_000;
 
 const OBSTACLE_CH = "shfvlkrq";
@@ -1247,7 +1249,7 @@ export function generateSeeded(seed: string): Puzzle {
 }
 
 export function generateRun(seed: string, difficulty: Difficulty, count: number): Puzzle[] {
-  const n = Math.max(1, Math.min(15, count));
+  const n = Math.max(1, Math.min(33, count));
   const band: "mid" | "late" | "end" = difficulty === "easy" ? "mid" : difficulty === "medium" ? "late" : "end";
   const used = new Set<string>();
   return Array.from({ length: n }, (_, i) => {

@@ -94,11 +94,10 @@
   "action.swap": "Swap Split Block",
   "puzzles.title": "Puzzles",
   "puzzles.daily": "يومي",
-  "puzzles.dailyHint": "Same late-campaign puzzle for everyone today.",
   "puzzles.playDaily": "Play Daily",
   "puzzles.seeded": "بذرة",
   "puzzles.gauntlet": "تحدٍ",
-  "puzzles.share": "Share a seed, or run five stages.",
+  "puzzles.share": "Share a seed, or run a gauntlet.",
   "seeded.title": "Seeded Run",
   "seeded.hint": "Play this seed, or type another.",
   "seeded.same": "Same seed, same map.",
@@ -275,5 +274,12 @@
   "settings.export": "تصدير البيانات",
   "settings.import": "استيراد الحفظ",
   "settings.importConfirm": "استبدال حفظ هذا الجهاز بالملف؟",
-  "settings.importBad": "تعذر قراءة ملف الحفظ."
+  "settings.importBad": "تعذر قراءة ملف الحفظ.",
+  "settings.playTime": "Show time under moves",
+  "settings.tabCast": "Cast tab background",
+  "settings.tabCrop": "Crop cast",
+  "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
+  "gauntlet.stages": "Stages",
+  "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
+  "settings.blockHue": "Block hue"
 }

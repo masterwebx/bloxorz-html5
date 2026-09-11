@@ -94,7 +94,6 @@
   "action.swap": "分裂ブロック切替",
   "puzzles.title": "パズル",
   "puzzles.daily": "今日のパズル",
-  "puzzles.dailyHint": "今日は全員おなじ終盤級のパズル。",
   "puzzles.playDaily": "今日のを遊ぶ",
   "puzzles.seeded": "シード",
   "puzzles.gauntlet": "ガントレット",
@@ -275,5 +274,12 @@
   "settings.export": "データを書き出す",
   "settings.import": "セーブを読み込む",
   "settings.importConfirm": "この端末のセーブをファイルで置き換えますか？",
-  "settings.importBad": "セーブファイルを読めませんでした。"
+  "settings.importBad": "セーブファイルを読めませんでした。",
+  "settings.playTime": "Show time under moves",
+  "settings.tabCast": "Cast tab background",
+  "settings.tabCrop": "Crop cast",
+  "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
+  "gauntlet.stages": "Stages",
+  "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
+  "settings.blockHue": "Block hue"
 }

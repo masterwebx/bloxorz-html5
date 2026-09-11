@@ -1,13 +1,18 @@
 import { playHomeWhoosh, playUiClick, playUiLatch } from "./audio";
 import {
+  BOARD_SCALE,
   BOARD_VIEW,
   CLIP_OFFSET,
+  boardScreen,
   clipForTile,
+  occupiedCells,
+  pickBoardCell,
   type ClipName,
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
 import { GAUNTLET_QUALITY } from "./generate";
-import { DEFAULT_ISO, TILE_FACE, TOOL_CH, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
+import { TILE_FACE, TOOL_CH, isoPt, type IsoMetrics } from "./isoBoard";
+import { rustFaces } from "./hue";
 import { t } from "./i18n";
 import { currentTheme } from "./settings";
 import { themePaint } from "./themePack";
@@ -292,8 +297,10 @@ export class ExtraHud {
   private layer: HudNode;
   private board: HudNode | null = null;
   private mascot: HudNode | null = null;
+  private preview: HudNode | null = null;
   onAction: (act: string) => void = () => undefined;
   makeMascot: (() => HudNode | null) | null = null;
+  makePreview: (() => HudNode | null) | null = null;
   makeClip: ((name: ClipName) => HudNode | null) | null = null;
   makeTile: ((ch: string) => HudNode | null) | null = null;
   focusId = "";
@@ -352,6 +359,27 @@ export class ExtraHud {
     if (this.mascot.parent === this.root) this.root.removeChild?.(this.mascot);
   }
 
+  hueClips(): HudNode[] {
+    const out: HudNode[] = [];
+    if (this.mascot?.parent) out.push(this.mascot);
+    if (this.preview?.parent) out.push(this.preview);
+    return out;
+  }
+
+  private placePreview(x: number, y: number, hue = 0): void {
+    if (!this.preview && this.makePreview) this.preview = this.makePreview();
+    if (!this.preview) {
+      this.add(blockPreview(x, y, hue));
+      return;
+    }
+    this.preview.visible = true;
+    this.preview.mouseEnabled = false;
+    this.preview.scaleX = 0.34;
+    this.preview.scaleY = 0.34;
+    this.preview.x = x;
+    this.preview.y = y + 36;
+    this.add(this.preview);
+  }
 
   drawHome(title: string, items: MenuItem[], cursor: number, animate = false): void {
     this.clear();
@@ -530,14 +558,17 @@ export class ExtraHud {
     rumble: boolean;
     showTimer: boolean;
     showStageName: boolean;
+    showPlayTime: boolean;
     mobilePad: boolean;
     rotateScreen: boolean;
     themeBg: boolean;
     webcamBg: boolean;
+    tabCastBg: boolean;
     music: number;
     sfx: number;
     bgTint: number;
     bgHue: number;
+    blockHue: number;
   }): void {
     this.clear();
     this.hideMascot();
@@ -545,34 +576,40 @@ export class ExtraHud {
     const onOff = (on: boolean) => (on ? t("common.on") : t("common.off"));
     this.add(this.act("back", t("common.back"), 24, 6, 12, false, 80));
     this.add(text(t("settings.title"), 275, 6, 16, theme.ink, "center"));
-    this.add(text(t("settings.name"), 40, 28, 12));
-    this.add(fieldBox(100, 26, 220));
-    this.add(text(t("settings.music"), 40, 50, 12, this.focusId === "music" ? theme.hot : theme.ink));
-    this.add(slider(100, 50, 140, opts.music, (v) => this.onAction("music:" + v.toFixed(2))));
-    this.add(text(Math.round(opts.music * 100) + "%", 300, 50, 11, theme.muted));
-    this.add(text(t("settings.sfx"), 40, 70, 12, this.focusId === "sfx" ? theme.hot : theme.ink));
-    this.add(slider(100, 70, 140, opts.sfx, (v) => this.onAction("sfx:" + v.toFixed(2))));
-    this.add(text(Math.round(opts.sfx * 100) + "%", 300, 70, 11, theme.muted));
-    this.add(this.act("toggle-rumble", `${this.focusId === "toggle-rumble" ? "> " : "  "}${t("settings.rumble")}  ${onOff(opts.rumble)}`, 40, 90, 12, false, 150));
-    this.add(this.act("toggle-mobile-pad", `${this.focusId === "toggle-mobile-pad" ? "> " : "  "}${t("settings.pad")}  ${onOff(opts.mobilePad)}`, 250, 90, 12, false, 180));
-    this.add(this.act("toggle-timer", `${this.focusId === "toggle-timer" ? "> " : "  "}${t("settings.timer")}  ${onOff(opts.showTimer)}`, 40, 110, 12, false, opts.mobilePad ? 155 : 175));
-    this.add(this.act("toggle-stage-name", `${this.focusId === "toggle-stage-name" ? "> " : "  "}${t("settings.stageName")}  ${onOff(opts.showStageName)}`, opts.mobilePad ? 198 : 230, 110, 11, false, opts.mobilePad ? 140 : 200));
+    this.add(text(t("settings.name"), 40, 26, 12));
+    this.add(fieldBox(100, 24, 220));
+    this.add(text(t("settings.music"), 40, 48, 12, this.focusId === "music" ? theme.hot : theme.ink));
+    this.add(slider(100, 48, 140, opts.music, (v) => this.onAction("music:" + v.toFixed(2))));
+    this.add(text(Math.round(opts.music * 100) + "%", 300, 48, 11, theme.muted));
+    this.add(text(t("settings.sfx"), 40, 66, 12, this.focusId === "sfx" ? theme.hot : theme.ink));
+    this.add(slider(100, 66, 140, opts.sfx, (v) => this.onAction("sfx:" + v.toFixed(2))));
+    this.add(text(Math.round(opts.sfx * 100) + "%", 300, 66, 11, theme.muted));
+    this.add(this.act("toggle-rumble", `${this.focusId === "toggle-rumble" ? "> " : "  "}${t("settings.rumble")}  ${onOff(opts.rumble)}`, 40, 86, 12, false, 150));
+    this.add(this.act("toggle-mobile-pad", `${this.focusId === "toggle-mobile-pad" ? "> " : "  "}${t("settings.pad")}  ${onOff(opts.mobilePad)}`, 250, 86, 12, false, 180));
+    this.add(this.act("toggle-timer", `${this.focusId === "toggle-timer" ? "> " : "  "}${t("settings.timer")}  ${onOff(opts.showTimer)}`, 40, 106, 12, false, opts.mobilePad ? 155 : 175));
+    this.add(this.act("toggle-stage-name", `${this.focusId === "toggle-stage-name" ? "> " : "  "}${t("settings.stageName")}  ${onOff(opts.showStageName)}`, opts.mobilePad ? 198 : 230, 106, 11, false, opts.mobilePad ? 140 : 200));
     if (opts.mobilePad) {
-      this.add(this.act("toggle-rotate", `${this.focusId === "toggle-rotate" ? "> " : "  "}${t("settings.rotate")}  ${onOff(opts.rotateScreen)}`, 350, 110, 11, false, 185));
+      this.add(this.act("toggle-rotate", `${this.focusId === "toggle-rotate" ? "> " : "  "}${t("settings.rotate")}  ${onOff(opts.rotateScreen)}`, 350, 106, 11, false, 185));
     }
-    this.add(text(t("settings.theme"), 40, 132, 12, this.focusId === "theme-cycle" ? theme.hot : theme.ink));
-    this.add(text(t("settings.language"), 40, 156, 12, this.focusId === "locale-cycle" ? theme.hot : theme.ink));
-    this.add(this.act("toggle-theme-bg", `${this.focusId === "toggle-theme-bg" ? "> " : "  "}${t("settings.themeBg")}  ${onOff(opts.themeBg)}`, 40, 180, 12, false, 230));
-    this.add(this.act("toggle-webcam", `${this.focusId === "toggle-webcam" ? "> " : "  "}${t("settings.webcam")}  ${onOff(opts.webcamBg)}`, 300, 180, 12, false, 230));
-    this.add(text(t("settings.tint"), 40, 202, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
-    this.add(slider(160, 202, 120, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
-    this.add(swatch(300, 204, opts.bgHue, opts.bgTint));
-    this.add(text(t("settings.hue"), 40, 222, 12, this.focusId === "bghue" ? theme.hot : theme.ink));
-    this.add(slider(160, 222, 120, opts.bgHue / 360, (v) => this.onAction("bghue:" + Math.round(v * 360))));
-    this.add(text(String(Math.round(opts.bgHue)), 300, 222, 11, theme.muted));
-    this.add(this.act("remap", t("settings.remap"), 40, 264, 12, false, 160));
-    this.add(this.act("export-save", t("settings.export"), 200, 264, 12, false, 130));
-    this.add(this.act("import-save", t("settings.import"), 350, 264, 12, false, 160));
+    this.add(this.act("toggle-play-time", `${this.focusId === "toggle-play-time" ? "> " : "  "}${t("settings.playTime")}  ${onOff(opts.showPlayTime)}`, 40, 126, 12, false, 220));
+    this.add(text(t("settings.theme"), 40, 148, 12, this.focusId === "theme-cycle" ? theme.hot : theme.ink));
+    this.add(text(t("settings.language"), 40, 170, 12, this.focusId === "locale-cycle" ? theme.hot : theme.ink));
+    this.add(this.act("toggle-theme-bg", `${this.focusId === "toggle-theme-bg" ? "> " : "  "}${t("settings.themeBg")}  ${onOff(opts.themeBg)}`, 40, 192, 11, false, 200));
+    this.add(this.act("toggle-webcam", `${this.focusId === "toggle-webcam" ? "> " : "  "}${t("settings.webcam")}  ${onOff(opts.webcamBg)}`, 250, 192, 11, false, 200));
+    this.add(this.act("toggle-tab-cast", `${this.focusId === "toggle-tab-cast" ? "> " : "  "}${t("settings.tabCast")}  ${onOff(opts.tabCastBg)}`, 40, 210, 11, false, 240));
+    if (opts.tabCastBg) {
+      this.add(this.act("tab-crop", `${this.focusId === "tab-crop" ? "> " : "  "}${t("settings.tabCrop")}`, 300, 210, 11, false, 180));
+    }
+    this.add(text(t("settings.tint"), 40, 230, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
+    this.add(slider(150, 230, 140, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
+    this.add(swatch(310, 232, opts.bgHue, Math.max(0.35, opts.bgTint)));
+    this.add(text(t("settings.blockHue"), 40, 250, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
+    this.add(slider(150, 250, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
+    this.add(swatch(290, 252, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
+    this.placePreview(392, 210, opts.blockHue);
+    this.add(this.act("remap", t("settings.remap"), 40, 272, 12, false, 160));
+    this.add(this.act("export-save", t("settings.export"), 200, 272, 12, false, 130));
+    this.add(this.act("import-save", t("settings.import"), 350, 272, 12, false, 160));
   }
 
   drawRemap(rows: { id: string; label: string; bind: string }[], waiting: string | null): void {
@@ -637,8 +674,7 @@ export class ExtraHud {
     this.add(card);
     this.add(text(t("puzzles.daily"), 40, 56, 22, theme.ink));
     this.add(text(date, 40, 86, 14, theme.muted));
-    this.add(text(t("puzzles.dailyHint"), 40, 110, 12, theme.muted));
-    this.add(this.act("puzzle-daily", t("puzzles.playDaily"), 40, 142, 16, false, 200));
+    this.add(this.act("puzzle-daily", t("puzzles.playDaily"), 40, 128, 16, false, 200));
     this.add(this.act("puzzles-seeded", t("puzzles.seeded"), 40, 208, 14, false, 140));
     this.add(this.act("puzzles-gauntlet", t("puzzles.gauntlet"), 200, 208, 14, false, 140));
     this.add(text(t("puzzles.share"), 40, 248, 11, theme.muted));
@@ -656,7 +692,7 @@ export class ExtraHud {
     this.add(text(t("seeded.same"), 40, 200, 11, theme.muted));
   }
 
-  drawGauntlet(diff: string): void {
+  drawGauntlet(diff: string, count = 5): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
@@ -664,15 +700,20 @@ export class ExtraHud {
     this.add(text(t("gauntlet.title"), 275, 28, 20, theme.ink, "center"));
     (["easy", "medium", "hard", "insane"] as const).forEach((d, i) => {
       const mark = d === diff ? "> " : "  ";
-      this.add(this.act("diff:" + d, mark + t("diff." + d), 40 + i * 120, 78, 13, false, 100));
+      this.add(this.act("diff:" + d, mark + t("diff." + d), 40 + i * 120, 68, 13, false, 100));
+    });
+    this.add(text(t("gauntlet.stages"), 40, 98, 12, theme.muted));
+    ([5, 10, 15, 33] as const).forEach((n, i) => {
+      const mark = n === count ? "> " : "  ";
+      this.add(this.act("glen:" + n, mark + String(n), 40 + i * 70, 118, 13, false, 56));
     });
     const band = diff === "easy" || diff === "medium" || diff === "hard" || diff === "insane" ? diff : "easy";
     const era = band === "easy" ? t("hint.era.mid") : band === "medium" ? t("hint.era.late") : t("hint.era.end");
-    this.add(text(t("hint.campaign", { n: GAUNTLET_QUALITY[band].minMoves, era }), 40, 110, 11, theme.muted));
-    this.add(text(t("gauntlet.seed"), 40, 138, 12, theme.muted));
-    this.add(fieldBox(40, 160, 280));
-    this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 200, 14, false, 180));
-    this.add(text(t("gauntlet.five"), 40, 236, 11, theme.muted));
+    this.add(text(t("hint.campaign", { n: GAUNTLET_QUALITY[band].minMoves, era }), 40, 146, 11, theme.muted));
+    this.add(text(t("gauntlet.seed"), 40, 168, 12, theme.muted));
+    this.add(fieldBox(40, 186, 280));
+    this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 226, 14, false, 180));
+    this.add(text(t("gauntlet.countHint", { n: count }), 40, 258, 11, theme.muted));
   }
 
   drawTitleCard(title: string, subtitle = ""): void {
@@ -802,12 +843,12 @@ export class ExtraHud {
     this.add(this.act("creator-test", t("creator.test"), 490, 6, 12, false, 50));
 
     this.board = new createjs.Container();
-    this.add(this.board);
     try {
       this.refreshCreatorBoard(opts);
     } catch {
       /* keep the rest of the editor even if a clip fails */
     }
+    this.add(this.board);
 
     const hit = new createjs.Shape();
     const area = new createjs.Shape();
@@ -818,7 +859,7 @@ export class ExtraHud {
     const cellOf = (ev?: unknown): { x: number; y: number } | null => {
       const e = ev as { localX?: number; localY?: number };
       if (typeof e?.localX !== "number" || typeof e?.localY !== "number") return null;
-      return pickIsoCell(e.localX, e.localY, DEFAULT_ISO);
+      return pickBoardCell(e.localX, e.localY);
     };
     hit.addEventListener("mousedown", (ev?: unknown) => {
       const c = cellOf(ev);
@@ -886,34 +927,72 @@ export class ExtraHud {
     this.board.removeAllChildren();
     const mesh = new createjs.Shape();
     mesh.mouseEnabled = false;
-    const cells: { x: number; y: number; ch: string }[] = [];
     for (let y = 0; y < 10; y++) {
-      for (let x = 0; x < 15; x++) cells.push({ x, y, ch: opts.tiles[y]?.[x] ?? " " });
-    }
-    cells.sort((a, b) => a.y - a.x - (b.y - b.x));
-    for (const cell of cells) {
-      drawIsoTile(mesh, cell.x, cell.y, cell.ch, DEFAULT_ISO);
+      for (let x = 0; x < 15; x++) {
+        if ((opts.tiles[y]?.[x] ?? " ") !== " ") continue;
+        drawBoardCell(mesh, x, y, " ");
+      }
     }
     this.board.addChild(mesh);
+    const cells = occupiedCells(opts.tiles);
+    cells.sort((a, b) => a.y - a.x - (b.y - b.x));
     for (const cell of cells) {
-      if (cell.ch === " ") continue;
-      const face = this.atlasTile(cell.ch, cell.x, cell.y);
-      if (face) this.board.addChild(face);
+      const clip = this.placeBoardClip(cell.ch, cell.x, cell.y);
+      if (clip) this.board.addChild(clip);
+      else drawBoardCell(mesh, cell.x, cell.y, cell.ch);
     }
-    const spawn = isoCenter(opts.spawn[0], opts.spawn[1], DEFAULT_ISO);
-    const block = spawnMarker(spawn.x, spawn.y);
+    const spawn = boardScreen(opts.spawn[0], opts.spawn[1]);
+    const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]) || spawnMarker(spawn.x, spawn.y);
     this.board.addChild(block);
     for (const mark of opts.marks) {
-      const p = isoCenter(mark.x, mark.y, DEFAULT_ISO);
+      const p = boardScreen(mark.x, mark.y);
       this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
     }
     if (opts.cursor) {
-      const p = isoCenter(opts.cursor.x, opts.cursor.y, DEFAULT_ISO);
+      const p = boardScreen(opts.cursor.x, opts.cursor.y);
       const ring = new createjs.Shape();
       ring.graphics.beginStroke("#fff4c8").setStrokeStyle(2).beginFill("rgba(255,200,80,0.22)").drawCircle(p.x, p.y - 4, 9);
       ring.mouseEnabled = false;
       this.board.addChild(ring);
     }
+  }
+
+  private placeBoardClip(ch: string, x: number, y: number): HudNode | null {
+    const p = boardScreen(x, y);
+    if (ch === "Block") {
+      const block = this.makeClip?.("Block");
+      if (!block) return null;
+      block.x = p.x;
+      block.y = p.y;
+      block.scaleX = BOARD_SCALE;
+      block.scaleY = BOARD_SCALE;
+      block.mouseEnabled = false;
+      if (block.tickEnabled !== undefined) block.tickEnabled = false;
+      block.gotoAndStop?.(0);
+      return block;
+    }
+    const tile = this.makeTile?.(ch);
+    if (tile) {
+      tile.x = p.x;
+      tile.y = p.y;
+      tile.scaleX = BOARD_SCALE;
+      tile.scaleY = BOARD_SCALE;
+      tile.mouseEnabled = false;
+      if (tile.tickEnabled !== undefined) tile.tickEnabled = false;
+      return tile;
+    }
+    const spec = clipForTile(ch);
+    if (!spec) return null;
+    const clip = this.makeClip?.(spec.name);
+    if (!clip) return null;
+    const [ox, oy] = CLIP_OFFSET[spec.name];
+    clip.x = p.x + ox * BOARD_SCALE;
+    clip.y = p.y + oy * BOARD_SCALE;
+    clip.scaleX = BOARD_SCALE * spec.dim;
+    clip.scaleY = BOARD_SCALE * spec.dim;
+    clip.mouseEnabled = false;
+    if (clip.tickEnabled !== undefined) clip.tickEnabled = false;
+    return clip;
   }
 
   private toolClip(id: string, x: number, y: number): HudNode {
@@ -923,30 +1002,19 @@ export class ExtraHud {
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
     const ch = TOOL_CH[id] ?? " ";
+    const icon = ch === " " ? null : this.placeBoardClip(ch, 0, 0);
+    if (icon) {
+      icon.x = 8;
+      icon.y = 12;
+      icon.scaleX = (icon.scaleX || 1) * 0.38;
+      icon.scaleY = (icon.scaleY || 1) * 0.38;
+      wrap.addChild(icon);
+      return wrap;
+    }
     const s = new createjs.Shape();
     drawIsoTile(s, 0, 0, ch, { ox: 2, oy: 10, s: 0.42 });
     wrap.addChild(s);
     return wrap;
-  }
-
-  private atlasTile(ch: string, x: number, y: number): HudNode | null {
-    const spec = clipForTile(ch);
-    if (!spec || !this.makeClip) return null;
-    try {
-      const clip = this.makeClip(spec.name);
-      if (!clip) return null;
-      const p = isoCenter(x, y, DEFAULT_ISO);
-      const [ox, oy] = CLIP_OFFSET[spec.name];
-      clip.x = p.x + ox * 0.5;
-      clip.y = p.y + oy * 0.5;
-      clip.scaleX = 0.5 * spec.dim;
-      clip.scaleY = 0.5 * spec.dim;
-      clip.mouseEnabled = false;
-      if (clip.tickEnabled !== undefined) clip.tickEnabled = false;
-      return clip;
-    } catch {
-      return null;
-    }
   }
 
   drawInGameDev(banner = "", autoSolve = false): void {
@@ -956,6 +1024,17 @@ export class ExtraHud {
     this.add(hitRow("Dev menu", 12, 52, 11, () => this.onAction("dev-menu"), false, 120));
     if (banner) this.add(text(banner, 12, 74, 11, paint().green));
   }
+}
+
+function boardCellPts(x: number, y: number): [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] {
+  return [boardScreen(x, y), boardScreen(x + 1, y), boardScreen(x + 1, y + 1), boardScreen(x, y + 1)];
+}
+
+function drawBoardCell(shape: HudShape, x: number, y: number, ch: string): void {
+  const face = TILE_FACE[ch] || TILE_FACE[" "];
+  const [a, b, c, d] = boardCellPts(x, y);
+  shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(ch === " " ? 0.6 : 1)
+    .moveTo(a.x, a.y).lineTo(b.x, b.y).lineTo(c.x, c.y).lineTo(d.x, d.y).lineTo(a.x, a.y).endFill();
 }
 
 function spawnMarker(x: number, y: number): HudShape {
@@ -982,6 +1061,20 @@ function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMe
     .moveTo(a.x, a.y - h).lineTo(b.x, b.y - h).lineTo(c.x, c.y - h).lineTo(d.x, d.y - h).lineTo(a.x, a.y - h).endFill();
 }
 
+function blockPreview(x: number, y: number, hue: number): HudShape {
+  const face = rustFaces(hue);
+  const s = new createjs.Shape();
+  const ox = x + 18;
+  const oy = y + 28;
+  s.graphics.beginFill(face.top).beginStroke(face.edge).setStrokeStyle(1)
+    .moveTo(ox, oy - 22).lineTo(ox + 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox - 16, oy - 14).lineTo(ox, oy - 22).endFill();
+  s.graphics.beginFill(face.left)
+    .moveTo(ox - 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox, oy + 12).lineTo(ox - 16, oy + 4).lineTo(ox - 16, oy - 14).endFill();
+  s.graphics.beginFill(face.right)
+    .moveTo(ox, oy - 6).lineTo(ox + 16, oy - 14).lineTo(ox + 16, oy + 4).lineTo(ox, oy + 12).lineTo(ox, oy - 6).endFill();
+  s.mouseEnabled = false;
+  return s;
+}
 
 function swatch(x: number, y: number, hue: number, amt: number): HudShape {
   const s = new createjs.Shape();

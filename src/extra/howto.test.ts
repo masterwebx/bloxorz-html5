@@ -14,6 +14,12 @@ describe("howto slides", () => {
     expect(howtoSlide(173)).toBe(8);
   });
 
+  it("hides the howto overlay during the skip outro", () => {
+    expect(howtoSlide(185)).toBe(-1);
+    expect(howtoSlide(190)).toBe(-1);
+    expect(howtoNavIds(-1)).toEqual([]);
+  });
+
   it("keeps step 1 nav as a row that can reflow by language", () => {
     expect(howtoNavIds(0)).toEqual(["back", "skip", "next"]);
     expect(howtoNavIds(1)).toEqual(["prev", "next"]);

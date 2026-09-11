@@ -94,7 +94,6 @@
   "action.swap": "切换分裂块",
   "puzzles.title": "谜题",
   "puzzles.daily": "每日谜题",
-  "puzzles.dailyHint": "今天大家同一道后期战役级谜题。",
   "puzzles.playDaily": "玩每日",
   "puzzles.seeded": "种子",
   "puzzles.gauntlet": "试炼",
@@ -275,5 +274,12 @@
   "settings.export": "导出数据",
   "settings.import": "导入存档",
   "settings.importConfirm": "用该文件替换此设备上的存档？",
-  "settings.importBad": "无法读取该存档文件。"
+  "settings.importBad": "无法读取该存档文件。",
+  "settings.playTime": "Show time under moves",
+  "settings.tabCast": "Cast tab background",
+  "settings.tabCrop": "Crop cast",
+  "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
+  "gauntlet.stages": "Stages",
+  "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
+  "settings.blockHue": "Block hue"
 }

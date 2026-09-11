@@ -23,19 +23,28 @@ export function freezeStageTitleClip(title: StageTitleClip | null | undefined): 
   sign.loop = false;
 }
 
+/** Rewind and let stagesign fire blox2wav once; always disable looping. */
 export function armStageTitleClip(title: StageTitleClip | null | undefined): void {
   if (!title) return;
   title.visible = false;
-  const wasFrozen = title.tickEnabled === false;
   title.tickEnabled = true;
   title.loop = false;
   const sign = title.instance;
   if (sign) {
     sign.tickEnabled = true;
     sign.loop = false;
-    if (wasFrozen) sign.gotoAndPlay?.(0);
+    sign.gotoAndPlay?.(0);
   }
-  if (wasFrozen) title.gotoAndPlay?.(0);
+  title.gotoAndPlay?.(0);
+}
+
+/** Keep the title non-looping without stopping mid-sting every tick. */
+export function pinStageTitleClip(title: StageTitleClip | null | undefined): void {
+  if (!title) return;
+  title.visible = false;
+  title.loop = false;
+  const sign = title.instance;
+  if (sign) sign.loop = false;
 }
 
 export function stageTitleShouldArm(prevLabel: string, label: string): boolean {

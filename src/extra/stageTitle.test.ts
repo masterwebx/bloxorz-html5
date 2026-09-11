@@ -45,10 +45,17 @@ describe("stage title sting", () => {
         played.push(n);
       },
     };
-    const title = { tickEnabled: false, loop: false, instance: sign };
+    const title = {
+      tickEnabled: false,
+      loop: false,
+      instance: sign,
+      gotoAndPlay(n: number) {
+        played.push(n + 100);
+      },
+    };
     armStageTitleClip(title);
     expect(title.tickEnabled).toBe(true);
     expect(sign.tickEnabled).toBe(true);
-    expect(played).toEqual([0]);
+    expect(played).toEqual([0, 100]);
   });
 });

@@ -549,3 +549,12 @@ export function playDevJingle(): void {
   playId("blox2wav");
   window.setTimeout(() => playId("blox003wav"), 30);
 }
+
+/** One-shot stage-load sting (never loops). */
+export function playStageSting(): void {
+  if (!ctxReady) {
+    queued.push(["blox2wav"]);
+    return;
+  }
+  playId("blox2wav");
+}

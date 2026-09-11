@@ -94,7 +94,6 @@
   "action.swap": "Split-Würfel tauschen",
   "puzzles.title": "Rätsel",
   "puzzles.daily": "TAGESRÄTSEL",
-  "puzzles.dailyHint": "Heute dasselbe späte Kampagnenrätsel für alle.",
   "puzzles.playDaily": "Tagesrätsel",
   "puzzles.seeded": "Seed",
   "puzzles.gauntlet": "Parcours",
@@ -275,5 +274,12 @@
   "settings.export": "Daten exportieren",
   "settings.import": "Spielstand importieren",
   "settings.importConfirm": "Spielstand auf diesem Gerät durch die Datei ersetzen?",
-  "settings.importBad": "Diese Speicherdatei konnte nicht gelesen werden."
+  "settings.importBad": "Diese Speicherdatei konnte nicht gelesen werden.",
+  "settings.playTime": "Show time under moves",
+  "settings.tabCast": "Cast tab background",
+  "settings.tabCrop": "Crop cast",
+  "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
+  "gauntlet.stages": "Stages",
+  "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
+  "settings.blockHue": "Block hue"
 }

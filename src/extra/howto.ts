@@ -2,15 +2,21 @@
 
 export const HOWTO_SLIDE_COUNT = 9;
 
+/** Skip timeline starts at label "skip" (frame 185). */
+export const HOWTO_SKIP_FRAME = 185;
+
 export type HowtoNavId = "back" | "skip" | "prev" | "next" | "start";
 
+/** Returns slide index 0–8, or -1 while the skip outro is playing. */
 export function howtoSlide(frame: number): number {
+  if (frame >= HOWTO_SKIP_FRAME) return -1;
   if (frame < 24) return 0;
   if (frame >= 173) return 8;
   return Math.min(7, Math.max(0, Math.floor((frame - 13) / 20)));
 }
 
 export function howtoNavIds(slide: number): HowtoNavId[] {
+  if (slide < 0) return [];
   if (slide <= 0) return ["back", "skip", "next"];
   if (slide >= 8) return ["start"];
   return ["prev", "next"];

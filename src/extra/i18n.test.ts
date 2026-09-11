@@ -34,6 +34,9 @@ describe("i18n", () => {
     expect(t("play.moves")).toBe("Moves");
     expect(t("settings.template")).toBe("Download Template");
     expect(t("settings.templateBusy")).toBe("Downloading template…");
+    expect(t("settings.blockHue")).toBe("Block hue");
+    expect(t("settings.playTime")).toBe("Show time under moves");
+    expect(t("settings.tabCast")).toBe("Cast tab background");
     expect(t("settings.stageName")).toBe("Stage name");
     expect(t("play.stage", { n: 4 })).toBe("Stage 4");
     expect(t("play.stageCard", { n: "01" })).toBe("STAGE 01");

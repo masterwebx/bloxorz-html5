@@ -118,6 +118,22 @@ describe("gamepad pause and menu confirm", () => {
     expect(isPadDriving()).toBe(true);
   });
 
+  it("repeats stick navigation while held", () => {
+    hold([]);
+    pollMenuPad();
+    hold([13]);
+    expect(pollMenuPad()).toEqual(["down"]);
+    let saw = false;
+    for (let i = 0; i < 40; i++) {
+      const ev = pollMenuPad();
+      if (ev.includes("down")) {
+        saw = true;
+        break;
+      }
+    }
+    expect(saw).toBe(true);
+  });
+
   it("does not rumble for keyboard play even if a pad is plugged in", () => {
     const playEffect = vi.fn();
     Object.defineProperty(navigator, "getGamepads", {

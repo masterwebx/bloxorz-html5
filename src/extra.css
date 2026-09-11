@@ -102,10 +102,38 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	white-space: nowrap;
 }
 
+#play-time {
+	position: absolute;
+	left: 71.45%;
+	width: 27.3%;
+	top: 7.2%;
+	height: 5%;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	padding-right: 2%;
+	box-sizing: border-box;
+	font: 700 calc(10 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
+	letter-spacing: 0.16em;
+	color: #fff;
+	text-shadow: 0 0 0.4cqh #c45a18;
+	pointer-events: none;
+}
+
+#play-chrome.has-pass #play-time {
+	top: 13.8%;
+}
+
+#play-chrome.has-play-time #play-moves {
+	/* keep moves row; time sits under it */
+}
+
 #animation_container.has-speedrun #play-pass,
 #animation_container.has-speedrun #play-moves,
+#animation_container.has-speedrun #play-time,
 #play-chrome.has-speedrun #play-pass,
-#play-chrome.has-speedrun #play-moves {
+#play-chrome.has-speedrun #play-moves,
+#play-chrome.has-speedrun #play-time {
 	left: 61%;
 	width: 32%;
 }
@@ -135,11 +163,13 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	box-sizing: border-box;
 	width: max-content;
 	max-width: 40%;
-	height: 7%;
+	min-height: 7%;
+	height: auto;
 	margin: 0;
 	padding: 0;
 	transform: translateX(-50%);
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	pointer-events: none;
@@ -148,6 +178,16 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	letter-spacing: 0.08em;
 	font: 700 calc(11 * 100cqh / 300) / 1 Orbitron, Arial, Helvetica, sans-serif;
 	color: #000;
+}
+
+#play-stage-name[data-sub]::after {
+	content: attr(data-sub);
+	display: block;
+	margin-top: 0.15em;
+	font-size: 0.78em;
+	font-weight: 600;
+	opacity: 0.88;
+	letter-spacing: 0.06em;
 }
 
 #play-help {
@@ -217,6 +257,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	font: 700 calc(11 * 100cqh / 300) / 1.75 Orbitron, Arial, Helvetica, sans-serif;
 	color: #fff;
 	text-shadow: 0 0 0.4cqh #c45a18;
+	min-width: 9em;
 }
 
 #pause-time,
@@ -412,8 +453,8 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 
 #hud-theme-select {
 	left: 36%;
-	top: 43.5%;
-	width: 24%;
+	top: 48.5%;
+	width: 22%;
 }
 
 #hud-theme-select .hud-dd-menu {
@@ -423,7 +464,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 
 #hud-locale-select {
 	left: 36%;
-	top: 51.5%;
+	top: 55.5%;
 	width: 28%;
 }
 
@@ -432,28 +473,41 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #hud-theme-manage-btn {
 	position: absolute;
 	z-index: 30;
-	top: 43.5%;
+	top: 48.5%;
 	padding: 0 4px;
 	cursor: pointer;
 }
 
 #hud-theme-upload-btn {
-	left: 61%;
-	width: 16%;
+	left: 59%;
+	width: 14%;
 }
 
 #hud-theme-template-btn {
-	left: 65%;
-	top: 51.5%;
-	width: 30%;
-	font-size: 9px;
+	left: 74%;
+	top: 48.5%;
+	width: 13%;
+	font-size: 8px;
 	line-height: 1.1;
 	white-space: normal;
 }
 
 #hud-theme-manage-btn {
-	left: 78%;
-	width: 17%;
+	left: 88%;
+	width: 10%;
+}
+
+#hud-bg-color {
+	position: absolute;
+	z-index: 30;
+	left: 56.5%;
+	top: 75.8%;
+	width: 3.2%;
+	height: 3.6%;
+	padding: 0;
+	border: 1px solid #c45a18;
+	background: transparent;
+	cursor: pointer;
 }
 
 #hud-theme-manage {
@@ -503,9 +557,11 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #hud-theme-template-btn[hidden],
 #hud-theme-manage-btn[hidden],
 #hud-theme-manage[hidden],
+#hud-bg-color[hidden],
 #play-chrome[hidden],
 #play-pass[hidden],
 #play-stage-name[hidden],
+#play-time[hidden],
 #stage-card[hidden],
 #howto-copy[hidden],
 #howto-page[hidden],

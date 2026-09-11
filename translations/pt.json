@@ -94,7 +94,6 @@
   "action.swap": "Trocar cubo partido",
   "puzzles.title": "Puzzles",
   "puzzles.daily": "DIÁRIO",
-  "puzzles.dailyHint": "O mesmo puzzle de fim de campanha para todos hoje.",
   "puzzles.playDaily": "Jogar diário",
   "puzzles.seeded": "Semente",
   "puzzles.gauntlet": "Desafio",
@@ -275,5 +274,12 @@
   "settings.export": "Exportar dados",
   "settings.import": "Importar save",
   "settings.importConfirm": "Substituir o save deste dispositivo pelo arquivo?",
-  "settings.importBad": "Não foi possível ler esse save."
+  "settings.importBad": "Não foi possível ler esse save.",
+  "settings.playTime": "Show time under moves",
+  "settings.tabCast": "Cast tab background",
+  "settings.tabCrop": "Crop cast",
+  "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
+  "gauntlet.stages": "Stages",
+  "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
+  "settings.blockHue": "Block hue"
 }

@@ -17,16 +17,19 @@ import {
 } from "./customLevels";
 import { createJsToDef, defToCreateJs } from "./convert";
 import {
+  GAUNTLET_COUNTS,
   GAUNTLET_LEN,
   generateDaily,
   generateRun,
   generateSeeded,
   utcDateLabel,
   type Difficulty,
+  type GauntletCount,
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { armStageTitleClip, freezeStageTitleClip, stageTitleShouldArm, type StageTitleClip } from "./stageTitle";
+import { clipHueAction, wrapHue } from "./hue";
+import { armStageTitleClip, freezeStageTitleClip, pinStageTitleClip, stageTitleShouldArm, stageTitleShouldFreeze, type StageTitleClip } from "./stageTitle";
 import {
   loadFinishedStages,
   saveFinishedStage,
@@ -42,8 +45,10 @@ import {
   ACTIONS,
   brandName,
   currentTheme,
+  hexToHue,
   hueCss,
   hueRgb,
+  hueToHex,
   isDevName,
   loadSettings,
   NAME_MAX,
@@ -73,7 +78,7 @@ import {
 import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
 import { applySaveBackup, buildSaveBackup, parseSaveBackup } from "./saveBackup";
 import { clearTheme3d, syncTheme3d } from "./theme3d";
-import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
+import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playStageSting, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
@@ -310,6 +315,7 @@ let paint = newPaintState();
 let beaten = false;
 let beatLabel = "Checking…";
 let puzzleDiff: Difficulty = "easy";
+let gauntletCount: GauntletCount = GAUNTLET_LEN;
 let solveCode = "";
 let solveFeeder: SolveFeeder | null = null;
 let run: RunRecord | null = null;
@@ -362,6 +368,7 @@ let finishTitle = "";
 let finishSubtitle = "";
 let showStats = false;
 let webcamStream: MediaStream | null = null;
+let tabCastStream: MediaStream | null = null;
 let beatBanner = "";
 let autoSolve = false;
 let solveTape: TapeCmd[] = [];
@@ -490,6 +497,62 @@ function atlasSheet(): SpriteSheetLike | undefined {
   }
 }
 
+function liveBlockHue(): number {
+  return wrapHue(loadSettings().blockHue);
+}
+
+type HueClip = {
+  visible?: boolean;
+  cacheID?: number;
+  filters?: unknown;
+  __bloxHue?: number;
+  cache?: (x: number, y: number, w: number, h: number) => void;
+  updateCache?: () => void;
+  uncache?: () => void;
+  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
+};
+
+function applyClipHue(clip: HueClip | null | undefined, hue: number, animating: boolean): void {
+  if (!clip) return;
+  const action = clipHueAction(clip.__bloxHue, hue, animating);
+  if (action === "skip") return;
+  if (action === "clear") {
+    clip.filters = null;
+    clip.uncache?.();
+    clip.__bloxHue = 0;
+    return;
+  }
+  if (action === "apply") {
+    const cjs = window.createjs as {
+      ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
+      ColorMatrixFilter?: new (m: unknown) => unknown;
+    };
+    const Matrix = cjs?.ColorMatrix;
+    const Filter = cjs?.ColorMatrixFilter;
+    if (!Matrix || !Filter) return;
+    const mtx = new Matrix();
+    mtx.adjustHue(hue);
+    clip.filters = [new Filter(mtx)];
+    if (clip.cacheID) clip.updateCache?.();
+    else {
+      const box = clip.getBounds?.();
+      clip.cache?.(box?.x ?? -120, box?.y ?? -140, Math.max(40, box?.width ?? 240), Math.max(40, box?.height ?? 220));
+    }
+    clip.__bloxHue = wrapHue(hue);
+    return;
+  }
+  clip.updateCache?.();
+}
+
+function applyBlockHue(): void {
+  const hue = liveBlockHue();
+  for (const clip of hud?.hueClips() ?? []) {
+    if (!hue || clip.visible !== false) applyClipHue(clip, hue, true);
+  }
+  if (overlayMode === "run") {
+    for (const block of playBlocks()) applyClipHue(block, hue, !block.roll?.idle);
+  }
+}
 
 function ensureSky(): void {
   const st = window.stage;
@@ -568,21 +631,30 @@ function usingWebcam(): boolean {
   return loadSettings().webcamBg;
 }
 
+function usingTabCast(): boolean {
+  return loadSettings().tabCastBg;
+}
+
+function usingLiveBg(): boolean {
+  return usingWebcam() || usingTabCast();
+}
+
 function applyLooks(): void {
   const s = loadSettings();
-  document.body.classList.toggle("no-theme-bg", !s.themeBg && !s.webcamBg);
-  document.body.classList.toggle("has-webcam-bg", s.webcamBg);
+  const live = s.webcamBg || s.tabCastBg;
+  document.body.classList.toggle("no-theme-bg", !s.themeBg && !live);
+  document.body.classList.toggle("has-webcam-bg", live);
   document.body.style.setProperty("--bg-tint", hueCss(s.bgHue, s.bgTint * 0.55));
-  document.body.style.setProperty("--play-tint", s.webcamBg ? "transparent" : s.bgTint > 0.01 ? hueCss(s.bgHue, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000");
+  document.body.style.setProperty("--play-tint", live ? "transparent" : s.bgTint > 0.01 ? hueCss(s.bgHue, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000");
   ensureTint();
   lastTintKey = "";
   if (sky) (sky as SkyClip & { __bloxTintKey?: string }).__bloxTintKey = "";
   const world = window.stage?.bloxWorld as { background?: { instance_2?: SkyClip & { __bloxTintKey?: string } } } | undefined;
   if (world?.background?.instance_2) world.background.instance_2.__bloxTintKey = "";
-  if (s.webcamBg && sky) sky.visible = false;
+  if (live && sky) sky.visible = false;
   if (tintLayer) {
     tintLayer.graphics.clear();
-    if (s.bgTint > 0.01 && !s.webcamBg) {
+    if (s.bgTint > 0.01 && !live) {
       tintLayer.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(0, 0, 550, 300);
       tintLayer.alpha = s.bgTint * 0.42;
       tintLayer.visible = true;
@@ -592,6 +664,27 @@ function applyLooks(): void {
   }
   applyPlayTint();
   applyThemeMedia();
+  applyTabCrop();
+}
+
+function applyTabCrop(): void {
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
+  if (!cam) return;
+  const s = loadSettings();
+  if (!s.tabCastBg) {
+    cam.style.clipPath = "";
+    cam.style.objectPosition = "";
+    cam.style.transform = "";
+    return;
+  }
+  const c = s.tabCrop;
+  const invW = 1 / Math.max(0.05, c.w);
+  const invH = 1 / Math.max(0.05, c.h);
+  cam.style.objectFit = "cover";
+  cam.style.transformOrigin = "0 0";
+  cam.style.transform = `translate(${-c.x * invW * 100}%, ${-c.y * invH * 100}%) scale(${invW}, ${invH})`;
+  cam.style.width = "100%";
+  cam.style.height = "100%";
 }
 
 function applyThemeMedia(): void {
@@ -602,20 +695,29 @@ function applyThemeMedia(): void {
   if (!wrap || !img || !video) return;
   const pack = getTheme(currentThemeId());
   const s = loadSettings();
-  if (s.webcamBg) {
+  if (s.webcamBg || s.tabCastBg) {
     wrap.hidden = false;
     document.body.classList.add("has-theme-media", "has-webcam-bg");
     img.hidden = true;
     video.hidden = true;
     video.pause();
     if (cam) cam.hidden = false;
-    void startWebcam(cam);
+    if (s.tabCastBg) {
+      stopWebcam();
+      void startTabCast(cam);
+    } else {
+      stopTabCast();
+      void startWebcam(cam);
+    }
     lastTintKey = "";
     applyPlayTint();
+    applyTabCrop();
     return;
   }
   document.body.classList.remove("has-webcam-bg");
   stopWebcam();
+  stopTabCast();
+  applyTabCrop();
   const src = pack.background.src
     ? pack.background.src.startsWith("/") || pack.background.src.startsWith("blob:") || pack.background.src.startsWith("http")
       ? pack.background.src
@@ -650,13 +752,25 @@ function applyThemeMedia(): void {
 
 function stopWebcam(): void {
   const cam = $("theme-webcam") as HTMLVideoElement | null;
-  if (cam) {
+  if (cam && !tabCastStream) {
     cam.hidden = true;
     cam.srcObject = null;
   }
   if (webcamStream) {
     for (const track of webcamStream.getTracks()) track.stop();
     webcamStream = null;
+  }
+}
+
+function stopTabCast(): void {
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
+  if (cam && !webcamStream) {
+    cam.hidden = true;
+    cam.srcObject = null;
+  }
+  if (tabCastStream) {
+    for (const track of tabCastStream.getTracks()) track.stop();
+    tabCastStream = null;
   }
 }
 
@@ -681,6 +795,55 @@ async function startWebcam(cam: HTMLVideoElement | null): Promise<void> {
     s.webcamBg = false;
     saveSettings(s);
     cam.hidden = true;
+    markHudDirty();
+    paintHud();
+  }
+}
+
+async function startTabCast(cam: HTMLVideoElement | null): Promise<void> {
+  if (!cam) return;
+  if (tabCastStream && cam.srcObject === tabCastStream) {
+    void cam.play().catch(() => undefined);
+    return;
+  }
+  try {
+    const display = navigator.mediaDevices as MediaDevices & {
+      getDisplayMedia?: (opts: DisplayMediaStreamOptions) => Promise<MediaStream>;
+    };
+    if (!display.getDisplayMedia) throw new Error("unsupported");
+    const stream = await display.getDisplayMedia({
+      video: {
+        // @ts-expect-error preferCurrentTab is Chromium-only
+        preferCurrentTab: true,
+        displaySurface: "browser",
+      } as MediaTrackConstraints,
+      audio: false,
+      // @ts-expect-error selfBrowserSurface is Chromium-only
+      selfBrowserSurface: "include",
+      preferCurrentTab: true,
+    } as DisplayMediaStreamOptions);
+    if (!loadSettings().tabCastBg) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
+    tabCastStream = stream;
+    cam.srcObject = stream;
+    cam.hidden = false;
+    void cam.play().catch(() => undefined);
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+      const s = loadSettings();
+      s.tabCastBg = false;
+      saveSettings(s);
+      stopTabCast();
+      applyLooks();
+      markHudDirty();
+      paintHud();
+    });
+  } catch {
+    const s = loadSettings();
+    s.tabCastBg = false;
+    saveSettings(s);
+    if (cam) cam.hidden = true;
     markHudDirty();
     paintHud();
   }
@@ -773,7 +936,8 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const templateBtn = $("hud-theme-template-btn");
   const manageBtn = $("hud-theme-manage-btn");
   const manage = $("hud-theme-manage");
-  for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn]) {
+  const tintColor = $("hud-bg-color") as HTMLInputElement | null;
+  for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn, tintColor]) {
     if (!el) continue;
     el.hidden = !on;
   }
@@ -782,6 +946,10 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   if (uploadBtn) uploadBtn.textContent = themeUploadMsg || t("settings.upload");
   if (templateBtn) templateBtn.textContent = t("settings.template");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
+  if (tintColor) {
+    tintColor.value = hueToHex(loadSettings().bgHue);
+    tintColor.title = t("settings.tint");
+  }
   if (!on) {
     closeSettingsDropdowns();
     return;
@@ -889,6 +1057,15 @@ function bindSettingsChrome(): void {
   manageBtn?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     toggleThemeManage();
+  });
+  const tintColor = $("hud-bg-color") as HTMLInputElement | null;
+  tintColor?.addEventListener("input", () => {
+    const s = loadSettings();
+    s.bgHue = hexToHue(tintColor.value);
+    saveSettings(s);
+    applyLooks();
+    markHudDirty();
+    paintHud();
   });
   manage?.addEventListener("click", (ev) => {
     const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-id]")?.dataset.id;
@@ -1077,9 +1254,15 @@ function syncStageTitleAudio(label: string): void {
   const title = vanillaTitleClip() as StageTitleClip | undefined;
   if (stageTitleShouldArm(lastLabel, label)) {
     armStageTitleClip(title);
+    playStageSting();
     return;
   }
-  freezeStageTitleClip(title);
+  if (stageTitleShouldFreeze(lastLabel, label)) {
+    freezeStageTitleClip(title);
+    return;
+  }
+  if (label === "stagetitle") pinStageTitleClip(title);
+  else freezeStageTitleClip(title);
 }
 
 function setVanillaCongraVisible(on: boolean): void {
@@ -1183,11 +1366,28 @@ function syncPlayStageName(on: boolean): void {
   if (!want) {
     el.hidden = true;
     el.textContent = "";
+    el.removeAttribute("data-sub");
     return;
   }
   const stageNo = window.stage?.levelNumber ?? 0;
-  el.textContent = playHudStageName(stageNo);
+  const title = playHudStageName(stageNo);
+  const sub = playHudStageSubtitle();
+  el.textContent = title;
+  if (sub) el.setAttribute("data-sub", sub);
+  else el.removeAttribute("data-sub");
   el.hidden = false;
+}
+
+function playHudStageSubtitle(): string {
+  if (!playSession) return "";
+  if (playSession.card === "custom") {
+    return playSession.author || playSession.subtitle || "";
+  }
+  if (playSession.card === "daily") return playSession.subtitle || "";
+  if (playSession.card === "gauntlet" || playSession.card === "seeded") {
+    return playSession.seed || playSession.subtitle || "";
+  }
+  return playSession.subtitle || playSession.author || playSession.seed || "";
 }
 
 function cueMenuHover(): void {
@@ -1202,9 +1402,11 @@ function syncPlayChrome(on: boolean): void {
   const show = on && usesHdType();
   box.hidden = !show;
   setBitmapPlayText(!show);
+  const timeEl = $("play-time");
   if (!show) {
     lastPlayHudKey = "";
-    box.classList.remove("has-pass");
+    box.classList.remove("has-pass", "has-play-time");
+    if (timeEl) timeEl.hidden = true;
     return;
   }
   const world = window.stage?.bloxWorld as { moves?: number; background?: { menuButton?: { dispatchEvent?: (ev: unknown) => void } } } | undefined;
@@ -1214,7 +1416,10 @@ function syncPlayChrome(on: boolean): void {
   const classic = isClassicPlayHud();
   const classicFirst = !!playSession?.classicRun && playSession.kind === "campaign" && stageNo === 1;
   const stageName = playHudStageName(stageNo);
-  const key = `${stageNo}|${moves}|${code}|${classic}|${classicFirst}|${stageName}|${localeId()}|${loadSettings().showStageName}`;
+  const settings = loadSettings();
+  const started = window.stage?.startTime ?? Date.now();
+  const clock = padClock(Date.now() - started);
+  const key = `${stageNo}|${moves}|${code}|${classic}|${classicFirst}|${stageName}|${localeId()}|${settings.showStageName}|${settings.showPlayTime}|${clock}`;
   if (key === lastPlayHudKey) return;
   lastPlayHudKey = key;
   const passBox = $("play-pass");
@@ -1225,11 +1430,16 @@ function syncPlayChrome(on: boolean): void {
   const menu = $("play-menu");
   const help = $("play-help");
   box.classList.toggle("has-pass", classic);
+  box.classList.toggle("has-play-time", settings.showPlayTime);
   if (passBox) passBox.hidden = !classic;
   if (passLab) passLab.textContent = t("play.passcode") + ":";
   if (moveLab) moveLab.textContent = t("play.moves") + ":";
   if (pass) pass.textContent = code || String(stageNo).padStart(2, "0");
   if (moveVal) moveVal.textContent = String(moves);
+  if (timeEl) {
+    timeEl.hidden = !settings.showPlayTime;
+    timeEl.textContent = clock;
+  }
   if (menu) menu.textContent = t("play.menu");
   if (help) {
     help.hidden = !classicFirst;
@@ -1269,6 +1479,13 @@ function syncHowto(on: boolean): void {
   setInstructionBitmaps(false);
   const frame = inst?.currentFrame ?? 0;
   const slide = howtoSlide(frame);
+  if (slide < 0) {
+    copy.hidden = true;
+    page.hidden = true;
+    if (nav) nav.hidden = true;
+    for (const btn of instructionGlyphs()) setGlyphVisible(btn, false);
+    return;
+  }
   copy.hidden = false;
   page.hidden = false;
   if (nav) nav.hidden = false;
@@ -1413,7 +1630,7 @@ function cycleList(ids: string[], cur: string, dir: -1 | 1): string {
 function showGameSky(on: boolean): void {
   ensureSky();
   const bg = loadSettings().themeBg;
-  const cam = usingWebcam();
+  const cam = usingLiveBg();
   if (sky) sky.visible = on && bg && !cam;
   parkExportRoot(on);
   const box = window.stage?.gameContainer;
@@ -1723,12 +1940,15 @@ function navItems(): NavItem[] {
       { id: "toggle-timer" },
       { id: "toggle-stage-name" },
       ...(s.mobilePad ? [{ id: "toggle-rotate" }] : []),
+      { id: "toggle-play-time" },
       { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems(cachedDev).map((p) => p.id), currentThemeId(), d), true) },
       { id: "locale-cycle", adjust: (d) => applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), d)) },
       { id: "toggle-theme-bg" },
       { id: "toggle-webcam" },
+      { id: "toggle-tab-cast" },
+      ...(s.tabCastBg ? [{ id: "tab-crop" }] : []),
       { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
-      { id: "bghue", adjust: (d) => handleHudAction("bghue:" + String(clampStep(s.bgHue, d * 12, 0, 360))) },
+      { id: "blockhue", adjust: (d) => handleHudAction("blockhue:" + String(clampStep(s.blockHue, d * 12, 0, 360))) },
       { id: "remap" },
       { id: "export-save" },
       { id: "import-save" },
@@ -1750,6 +1970,7 @@ function navItems(): NavItem[] {
       { id: "diff:medium" },
       { id: "diff:hard" },
       { id: "diff:insane" },
+      ...GAUNTLET_COUNTS.map((n) => ({ id: "glen:" + n })),
       { id: "gauntlet-go" },
     ];
   }
@@ -1841,11 +2062,29 @@ function handleMenuNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"
   }
   const item = items[menuCursor];
   if (ev === "left") {
-    item?.adjust?.(-1);
+    if (item?.adjust) {
+      item.adjust(-1);
+      return;
+    }
+    const before = menuCursor;
+    const scroll = listScroll;
+    moveNav(-1);
+    if (menuCursor !== before || listScroll !== scroll) cueMenuHover();
+    markHudDirty();
+    paintHud();
     return;
   }
   if (ev === "right") {
-    item?.adjust?.(1);
+    if (item?.adjust) {
+      item.adjust(1);
+      return;
+    }
+    const before = menuCursor;
+    const scroll = listScroll;
+    moveNav(1);
+    if (menuCursor !== before || listScroll !== scroll) cueMenuHover();
+    markHudDirty();
+    paintHud();
     return;
   }
   if (ev === "confirm") {
@@ -1999,12 +2238,15 @@ function hudKey(): string {
     String(s.rumble),
     String(s.showTimer),
     String(s.showStageName),
+    String(s.showPlayTime),
     String(s.mobilePad),
     String(s.rotateScreen),
     String(s.themeBg),
     String(s.webcamBg),
+    String(s.tabCastBg),
     String(s.bgTint),
     String(s.bgHue),
+    String(s.blockHue),
     String(s.music),
     String(s.sfx),
     currentThemeId(),
@@ -2017,6 +2259,7 @@ function hudKey(): string {
     String(rebindAction),
     loadError,
     puzzleDiff,
+    String(gauntletCount),
     puzzleSeed,
     gauntletSeed,
     draftName,
@@ -2083,14 +2326,17 @@ function paintHud(): void {
       rumble: s.rumble,
       showTimer: s.showTimer,
       showStageName: s.showStageName,
+      showPlayTime: s.showPlayTime,
       mobilePad: s.mobilePad,
       rotateScreen: s.rotateScreen,
       themeBg: s.themeBg,
       webcamBg: s.webcamBg,
+      tabCastBg: s.tabCastBg,
       music: s.music,
       sfx: s.sfx,
       bgTint: s.bgTint,
       bgHue: s.bgHue,
+      blockHue: s.blockHue,
     });
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
     placeSettingsChrome(true);
@@ -2121,7 +2367,7 @@ function paintHud(): void {
     hud.drawSeeded();
     placeHudInput(true, "7.3%", "37.5%", "51%", t("puzzles.seed"), puzzleSeed, 24);
   } else if (extraView === "puzzles-gauntlet") {
-    hud.drawGauntlet(puzzleDiff);
+    hud.drawGauntlet(puzzleDiff, gauntletCount);
     placeHudInput(true, "7.3%", "53.5%", "51%", t("puzzles.seed"), gauntletSeed, 24);
   } else if (extraView === "history") {
     const all = loadFinishedStages();
@@ -2223,7 +2469,6 @@ function paintHud(): void {
 
 function openPanel(name: Screen): void {
   extraView = name;
-  menuCursor = 0;
   markHudDirty();
   lastHudPaint = "";
   if (name === "home") animateHome = true;
@@ -2237,7 +2482,15 @@ function openPanel(name: Screen): void {
   if (name === "puzzles-gauntlet") gauntletSeed = freshSeed();
   if (name === "creator-edit") scheduleBeatCheck();
   if (name !== "remap") rebindAction = null;
+  menuCursor = defaultMenuCursor();
   paintHud();
+}
+
+function defaultMenuCursor(): number {
+  const items = navItems();
+  const backIds = new Set(["back", "settings", "puzzles", "creator", "creator-make", "creator-play"]);
+  const idx = items.findIndex((it) => !backIds.has(it.id) && !it.disabled);
+  return idx >= 0 ? idx : 0;
 }
 
 function applyTheme(theme: ThemeId, reload = false): void {
@@ -2281,6 +2534,8 @@ function applyTheme(theme: ThemeId, reload = false): void {
   setHdRendering(isHdTheme(id));
   void swapAtlasLive(id);
   applyLooks();
+  for (const clip of hud?.hueClips() ?? []) clip.__bloxHue = undefined;
+  applyBlockHue();
   lastTintKey = "";
   window.__bloxResetStoneStamp?.();
   refreshPlayTilesAfterTheme();
@@ -2649,6 +2904,13 @@ function handleHudAction(act: string): void {
     saveSettings(s);
     markHudDirty();
     paintHud();
+  } else if (act === "toggle-play-time") {
+    const s = loadSettings();
+    s.showPlayTime = !s.showPlayTime;
+    saveSettings(s);
+    lastPlayHudKey = "";
+    markHudDirty();
+    paintHud();
   } else if (act === "toggle-theme-bg") {
     const s = loadSettings();
     s.themeBg = !s.themeBg;
@@ -2660,6 +2922,7 @@ function handleHudAction(act: string): void {
   } else if (act === "toggle-webcam") {
     const s = loadSettings();
     s.webcamBg = !s.webcamBg;
+    if (s.webcamBg) s.tabCastBg = false;
     saveSettings(s);
     applyLooks();
     showGameSky(true);
@@ -2667,6 +2930,19 @@ function handleHudAction(act: string): void {
     applyThemeMedia();
     markHudDirty();
     paintHud();
+  } else if (act === "toggle-tab-cast") {
+    const s = loadSettings();
+    s.tabCastBg = !s.tabCastBg;
+    if (s.tabCastBg) s.webcamBg = false;
+    saveSettings(s);
+    applyLooks();
+    showGameSky(true);
+    lastTintKey = "";
+    applyThemeMedia();
+    markHudDirty();
+    paintHud();
+  } else if (act === "tab-crop") {
+    openTabCropModal();
   } else if (act === "export-save") {
     void exportSaveFile();
   } else if (act === "import-save") {
@@ -2708,6 +2984,13 @@ function handleHudAction(act: string): void {
     applyLooks();
     markHudDirty();
     paintHud();
+  } else if (act.startsWith("blockhue:")) {
+    const s = loadSettings();
+    s.blockHue = Number(act.slice(9));
+    saveSettings(s);
+    markHudDirty();
+    paintHud();
+    applyBlockHue();
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
@@ -2775,7 +3058,14 @@ function handleHudAction(act: string): void {
     beginPlay(Number(act.slice(4)), { kind: "campaign", defs: [], returnTo: "load", record: false, classicRun: false, card: "classic" });
   } else if (act === "puzzle-daily") playDaily();
   else if (act === "puzzle-seed-go") playSeededRun(hudInput()?.value.trim() || puzzleSeed);
-  else if (act === "gauntlet-go") playGauntlet(hudInput()?.value.trim() || gauntletSeed, puzzleDiff);
+  else if (act.startsWith("glen:")) {
+    const n = Number(act.slice(5));
+    if (GAUNTLET_COUNTS.includes(n as GauntletCount)) {
+      gauntletCount = n as GauntletCount;
+      markHudDirty();
+      paintHud();
+    }
+  } else if (act === "gauntlet-go") playGauntlet(hudInput()?.value.trim() || gauntletSeed, puzzleDiff, gauntletCount);
   else if (act === "dev-beat") beatCurrentStage();
   else if (act === "dev-menu") {
     leavePlayTo("load");
@@ -2875,6 +3165,30 @@ function openModal(kind: "code-play" | "code-edit", title: string, placeholder: 
   }
   box?.classList.add("is-open");
   window.setTimeout(() => input?.focus(), 0);
+}
+
+/** Simple percent crop editor for the cast tab background. */
+function openTabCropModal(): void {
+  const s = loadSettings();
+  const cur = s.tabCrop;
+  const raw = window.prompt(
+    t("settings.tabCropPrompt"),
+    `${Math.round(cur.x * 100)},${Math.round(cur.y * 100)},${Math.round(cur.w * 100)},${Math.round(cur.h * 100)}`,
+  );
+  if (raw == null) return;
+  const parts = raw.split(/[,\s]+/).map((n) => Number(n));
+  if (parts.length < 4 || parts.some((n) => !Number.isFinite(n))) return;
+  const [x, y, w, h] = parts;
+  s.tabCrop = {
+    x: Math.max(0, Math.min(0.95, x / 100)),
+    y: Math.max(0, Math.min(0.95, y / 100)),
+    w: Math.max(5, Math.min(100, w)) / 100,
+    h: Math.max(5, Math.min(100, h)) / 100,
+  };
+  saveSettings(s);
+  applyTabCrop();
+  markHudDirty();
+  paintHud();
 }
 
 function closeModal(): void {
@@ -2982,10 +3296,11 @@ function playSeededRun(seed: string): void {
   });
 }
 
-function playGauntlet(seed: string, diff: Difficulty): void {
+function playGauntlet(seed: string, diff: Difficulty, count: GauntletCount = gauntletCount): void {
   const clean = seed.trim() || freshSeed();
   gauntletSeed = clean;
-  const run = generateRun(clean, diff, GAUNTLET_LEN);
+  gauntletCount = count;
+  const run = generateRun(clean, diff, count);
   startCustom(
     run.map((p) => p.def),
     "puzzles-gauntlet",
@@ -3402,7 +3717,7 @@ function applyPlayTint(): void {
   } | undefined;
   const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
   const s = loadSettings();
-  const cam = usingWebcam();
+  const cam = usingLiveBg();
   const skySpr = world?.background?.instance_2;
   if (skySpr) skySpr.visible = s.themeBg && !cam;
   if (sky) sky.visible = !cam && sky.visible;
@@ -4142,6 +4457,7 @@ function syncOverlay(): void {
     if (label === "instructions") pollInstructionsPad();
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
     applyPlayTint();
+    applyBlockHue();
     syncPlayChrome(playing);
     syncHowto(label === "instructions");
     syncPauseStats(playing && isPauseMenuOpen());
@@ -4415,6 +4731,7 @@ export function startBloxorzShell(): void {
       return new Spin() as never;
     };
     hud.makeMascot = makeSpin;
+    hud.makePreview = makeSpin;
     hud.makeClip = (name: ClipName) => {
       try {
         const lib = adobeLib() as unknown as Record<string, new () => unknown>;
@@ -4460,6 +4777,7 @@ export function startBloxorzShell(): void {
   parkCreateJsMenu();
   setMouseOverRate(5);
   applyLooks();
+  applyBlockHue();
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) {
