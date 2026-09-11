@@ -331,5 +331,9 @@
   "creator.savedSeed": "Saved. Reverse seed: {code}",
   "creator.untitled": "Untitled",
   "creator.untitledPack": "Untitled Pack",
-  "creator.unknownAuthor": "Unknown"
+  "creator.unknownAuthor": "Unknown",
+  "settings.savePreset": "Save as preset",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "Load preset",
+  "settings.loadPresetNone": "None"
 }

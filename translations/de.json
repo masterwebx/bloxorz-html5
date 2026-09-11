@@ -332,5 +332,9 @@
   "creator.savedSeed": "Gespeichert. Umgekehrter Seed: {code}",
   "creator.untitled": "Unbenannt",
   "creator.untitledPack": "Unbenanntes Paket",
-  "creator.unknownAuthor": "Unbekannt"
+  "creator.unknownAuthor": "Unbekannt",
+  "settings.savePreset": "Preset speichern",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "Preset laden",
+  "settings.loadPresetNone": "Keins"
 }

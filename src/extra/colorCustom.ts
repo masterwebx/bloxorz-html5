@@ -173,3 +173,50 @@ export function slotContrastOk(hex: string): boolean {
   if (!rgb) return false;
   return luminance(rgb[0], rgb[1], rgb[2]) > 8;
 }
+
+/** Named snapshot of every color-custom slot (hex + on). */
+export type ColorPreset = { name: string; colors: ColorCustom };
+
+export const COLOR_PRESET_NAME_MAX = 24;
+export const COLOR_PRESET_MAX = 24;
+
+export function normalizePresetName(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ").slice(0, COLOR_PRESET_NAME_MAX);
+}
+
+export function cloneColorCustom(colors: ColorCustom): ColorCustom {
+  return normalizeColorCustom(colors);
+}
+
+export function normalizeColorPresets(raw: unknown): ColorPreset[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ColorPreset[] = [];
+  const seen = new Set<string>();
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const name = normalizePresetName(typeof (row as ColorPreset).name === "string" ? (row as ColorPreset).name : "");
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, colors: normalizeColorCustom((row as ColorPreset).colors) });
+    if (out.length >= COLOR_PRESET_MAX) break;
+  }
+  return out;
+}
+
+/** Upsert by case-insensitive name; newest name casing wins. */
+export function upsertColorPreset(list: ColorPreset[], name: string, colors: ColorCustom): ColorPreset[] {
+  const clean = normalizePresetName(name);
+  if (!clean) return normalizeColorPresets(list);
+  const next = { name: clean, colors: cloneColorCustom(colors) };
+  const key = clean.toLowerCase();
+  const filtered = list.filter((row) => row.name.toLowerCase() !== key);
+  return normalizeColorPresets([next, ...filtered]);
+}
+
+export function findColorPreset(list: ColorPreset[], name: string): ColorPreset | null {
+  const key = normalizePresetName(name).toLowerCase();
+  if (!key) return null;
+  return list.find((row) => row.name.toLowerCase() === key) ?? null;
+}

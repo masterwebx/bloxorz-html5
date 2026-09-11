@@ -332,5 +332,9 @@
   "creator.savedSeed": "保存しました。逆シード: {code}",
   "creator.untitled": "無題",
   "creator.untitledPack": "無題のパック",
-  "creator.unknownAuthor": "不明"
+  "creator.unknownAuthor": "不明",
+  "settings.savePreset": "プリセットを保存",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "プリセットを読込",
+  "settings.loadPresetNone": "なし"
 }

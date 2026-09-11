@@ -154,6 +154,27 @@ export function winningTape(level: LevelStat): TapeCmd[] | null {
   return win?.cmds.length ? win.cmds : null;
 }
 
+/**
+ * Win-screen stage rows for the current session/run only.
+ * `maxStage` caps multi-def runs (seeded/gauntlet/custom); omit for classic campaign.
+ */
+export function finishSessionStatRows(
+  levels: LevelStat[],
+  opts?: { maxStage?: number },
+): { stage: number; moves: number; attempts: number }[] {
+  const maxStage = opts?.maxStage;
+  return levels
+    .filter((lv) => {
+      if (maxStage != null && (lv.stage < 1 || lv.stage > maxStage)) return false;
+      return lv.moves > 0 || lv.tapes.some((row) => row.won && row.cmds.length) || lv.attempts > 0;
+    })
+    .map((lv) => ({
+      stage: lv.stage,
+      moves: lv.moves,
+      attempts: Math.max(1, lv.attempts),
+    }));
+}
+
 /** Coolmath only consumes a move while idle, and Space only swaps while split. */
 export function acceptTapeCmd(cmd: TapeCmd, view: { idle: boolean; split: boolean }): boolean {
   if (cmd === "swap") return view.split;

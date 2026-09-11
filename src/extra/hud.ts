@@ -612,26 +612,19 @@ export class ExtraHud {
     if (opts.tabCastBg) {
       this.add(this.act("tab-crop", `${this.focusId === "tab-crop" ? "> " : "  "}${t("settings.tabCrop")}`, 300, 210, 11, false, 180));
     }
-    this.add(text(t("settings.tint"), 40, 234, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
-    this.add(
-      this.act(
-        "toggle-bg-color",
-        `${this.focusId === "toggle-bg-color" ? "> " : "  "}${opts.bgColorOn ? t("settings.colorOn") : t("settings.colorOff")}`,
-        250,
-        234,
-        11,
-        false,
-        90,
-      ),
-    );
-    // HTML tint swatch via placeSettingsChrome; block picker lives under Customize colors.
-    this.add(this.act("settings-colors", t("settings.customizeColors"), 40, 254, 12, false, 200));
+    // Backdrop tint lives only under Customize colors (not on the main Settings screen).
+    this.add(this.act("settings-colors", t("settings.customizeColors"), 40, 234, 12, false, 200));
     this.placePreview(392, 214, opts.blockHue, opts.blockColor);
-    this.add(this.act("remap", t("settings.remap"), 40, 276, 12, false, 160));
-    this.add(this.act("settings-save", t("settings.manageSave"), 220, 276, 12, false, 220));
+    this.add(this.act("remap", t("settings.remap"), 40, 258, 12, false, 160));
+    this.add(this.act("settings-save", t("settings.manageSave"), 220, 258, 12, false, 220));
   }
 
-  drawCustomizeColors(opts: { colors: ColorCustom }): void {
+  drawCustomizeColors(opts: {
+    colors: ColorCustom;
+    tileAtlasReady?: boolean;
+    presets?: { name: string }[];
+    activePreset?: string;
+  }): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
@@ -660,7 +653,10 @@ export class ExtraHud {
       // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
       this.add(this.act(pickId, " ", 198, y, 11, false, 28));
     });
-    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 270, 12, false, 140));
+    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 268, 11, false, 100));
+    this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 268, 11, false, 120));
+    this.add(text(t("settings.loadPreset"), 260, 268, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
+    // HTML preset dropdown is placed by placeSettingsChrome beside this label.
 
     const tiles = colorPreviewTiles();
     const wrap = new createjs.Container();
@@ -682,7 +678,8 @@ export class ExtraHud {
         spawn: COLOR_PREVIEW_SPAWN,
         marks: [],
         colors: opts.colors,
-        forceShapes: true,
+        // Shapes while dragging / before bake; real atlas clips after bake-on-exit.
+        forceShapes: !opts.tileAtlasReady,
       });
     } catch {
       /* preview is optional */
@@ -745,13 +742,14 @@ export class ExtraHud {
     }
     this.add(text(opts.cleared, 275, 62, 12, theme.muted, "center"));
     this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 86, 12, theme.ink, "center"));
-    this.add(this.act("screenshot", t("finish.screenshot"), 40, 110, 12, false, 130));
-    this.add(this.act("back", t("common.menu"), 200, 110, 12, false, 90));
-    if (!opts.rows.length) this.add(text(t("finish.none"), 40, 146, 11, theme.muted));
+    if (!opts.rows.length) this.add(text(t("finish.none"), 40, 118, 11, theme.muted));
     opts.rows.slice(0, 5).forEach((row, i) => {
-      this.add(text(row.title, 40, 146 + i * 22, 11));
-      this.add(text(row.meta, 320, 146 + i * 22, 11, theme.muted));
+      this.add(text(row.title, 40, 118 + i * 22, 11));
+      this.add(text(row.meta, 320, 118 + i * 22, 11, theme.muted));
     });
+    // Screenshot + Menu anchored bottom-left under the stage list.
+    this.add(this.act("screenshot", t("finish.screenshot"), 40, 268, 12, false, 130));
+    this.add(this.act("back", t("common.menu"), 180, 268, 12, false, 90));
   }
 
   drawPuzzles(date: string): void {
@@ -990,7 +988,6 @@ export class ExtraHud {
     this.add(text(t("creator.name"), 72, 8, 12));
     this.add(fieldBox(118, 6, 100));
     this.add(text(opts.badge, 330, 8, 11, theme.green));
-    this.add(this.act("creator-test", t("creator.test"), 490, 6, 12, false, 50));
 
     this.board = new createjs.Container();
     try {
@@ -1009,7 +1006,8 @@ export class ExtraHud {
 
     const hit = new createjs.Shape();
     const area = new createjs.Shape();
-    area.graphics.beginFill("#000").drawRect(BOARD_VIEW.x, BOARD_VIEW.y, BOARD_VIEW.w, BOARD_VIEW.h);
+    // Pad the hit rect so rim cells (esp. top/left tips) stay clickable.
+    area.graphics.beginFill("#000").drawRect(BOARD_VIEW.x - 10, BOARD_VIEW.y - 10, BOARD_VIEW.w + 20, BOARD_VIEW.h + 16);
     hit.hitArea = area;
     hit.mouseEnabled = true;
     hit.cursor = "pointer";
@@ -1043,8 +1041,11 @@ export class ExtraHud {
       this.add(this.act("tool:" + tool.id, mark + label, x + 20, y, pad ? 9 : 11, false, pad ? 90 : col === 0 ? 110 : 100));
     });
 
-    if (opts.hint) this.add(text(opts.hint, 10, pad ? 214 : 236, 10, theme.muted));
-    this.add(text(t(pad ? "creator.padHintMobile" : "creator.padHint"), 10, pad ? 228 : 250, 9, theme.muted));
+    // Keep spawn/solid hints on the far left so they never crowd the TEST control.
+    if (opts.hint) this.add(text(opts.hint, 4, pad ? 208 : 228, 10, theme.muted));
+    this.add(text(t(pad ? "creator.padHintMobile" : "creator.padHint"), 4, pad ? 222 : 242, 9, theme.muted));
+    // Large TEST sits above Enter Code on the right; tray keeps the other actions.
+    this.add(this.act("creator-test", "TEST", pad ? 400 : 420, pad ? 228 : 248, 22, false, 120));
     const bar = [
       { id: "creator-new", label: t("creator.new"), off: false },
       { id: "creator-clear", label: t("creator.clear"), off: false },
@@ -1056,13 +1057,13 @@ export class ExtraHud {
     ];
     const tray = new createjs.Container();
     tray.x = 8;
-    tray.y = pad ? 242 : 266;
+    tray.y = pad ? 258 : 278;
     let barX = 0;
     let size = 11;
     const extra = pad ? 36 : 24;
     const guess = (label: string): number => Math.max(36, Math.ceil(label.length * size * 0.62) + extra);
     let total = bar.reduce((sum, row) => sum + guess(row.label), 0) + 4 * (bar.length - 1);
-    while (total > 534 && size > 8) {
+    while (total > 400 && size > 8) {
       size--;
       total = bar.reduce((sum, row) => sum + guess(row.label), 0) + 4 * (bar.length - 1);
     }
@@ -1071,7 +1072,7 @@ export class ExtraHud {
       tray.addChild(node);
       barX += (node.hitW ?? guess(row.label)) + 4;
     }
-    if (barX > 534) tray.scaleX = 534 / barX;
+    if (barX > 400) tray.scaleX = 400 / barX;
     this.add(tray);
   }
 

@@ -332,5 +332,9 @@
   "creator.savedSeed": "Enregistré. Graine inverse : {code}",
   "creator.untitled": "Sans titre",
   "creator.untitledPack": "Pack sans titre",
-  "creator.unknownAuthor": "Inconnu"
+  "creator.unknownAuthor": "Inconnu",
+  "settings.savePreset": "Enregistrer le préréglage",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "Charger un préréglage",
+  "settings.loadPresetNone": "Aucun"
 }

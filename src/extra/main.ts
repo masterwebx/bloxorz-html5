@@ -26,6 +26,7 @@ import {
   GAUNTLET_COUNTS,
   GAUNTLET_LEN,
   generateDaily,
+  generatePuzzle,
   generateRun,
   generateSeeded,
   utcDateLabel,
@@ -37,18 +38,25 @@ import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from
 import {
   blitPackedRecolor,
   collectBlockFrameIndexes,
+  collectTileFrameIndexesBySlot,
   extractPackedBlockSource,
   needsBlockColorBake,
+  needsTileColorBake,
   packBlockLayout,
   parseHexRgb,
+  TILE_COLOR_SLOTS,
   type AtlasRect,
   type PackedBlockLayout,
+  type TileColorSlotId,
 } from "./hue";
 import {
   activeBg,
   activeBlockHex,
   COLOR_SLOT_META,
   defaultColorCustom,
+  findColorPreset,
+  normalizePresetName,
+  upsertColorPreset,
   type ColorSlotId,
 } from "./colorCustom";
 import { displayMoveCount, focusedSelectIndex } from "./bridgeSync";
@@ -58,6 +66,7 @@ import {
   loadFinishedStages,
   saveFinishedStage,
   saveRun,
+  finishSessionStatRows,
   tapeCmdFromRoll,
   winningTape,
   type FinishedStage,
@@ -108,6 +117,12 @@ import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, canBillboard, type MenuItem } from "./hud";
 import { shouldBakeFloor, shouldSkipTileSpawn, tileIdleFrame } from "./playPerf";
+import {
+  ATTRACT_FADE_MS,
+  attractTitleLabel,
+  bumpAttractIdle,
+  shouldStartAttract,
+} from "./attract";
 import {
   ACH_COUNT,
   ACH_PAGE,
@@ -181,6 +196,8 @@ type PlaySession = {
   entry?: "start" | "resume" | "passcode" | "code" | "saved" | "creator-test" | "puzzle";
   diff?: Difficulty;
   replay?: boolean;
+  /** Arcade title demo — no HUD, no stage titles, auto-solve chain. */
+  attract?: boolean;
 };
 
 type CustomPlayOpts = {
@@ -193,6 +210,7 @@ type CustomPlayOpts = {
   entry?: PlaySession["entry"];
   diff?: Difficulty;
   replay?: boolean;
+  attract?: boolean;
 };
 
 type OverlayNode = BitmapMark & {
@@ -412,6 +430,21 @@ let hueBlitPending = false;
 let hueBakeTimer = 0;
 let lastHueBakeMs = 0; // eslint/tsc: read by debug tooling
 let lastHueExtractMs = 0;
+/** Packed pristine tile sheets per color slot (stone/exit/…/bridges). */
+let tileHueSource: Partial<Record<TileColorSlotId, HTMLCanvasElement>> = {};
+let tileHueLayout: Partial<Record<TileColorSlotId, PackedBlockLayout>> = {};
+let tileHueTinted: Partial<Record<TileColorSlotId, HTMLCanvasElement>> = {};
+let tileFrameIndexes: Record<TileColorSlotId, number[]> | null = null;
+let bakedTileColors: Partial<Record<TileColorSlotId, string | null>> = {};
+let tileAtlasReady = false;
+let tileBakePending = false;
+/** Currently selected Customize Colors preset name (UI only). */
+let activeColorPreset = "";
+let finishStageCap: number | null = null;
+/** Title-screen attract (arcade preview). */
+let attractMode = false;
+let attractIdleAt = Date.now();
+let attractFading = false;
 let deleteSaveStep = 0;
 let packOrder: string[] = [];
 let packName = t("creator.untitledPack");
@@ -558,6 +591,12 @@ function invalidateBlockHueCache(): void {
   blockHueLayout = null;
   blockHueTinted = null;
   bakedBlockColor = null;
+  tileHueSource = {};
+  tileHueLayout = {};
+  tileHueTinted = {};
+  tileFrameIndexes = null;
+  bakedTileColors = {};
+  tileAtlasReady = false;
 }
 
 function atlasSheet(): SpriteSheetLike | undefined {
@@ -703,6 +742,127 @@ function applyBlockHue(force = false): void {
   else requestAnimationFrame(run);
 }
 
+function liveTileTints(): Partial<Record<TileColorSlotId, string | null>> {
+  const colors = loadSettings().colorCustom;
+  const out: Partial<Record<TileColorSlotId, string | null>> = {};
+  for (const id of TILE_COLOR_SLOTS) {
+    const row = colors[id];
+    out[id] = row?.on ? row.hex : null;
+  }
+  return out;
+}
+
+function anyTileTintOn(): boolean {
+  return TILE_COLOR_SLOTS.some((id) => liveTileTints()[id] != null);
+}
+
+/** Pack pristine tile frames per color slot into the live atlas (same path as block bake). */
+function collectTileAtlas(): boolean {
+  const sheet = atlasSheet();
+  const lib = adobeLib() as unknown as Record<string, unknown>;
+  if (!sheet?.getFrame || !lib) return false;
+  if (!tileFrameIndexes) tileFrameIndexes = collectTileFrameIndexesBySlot(lib);
+  let sourceImg: CanvasImageSource | null = null;
+  const allRects: AtlasRect[] = [];
+  for (const id of TILE_COLOR_SLOTS) {
+    const indexes = tileFrameIndexes[id] ?? [];
+    if (!indexes.length) continue;
+    const rects: AtlasRect[] = [];
+    for (const i of indexes) {
+      const frame = sheet.getFrame(i);
+      if (!frame?.rect || !frame.image) continue;
+      sourceImg = frame.image;
+      rects.push(frame.rect);
+      allRects.push(frame.rect);
+    }
+    if (!rects.length) continue;
+    if (tileHueSource[id] && tileHueLayout[id]) continue;
+    const layout = packBlockLayout(rects);
+    // Ensure live canvas first so extract reads pristine pixels.
+    if (!sourceImg) continue;
+    const live = adoptAtlasCanvas(sheet, sourceImg);
+    if (!live) return false;
+    atlasCanvas = live;
+    const packed = extractPackedBlockSource(makeHueCanvas, live, layout);
+    if (!packed) continue;
+    tileHueSource[id] = packed;
+    tileHueLayout[id] = layout;
+    const tinted = makeHueCanvas(layout.width, layout.height);
+    tileHueTinted[id] = tinted?.canvas ?? undefined;
+  }
+  if (allRects.length) atlasRects = allRects;
+  return TILE_COLOR_SLOTS.some((id) => !!tileHueSource[id]);
+}
+
+/** One-shot tile atlas bake on Customize Colors exit / boot (lagless while dragging). */
+function applyTileColors(force = false): void {
+  const wanted = liveTileTints();
+  const hasAtlas = TILE_COLOR_SLOTS.some((id) => !!tileHueSource[id] && !!tileHueLayout[id]);
+  if (!force && !needsTileColorBake(wanted, bakedTileColors, hasAtlas)) {
+    if (hasAtlas) tileAtlasReady = true;
+    return;
+  }
+  if (!hasAtlas) {
+    if (!force && typeof requestAnimationFrame === "function") {
+      if (tileBakePending) return;
+      tileBakePending = true;
+      requestAnimationFrame(() => {
+        tileBakePending = false;
+        applyTileColors(true);
+      });
+      return;
+    }
+    if (!collectTileAtlas()) return;
+  }
+  const run = () => {
+    tileBakePending = false;
+    if (!atlasCanvas) {
+      const sheet = atlasSheet();
+      const lib = adobeLib() as unknown as Record<string, unknown>;
+      if (!sheet || !lib) return;
+      // Re-adopt from any known frame.
+      for (const id of TILE_COLOR_SLOTS) {
+        const idx = tileFrameIndexes?.[id]?.[0];
+        if (idx == null) continue;
+        const frame = sheet.getFrame?.(idx);
+        if (frame?.image) {
+          atlasCanvas = adoptAtlasCanvas(sheet, frame.image);
+          break;
+        }
+      }
+    }
+    if (!atlasCanvas) return;
+    const ctx = atlasCanvas.getContext("2d");
+    if (!ctx) return;
+    const next = liveTileTints();
+    for (const id of TILE_COLOR_SLOTS) {
+      const source = tileHueSource[id];
+      const layout = tileHueLayout[id];
+      if (!source || !layout?.slots.length) {
+        bakedTileColors[id] = next[id] ?? null;
+        continue;
+      }
+      let tinted = tileHueTinted[id];
+      if (!tinted || tinted.width !== layout.width || tinted.height !== layout.height) {
+        const made = makeHueCanvas(layout.width, layout.height);
+        if (!made) continue;
+        tinted = made.canvas;
+        tileHueTinted[id] = tinted;
+      }
+      const scratchCtx = tinted.getContext("2d");
+      if (!scratchCtx) continue;
+      blitPackedRecolor(ctx, source, { canvas: tinted, ctx: scratchCtx }, layout.slots, next[id] ?? null);
+      bakedTileColors[id] = next[id] ?? null;
+    }
+    tileAtlasReady = true;
+  };
+  if (force || typeof requestAnimationFrame !== "function") run();
+  else {
+    if (tileBakePending) return;
+    tileBakePending = true;
+    requestAnimationFrame(run);
+  }
+}
 
 function ensureSky(): void {
   const st = window.stage;
@@ -1043,7 +1203,7 @@ function themePackLabel(id: string, fallback: string): string {
 }
 
 function closeSettingsDropdowns(): void {
-  for (const id of ["hud-theme-select", "hud-locale-select"]) {
+  for (const id of ["hud-theme-select", "hud-locale-select", "hud-color-preset-select"]) {
     const wrap = $(id);
     wrap?.classList.remove("is-open");
     const menu = wrap?.querySelector(".hud-dd-menu") as HTMLElement | null;
@@ -1119,13 +1279,12 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   const blockColor = $("hud-block-color") as HTMLInputElement | null;
   const colorSlots = $("hud-color-slots");
+  const presetSel = $("hud-color-preset-select");
   const slotInputs = colorSlots
     ? (Array.from(colorSlots.querySelectorAll("input[data-slot]")) as HTMLInputElement[])
     : [];
   const colorsMode = on && extraView === "settings-colors";
   const settingsMode = on && extraView === "settings";
-  const pickingTint = settingsMode && (tintPicking || (!!tintColor && document.activeElement === tintColor));
-  const pickingBlock = settingsMode && (blockPicking || (!!blockColor && document.activeElement === blockColor));
   const pickingSlot =
     colorsMode &&
     !!colorSlotPicking &&
@@ -1152,6 +1311,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
       }
     }
     if (colorSlots) colorSlots.hidden = true;
+    if (presetSel) presetSel.hidden = true;
     for (const el of slotInputs) {
       try {
         el.blur();
@@ -1162,15 +1322,8 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   }
   for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn, tintColor, blockColor]) {
     if (!el) continue;
-    // Toggling hidden / rewriting .value while the OS color UI is open dismisses it.
-    if (settingsMode && el === tintColor && pickingTint) continue;
-    if (settingsMode && el === blockColor && pickingBlock) continue;
-    if (el === tintColor) {
-      el.hidden = !settingsMode;
-      continue;
-    }
-    if (el === blockColor) {
-      // Block swatch moved to Customize colors submenu.
+    if (el === tintColor || el === blockColor) {
+      // Backdrop + block swatches live under Customize colors only.
       el.hidden = true;
       continue;
     }
@@ -1185,27 +1338,20 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
       colorSlots.hidden = !colorsMode;
     }
   }
+  if (presetSel) presetSel.hidden = !colorsMode;
   if (!on) {
-    // Flush any pending settle-bake when leaving Settings so in-game cubes match the preview.
+    // Flush pending settle-bakes when leaving Settings so in-game art matches the preview.
     if (hueBakeTimer) {
       window.clearTimeout(hueBakeTimer);
       hueBakeTimer = 0;
       applyBlockHue(true);
     }
+    applyTileColors(true);
   }
   if (uploadBtn) uploadBtn.textContent = themeUploadMsg || t("settings.upload");
   if (templateBtn) templateBtn.textContent = t("settings.template");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
   const s = loadSettings();
-  if (tintColor && settingsMode) {
-    // Full free color swatch next to Backdrop tint (not a hue-only slider).
-    tintColor.style.left = "28%";
-    tintColor.style.top = "78.4%";
-    tintColor.style.width = "4.2%";
-    tintColor.style.height = "4.4%";
-    if (!pickingTint) tintColor.value = normalizeHex(s.bgColor || hueToHex(s.bgHue));
-    tintColor.title = t("settings.tint");
-  }
   if (colorsMode) {
     for (const el of slotInputs) {
       const id = el.dataset.slot as ColorSlotId | undefined;
@@ -1214,6 +1360,14 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
       el.value = normalizeHex(s.colorCustom[id].hex);
       el.title = t(COLOR_SLOT_META.find((row) => row.id === id)?.labelKey ?? "settings.customizeColors");
     }
+    const presetOpts = [
+      { id: "", name: t("settings.loadPresetNone") },
+      ...s.colorPresets.map((row) => ({ id: row.name, name: row.name })),
+    ];
+    if (!activeColorPreset || !s.colorPresets.some((row) => row.name === activeColorPreset)) {
+      activeColorPreset = "";
+    }
+    fillSettingsDropdown(presetSel, presetOpts, activeColorPreset, forceTheme);
   }
   if (!on) {
     closeSettingsDropdowns();
@@ -1294,6 +1448,24 @@ function bindSettingsChrome(): void {
     closeSettingsDropdowns();
     applyLanguage(id);
   });
+  const presetSel = $("hud-color-preset-select");
+  presetSel?.querySelector(".hud-dd-btn")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (presetSel) toggleSettingsDropdown(presetSel);
+  });
+  presetSel?.querySelector(".hud-dd-menu")?.addEventListener("click", (ev) => {
+    const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".hud-dd-opt")?.dataset.id;
+    if (id == null) return;
+    ev.stopPropagation();
+    closeSettingsDropdowns();
+    if (!id) {
+      activeColorPreset = "";
+      markHudDirty();
+      paintHud();
+      return;
+    }
+    applyColorPreset(id);
+  });
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   const blockColorEl = $("hud-block-color") as HTMLInputElement | null;
   const colorSlotsEl = $("hud-color-slots");
@@ -1304,6 +1476,7 @@ function bindSettingsChrome(): void {
       if (
         themeSel?.contains(node) ||
         localeSel?.contains(node) ||
+        presetSel?.contains(node) ||
         manageBtn?.contains(node) ||
         manage?.contains(node) ||
         tintColor?.contains(node) ||
@@ -2376,8 +2549,6 @@ function navItems(): NavItem[] {
       { id: "toggle-webcam" },
       { id: "toggle-tab-cast" },
       ...(s.tabCastBg ? [{ id: "tab-crop" }] : []),
-      { id: "bgtint", adjust: () => ($("hud-bg-color") as HTMLInputElement | null)?.click() },
-      { id: "toggle-bg-color" },
       { id: "settings-colors" },
       { id: "remap" },
       { id: "settings-save" },
@@ -2397,6 +2568,13 @@ function navItems(): NavItem[] {
       });
     }
     rows.push({ id: "colors-reset" });
+    rows.push({ id: "colors-save-preset" });
+    if (s.colorPresets.length) {
+      rows.push({
+        id: "color-preset",
+        adjust: () => toggleSettingsDropdown($("hud-color-preset-select") as HTMLElement),
+      });
+    }
     return rows;
   }
   if (extraView === "settings-save") {
@@ -2499,6 +2677,8 @@ function navItems(): NavItem[] {
 }
 
 function handleMenuNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
+  if (handleAttractInput()) return;
+  noteTitleActivity();
   if (uiBusy) return;
   if (extraView === "remap" && rebindAction) return;
   if (extraView === "splash") {
@@ -2834,7 +3014,12 @@ function paintHud(): void {
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
     placeSettingsChrome(true);
   } else if (extraView === "settings-colors") {
-    hud.drawCustomizeColors({ colors: s.colorCustom });
+    hud.drawCustomizeColors({
+      colors: s.colorCustom,
+      tileAtlasReady,
+      presets: s.colorPresets,
+      activePreset: activeColorPreset,
+    });
     placeSettingsChrome(true);
   } else if (extraView === "settings-save") {
     hud.drawSaveData(deleteSaveStep);
@@ -3563,10 +3748,24 @@ function handleHudAction(act: string): void {
       s.bgColor = "#b86a2e";
       s.bgHue = 28;
     });
+    activeColorPreset = "";
     applyLooks();
     scheduleBlockHueBake(80);
     markHudDirty();
     paintHud();
+  } else if (act === "colors-save-preset") {
+    const raw = window.prompt(t("settings.savePresetPrompt"), activeColorPreset || "");
+    if (raw == null) return;
+    const name = normalizePresetName(raw);
+    if (!name) return;
+    updateSettings((s) => {
+      s.colorPresets = upsertColorPreset(s.colorPresets, name, s.colorCustom);
+    });
+    activeColorPreset = name;
+    markHudDirty();
+    paintHud();
+  } else if (act.startsWith("color-preset:")) {
+    applyColorPreset(act.slice("color-preset:".length));
   } else if (act.startsWith("music:")) {
     const s = loadSettings();
     s.music = Number(act.slice(6));
@@ -4063,15 +4262,155 @@ function hushPlayAudio(): void {
   hushStageMusic();
 }
 
+function applyColorPreset(name: string): void {
+  const s = loadSettings();
+  const hit = findColorPreset(s.colorPresets, name);
+  if (!hit) return;
+  updateSettings((st) => {
+    st.colorCustom = structuredClone(hit.colors);
+    const bg = st.colorCustom.bg;
+    const block = st.colorCustom.block;
+    if (bg.on) {
+      st.bgColor = bg.hex;
+      st.bgHue = hexToHue(bg.hex);
+      if (st.bgTint < 0.2) st.bgTint = 0.55;
+    } else {
+      st.bgTint = 0;
+    }
+    if (block.on) {
+      st.blockColor = block.hex;
+      st.blockHue = hexToHue(block.hex);
+    } else {
+      st.blockHue = 0;
+      st.blockColor = "#b86a2e";
+    }
+  });
+  activeColorPreset = hit.name;
+  applyLooks();
+  scheduleBlockHueBake(80);
+  markHudDirty();
+  paintHud();
+}
+
+function noteTitleActivity(): void {
+  attractIdleAt = bumpAttractIdle(Date.now());
+}
+
+function ensureAttractFade(): HTMLElement {
+  let el = $("attract-fade");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "attract-fade";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function ensureAttractTitle(): HTMLElement {
+  let el = $("attract-title");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "attract-title";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function setAttractFade(on: boolean): void {
+  const el = ensureAttractFade();
+  el.classList.toggle("is-on", on);
+}
+
+function showAttractTitle(on: boolean): void {
+  const el = ensureAttractTitle();
+  el.textContent = attractTitleLabel(brandName(getName()));
+  el.classList.toggle("is-on", on);
+}
+
+function startAttractRun(): void {
+  const seed = freshSeed();
+  // Easy seeded puzzles keep attract snappy and reliably auto-solvable.
+  const p = generatePuzzle(seed, "easy");
+  startCustom([p.def], "home", {
+    card: "seeded",
+    title: t("play.seeded"),
+    subtitle: seed,
+    seed,
+    entry: "puzzle",
+    record: false,
+    attract: true,
+  });
+  const result = solveLevel(p.def);
+  if (result.ok && result.cmds.length) {
+    autoSolve = true;
+    solveTape = result.cmds.slice() as TapeCmd[];
+    solveFeeder = createFeeder(solveTape);
+    solveRetries = 0;
+    beatBanner = "";
+  }
+  showAttractTitle(true);
+}
+
+function beginAttractMode(): void {
+  if (attractMode || attractFading) return;
+  attractMode = true;
+  attractFading = true;
+  setAttractFade(true);
+  hud?.setVisible(false);
+  window.setTimeout(() => {
+    attractFading = false;
+    setAttractFade(false);
+    startAttractRun();
+  }, ATTRACT_FADE_MS);
+}
+
+function endAttractMode(): void {
+  if (!attractMode && !playSession?.attract) return;
+  attractMode = false;
+  attractFading = true;
+  showAttractTitle(false);
+  setAttractFade(true);
+  stopAutoSolve("");
+  window.setTimeout(() => {
+    leavePlayTo("home");
+    setAttractFade(false);
+    attractFading = false;
+    noteTitleActivity();
+  }, ATTRACT_FADE_MS);
+}
+
+function tickAttractIdle(): void {
+  if (attractMode || attractFading) return;
+  if (extraView !== "home" || overlayMode !== "menu") return;
+  // Any non-default home cursor means the player is browsing the menu.
+  const browsing = menuCursor > 0;
+  if (
+    shouldStartAttract({
+      now: Date.now(),
+      lastInputAt: attractIdleAt,
+      onHome: true,
+      navigating: browsing,
+      alreadyAttracting: attractMode,
+    })
+  ) {
+    beginAttractMode();
+  }
+}
+
+function handleAttractInput(): boolean {
+  if (!attractMode && !playSession?.attract) return false;
+  endAttractMode();
+  return true;
+}
+
 function finishStatRows(): { title: string; meta: string }[] {
-  // Prefer recorded per-stage rows; keep stages that have moves even if the winning tape lacked cmds.
-  const levels = (lastFinished?.levels ?? []).filter(
-    (lv) => lv.moves > 0 || lv.tapes.some((row) => row.won && row.cmds.length) || lv.attempts > 0,
-  );
-  if (levels.length) {
-    return levels.map((lv) => ({
+  const rows = finishSessionStatRows(lastFinished?.levels ?? [], {
+    maxStage: finishStageCap ?? undefined,
+  });
+  if (rows.length) {
+    return rows.map((lv) => ({
       title: t("play.stage", { n: String(lv.stage).padStart(2, "0") }),
-      meta: `${lv.moves} ${t("play.moves")} · ${Math.max(1, lv.attempts)} ${t("finish.attempts")}`,
+      meta: `${lv.moves} ${t("play.moves")} · ${lv.attempts} ${t("finish.attempts")}`,
     }));
   }
   const st = window.stage;
@@ -4105,6 +4444,14 @@ function rememberFinish(session: PlaySession | null): void {
   finishSubtitle = session?.subtitle || session?.seed || "";
   const back = session?.returnTo;
   finishReturnTo = back && back !== "auto" && back !== "finish" ? back : "home";
+  if (!session) {
+    finishStageCap = null;
+    return;
+  }
+  // Cap win-screen rows to this session's defs (seeded/daily/custom/gauntlet). Classic = uncapped run.
+  if (session.defs.length) finishStageCap = session.defs.length;
+  else if (keepRunTotals(session)) finishStageCap = null;
+  else finishStageCap = 1;
 }
 
 async function copyGameShot(): Promise<void> {
@@ -4149,6 +4496,7 @@ function leavePlayTo(view: Screen): void {
   flags.setStageLoaded?.(0);
   flags.setSplit?.(0);
   playSession = null;
+  run = null;
   unlimitedLevelArmed = -1;
   lastTintKey = "";
   syncPlayChrome(false);
@@ -4170,23 +4518,30 @@ function leavePlayTo(view: Screen): void {
   overlayMode = "menu";
   openPanel(view);
   absorbHeldMenuConfirm();
+  noteTitleActivity();
 }
 
 function beginPlay(levelNumber: number, session: PlaySession): void {
   if (session.kind === "custom") {
     for (const def of session.defs) def.code = "000000";
   }
-  if (session.record && !run) {
-    run = {
-      id: `${Date.now()}`,
-      at: Date.now(),
-      player: getName() || "BLOX",
-      totalTimeMs: 0,
-      totalMoves: 0,
-      fails: 0,
-      complete: false,
-      levels: [],
-    };
+  if (session.record) {
+    // Fresh run per session; only continue totals for multi-stage classic/gauntlet mid-run.
+    const resumeSame = !!run && keepRunTotals(session) && levelNumber > 1;
+    if (!resumeSame) {
+      run = {
+        id: `${Date.now()}`,
+        at: Date.now(),
+        player: getName() || "BLOX",
+        totalTimeMs: 0,
+        totalMoves: 0,
+        fails: 0,
+        complete: false,
+        levels: [],
+      };
+    }
+  } else {
+    run = null;
   }
   replayExclude = session.record ? [] : replayExclude;
   playSession = session;
@@ -4207,9 +4562,15 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   wrapLocalSave();
   if (!keepRunTotals(session) || levelNumber <= 1) resetStageTotals();
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
-  const showSpeedrun = wantsSpeedrunPanel(session);
+  const showSpeedrun = wantsSpeedrunPanel(session) && !session.attract;
   if (showSpeedrun) armSpeedrunTimer(session, levelNumber);
   syncSidePanel(showSpeedrun);
+  if (session.attract) {
+    syncPlayChrome(false);
+    hud?.setVisible(false);
+    window.exportRoot?.gotoAndPlay?.("game");
+    return;
+  }
   if (session.replay) {
     window.exportRoot?.gotoAndPlay?.("game");
     return;
@@ -4235,6 +4596,7 @@ function startCustom(defs: LevelDef[], returnTo: Screen, opts: CustomPlayOpts = 
     entry: opts.entry ?? (returnTo === "creator-edit" ? "creator-test" : "puzzle"),
     diff: opts.diff,
     replay: opts.replay,
+    attract: opts.attract,
   });
 }
 
@@ -4902,8 +5264,18 @@ function bind(): void {
     if (KEY_CMD[code] || act === "swap") window.stage?.triggerKeyUp?.({ code });
   });
 
+  window.addEventListener("pointerdown", (ev) => {
+    if (handleAttractInput()) {
+      ev.preventDefault();
+    }
+  }, true);
+
   window.addEventListener("keydown", (ev) => {
     if (uiBusy) {
+      ev.preventDefault();
+      return;
+    }
+    if (handleAttractInput()) {
       ev.preventDefault();
       return;
     }
@@ -5127,6 +5499,14 @@ function syncOverlay(): void {
   }
 
   if (label === "finish" && lastLabel !== "finish") {
+    if (playSession?.attract || attractMode) {
+      lastLabel = label;
+      stopAutoSolve("");
+      window.stage?.bloxWorld?.destroy?.();
+      // Chain another random seeded demo — no finish UI / title cards.
+      startAttractRun();
+      return;
+    }
     if (playSession?.replay) {
       lastLabel = label;
       leavePlayTo(playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "history");
@@ -5236,15 +5616,34 @@ function syncOverlay(): void {
       enterPlayVisuals();
       raiseHud();
     }
+    const attracting = !!(playSession?.attract || attractMode);
+    if (attracting) {
+      for (const ev of pollMenuPad()) {
+        if (ev) {
+          endAttractMode();
+          return;
+        }
+      }
+    }
     hookWorldQuit();
     hookReplayCapture();
-    touchChrome?.sync(playing && !isPauseMenuOpen(), playBlocks().length > 1);
-    if (label === "instructions") pollInstructionsPad();
-    syncSidePanel(playing && wantsSpeedrunPanel(playSession));
+    touchChrome?.sync(playing && !isPauseMenuOpen() && !attracting, playBlocks().length > 1);
+    if (label === "instructions" && !attracting) pollInstructionsPad();
+    syncSidePanel(playing && wantsSpeedrunPanel(playSession) && !attracting);
     applyPlayTint();
     applyBlockHue();
-    syncPlayChrome(playing);
+    syncPlayChrome(playing && !attracting);
     suppressClassicBitmapsForHd(label);
+    if (attracting) {
+      syncHowto(false);
+      syncPauseStats(false);
+      syncSelectPrompt(false);
+      hud?.setVisible(false);
+      showAttractTitle(true);
+      tickSolve();
+      syncHelpText();
+      return;
+    }
     syncHowto(label === "instructions");
     syncPauseStats(playing && isPauseMenuOpen());
     syncSelectPrompt(playing);
@@ -5361,6 +5760,7 @@ function syncOverlay(): void {
   syncSelectPrompt(false);
   placeSettingsChrome(extraView === "settings" || extraView === "settings-colors");
   touchChrome?.sync(false);
+  tickAttractIdle();
 
   bindMenuPad();
   capturePadRebind();
@@ -5569,7 +5969,14 @@ export function startBloxorzShell(): void {
           gotoAndStop?: (n: string | number) => void;
           tickEnabled?: boolean;
           mouseEnabled?: boolean;
+          door?: { initialState?: boolean; state?: boolean; onChange?: (v: boolean) => void };
           flasher?: { visible?: boolean; filters?: unknown };
+        };
+        // Door idle scripts read tile.door — stub so creator preview does not throw into metal_v3 fallback.
+        tile.door = {
+          initialState: false,
+          state: ch === "k" || ch === "q",
+          onChange: () => undefined,
         };
         if (ch === "b") tile.gotoAndStop?.(24);
         else {
@@ -5596,9 +6003,12 @@ export function startBloxorzShell(): void {
   parkCreateJsMenu();
   setMouseOverRate(5);
   applyLooks();
-  // Lazy block-color bake: skip boot hitch when swatch is still default.
+  // Lazy block/tile color bake: skip boot hitch when swatches are still default.
   if (liveBlockTint() !== null) {
     window.setTimeout(() => applyBlockHue(), 0);
+  }
+  if (anyTileTintOn()) {
+    window.setTimeout(() => applyTileColors(true), 0);
   }
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;

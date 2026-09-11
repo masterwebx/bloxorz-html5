@@ -582,6 +582,56 @@ body:not(.is-settings-colors) #hud-color-slots {
 	display: none;
 }
 
+#hud-color-preset-select {
+	position: absolute;
+	z-index: 32;
+	left: 58%;
+	top: 89%;
+	width: 22%;
+	pointer-events: auto;
+}
+
+body:not(.is-settings-colors) #hud-color-preset-select {
+	display: none;
+}
+
+#attract-fade {
+	position: fixed;
+	inset: 0;
+	z-index: 90;
+	pointer-events: none;
+	background: #000;
+	opacity: 0;
+	transition: opacity 0.7s ease;
+}
+
+#attract-fade.is-on {
+	opacity: 1;
+}
+
+#attract-title {
+	position: fixed;
+	left: 50%;
+	bottom: 4.5%;
+	transform: translateX(-50%);
+	z-index: 91;
+	pointer-events: none;
+	margin: 0;
+	padding: 0 12px;
+	font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+	font-size: clamp(14px, 2.4vw, 22px);
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	color: #ffe6c0;
+	text-shadow: 0 1px 0 #3a1808, 0 0 12px rgba(0, 0, 0, 0.65);
+	opacity: 0;
+	transition: opacity 0.45s ease;
+}
+
+#attract-title.is-on {
+	opacity: 1;
+}
+
 #hud-theme-manage {
 	position: absolute;
 	z-index: 40;

@@ -1,4 +1,10 @@
-import { defaultColorCustom, normalizeColorCustom, type ColorCustom } from "./colorCustom";
+import {
+  defaultColorCustom,
+  normalizeColorCustom,
+  normalizeColorPresets,
+  type ColorCustom,
+  type ColorPreset,
+} from "./colorCustom";
 
 export type Action =
   | "up"
@@ -50,6 +56,8 @@ export interface Settings {
   blockColor: string;
   /** Per-asset recolors; each slot has its own on/off (defaults off = vanilla). */
   colorCustom: ColorCustom;
+  /** Named color-custom snapshots (Customize Colors presets). */
+  colorPresets: ColorPreset[];
   unlimitedEndless: boolean;
   playerName: string;
   locale: string;
@@ -79,6 +87,7 @@ const DEFAULTS: Settings = {
   blockHue: 0,
   blockColor: "#b86a2e",
   colorCustom: defaultColorCustom(),
+  colorPresets: [],
   unlimitedEndless: false,
   playerName: "",
   locale: "",
@@ -146,6 +155,7 @@ export function loadSettings(): Settings {
         DEFAULTS.blockColor,
       ),
       colorCustom: migrateColorCustom(parsed),
+      colorPresets: normalizeColorPresets(parsed.colorPresets),
       unlimitedEndless: parsed.unlimitedEndless === true,
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       locale: typeof parsed.locale === "string" ? parsed.locale : "",

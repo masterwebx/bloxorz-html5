@@ -332,5 +332,9 @@
   "creator.savedSeed": "Сохранено. Обратный сид: {code}",
   "creator.untitled": "Без названия",
   "creator.untitledPack": "Безымянный набор",
-  "creator.unknownAuthor": "Неизвестно"
+  "creator.unknownAuthor": "Неизвестно",
+  "settings.savePreset": "Сохранить пресет",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "Загрузить пресет",
+  "settings.loadPresetNone": "Нет"
 }

@@ -332,5 +332,9 @@
   "creator.savedSeed": "Guardado. Seed inversa: {code}",
   "creator.untitled": "Sem título",
   "creator.untitledPack": "Pacote sem título",
-  "creator.unknownAuthor": "Desconhecido"
+  "creator.unknownAuthor": "Desconhecido",
+  "settings.savePreset": "Salvar preset",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "Carregar preset",
+  "settings.loadPresetNone": "Nenhum"
 }

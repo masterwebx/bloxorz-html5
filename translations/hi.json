@@ -332,5 +332,9 @@
   "creator.savedSeed": "सेव हुआ। रिवर्स सीड: {code}",
   "creator.untitled": "बिना शीर्षक",
   "creator.untitledPack": "बिना शीर्षक पैक",
-  "creator.unknownAuthor": "अज्ञात"
+  "creator.unknownAuthor": "अज्ञात",
+  "settings.savePreset": "प्रीसेट सहेजें",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "प्रीसेट लोड करें",
+  "settings.loadPresetNone": "कोई नहीं"
 }

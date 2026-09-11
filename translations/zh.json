@@ -332,5 +332,9 @@
   "creator.savedSeed": "已保存。反向种子：{code}",
   "creator.untitled": "未命名",
   "creator.untitledPack": "未命名关卡包",
-  "creator.unknownAuthor": "未知"
+  "creator.unknownAuthor": "未知",
+  "settings.savePreset": "保存预设",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "加载预设",
+  "settings.loadPresetNone": "无"
 }

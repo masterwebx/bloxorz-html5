@@ -345,6 +345,41 @@ export function isBlockSpriteName(name: string): boolean {
   return BLOCK_SPRITE_RE.test(name);
 }
 
+/** Tile atlas sprites grouped by Customize Colors slot (not block / backdrop). */
+export type TileColorSlotId =
+  | "stone"
+  | "exit"
+  | "soft"
+  | "heavy"
+  | "fragile"
+  | "split"
+  | "bridgeL"
+  | "bridgeR";
+
+export const TILE_COLOR_SLOTS: TileColorSlotId[] = [
+  "stone",
+  "exit",
+  "soft",
+  "heavy",
+  "fragile",
+  "split",
+  "bridgeL",
+  "bridgeR",
+];
+
+/** Match lib sprite names → color slot for one-shot tile atlas bake. */
+export function tileSlotForSpriteName(name: string): TileColorSlotId | null {
+  if (name === "metal_v2" || name === "stone2_v2" || name === "stone3_v2") return "stone";
+  if (name === "metal_v3") return "fragile";
+  if (name === "softswitch_v3") return "soft";
+  if (name === "hardswitch_v3") return "heavy";
+  if (name === "stoneexit_v2") return "exit";
+  if (name === "splitswitch_v2") return "split";
+  if (/^bolckadoorr\d+$/.test(name)) return "bridgeR";
+  if (/^bolckadoor\d+$/.test(name)) return "bridgeL";
+  return null;
+}
+
 export function frameIndexFromCtorSource(source: string): number | null {
   const m = source.match(/gotoAndStop\((\d+)\)/);
   return m ? Number(m[1]) : null;
@@ -358,4 +393,42 @@ export function collectBlockFrameIndexes(lib: Record<string, unknown>): number[]
     if (idx !== null) indexes.add(idx);
   }
   return [...indexes].sort((a, b) => a - b);
+}
+
+/** Frame indexes on the live atlas, keyed by tile color slot. */
+export function collectTileFrameIndexesBySlot(lib: Record<string, unknown>): Record<TileColorSlotId, number[]> {
+  const out = Object.fromEntries(TILE_COLOR_SLOTS.map((id) => [id, [] as number[]])) as Record<
+    TileColorSlotId,
+    number[]
+  >;
+  const seen = new Set<string>();
+  for (const [name, value] of Object.entries(lib)) {
+    const slot = tileSlotForSpriteName(name);
+    if (!slot) continue;
+    const idx = frameIndexFromCtorSource(String(value));
+    if (idx === null) continue;
+    const key = `${slot}:${idx}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out[slot].push(idx);
+  }
+  for (const id of TILE_COLOR_SLOTS) out[id].sort((a, b) => a - b);
+  return out;
+}
+
+/** True when any tile slot needs a bake (on with a hex, or restoring after a prior bake). */
+export function needsTileColorBake(
+  wanted: Partial<Record<TileColorSlotId, string | null>>,
+  baked: Partial<Record<TileColorSlotId, string | null>>,
+  hasAtlas: boolean,
+): boolean {
+  if (!hasAtlas) {
+    return TILE_COLOR_SLOTS.some((id) => wanted[id] != null);
+  }
+  for (const id of TILE_COLOR_SLOTS) {
+    const next = wanted[id] ?? null;
+    const prev = baked[id] ?? null;
+    if (next !== prev) return true;
+  }
+  return false;
 }

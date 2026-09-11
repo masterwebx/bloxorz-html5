@@ -332,5 +332,9 @@
   "creator.savedSeed": "تم الحفظ. البذرة العكسية: {code}",
   "creator.untitled": "بدون عنوان",
   "creator.untitledPack": "حزمة بدون عنوان",
-  "creator.unknownAuthor": "غير معروف"
+  "creator.unknownAuthor": "غير معروف",
+  "settings.savePreset": "حفظ الإعداد المسبق",
+  "settings.savePresetPrompt": "Name this color preset",
+  "settings.loadPreset": "تحميل الإعداد المسبق",
+  "settings.loadPresetNone": "لا شيء"
 }

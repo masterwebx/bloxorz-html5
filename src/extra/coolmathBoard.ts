@@ -74,12 +74,16 @@ export type ClipName =
   | "Block";
 
 /** Sprite registration copied from the Tile / Tween clips in bloxorz.js. */
+/**
+ * Registration offsets matching Tile timeline placement (not the Tween* fly-in wrappers).
+ * Bridge/fragile metal_v3 sits at the same tip as stone so creator clips line up with the grid.
+ */
 export const CLIP_OFFSET: Record<ClipName, [number, number]> = {
   metal_v2: [-14.5, -24.5],
-  metal_v3: [-25, -16],
-  softswitch_v3: [-25, -16],
-  hardswitch_v3: [-25, -14.5],
-  splitswitch_v2: [-25, -17],
+  metal_v3: [-14.5, -24.5],
+  softswitch_v3: [-15, -25],
+  hardswitch_v3: [-15, -25],
+  splitswitch_v2: [-15, -27],
   stoneexit_v2: [-16, -28],
   stone2_v2: [-14.5, -24.5],
   Block: [0, 0],
@@ -114,10 +118,16 @@ export function pickBoardCell(localX: number, localY: number): { x: number; y: n
   const px = (localX - BOARD_OX) / BOARD_SCALE;
   const py = (localY - BOARD_OY) / BOARD_SCALE;
   const raw = unproject(px, py);
-  const x = Math.round(raw.x);
-  const y = Math.round(raw.y);
-  if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return null;
-  return { x, y };
+  let x = Math.round(raw.x);
+  let y = Math.round(raw.y);
+  if (x >= 0 && y >= 0 && x < GRID_W && y < GRID_H) return { x, y };
+  // Soft edge grab: clicks just outside the board still land on the nearest rim cell.
+  const cx = Math.max(0, Math.min(GRID_W - 1, x));
+  const cy = Math.max(0, Math.min(GRID_H - 1, y));
+  const dx = raw.x - cx;
+  const dy = raw.y - cy;
+  if (dx * dx + dy * dy > 0.9 * 0.9) return null;
+  return { x: cx, y: cy };
 }
 
 export function occupiedCells(tiles: string[]): { x: number; y: number; ch: string }[] {
