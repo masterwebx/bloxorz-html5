@@ -38,8 +38,6 @@ export interface Settings {
   webcamBg: boolean;
   bgTint: number;
   bgHue: number;
-  blockHue: number;
-  hueShift: boolean;
   playerName: string;
   locale: string;
   keys: Record<Action, string>;
@@ -59,8 +57,6 @@ const DEFAULTS: Settings = {
   webcamBg: false,
   bgTint: 0,
   bgHue: 28,
-  blockHue: 0,
-  hueShift: false,
   playerName: "",
   locale: "",
   keys: {
@@ -112,8 +108,6 @@ export function loadSettings(): Settings {
       webcamBg: parsed.webcamBg === true,
       bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
-      blockHue: clampHue(parsed.blockHue ?? DEFAULTS.blockHue),
-      hueShift: parsed.hueShift === true,
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       locale: typeof parsed.locale === "string" ? parsed.locale : "",
       keys: { ...DEFAULTS.keys, ...parsed.keys },

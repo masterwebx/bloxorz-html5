@@ -72,8 +72,6 @@
   "settings.themeBg": "主题背景",
   "settings.tint": "背景着色",
   "settings.hue": "背景色相",
-  "settings.blockHue": "方块色相",
-  "settings.hueShift": "色相循环",
   "settings.language": "语言",
   "settings.upload": "上传主题",
   "settings.template": "下载模板",

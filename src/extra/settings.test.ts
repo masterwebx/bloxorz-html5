@@ -39,8 +39,6 @@ describe("mobile settings", () => {
     expect(s.showTimer).toBe(false);
     expect(s.showStageName).toBe(false);
     expect(s.webcamBg).toBe(false);
-    expect(s.hueShift).toBe(false);
-    expect(s.blockHue).toBe(0);
   });
 
   it("keeps an explicit speedrun timer on", () => {

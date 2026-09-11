@@ -8,7 +8,6 @@ import {
 import { EDITOR_TOOLS } from "./editor";
 import { GAUNTLET_QUALITY } from "./generate";
 import { DEFAULT_ISO, TILE_FACE, TOOL_CH, isoCenter, isoPt, pickIsoCell, type IsoMetrics } from "./isoBoard";
-import { rustFaces } from "./hue";
 import { t } from "./i18n";
 import { currentTheme } from "./settings";
 import { themePaint } from "./themePack";
@@ -57,7 +56,6 @@ type HudNode = {
   uncache?: () => void;
   getBounds?: () => { x: number; y: number; width: number; height: number } | null;
   filters?: unknown;
-  __bloxHue?: number;
 };
 
 type HudText = HudNode & {
@@ -298,9 +296,7 @@ export class ExtraHud {
   makeMascot: (() => HudNode | null) | null = null;
   makeClip: ((name: ClipName) => HudNode | null) | null = null;
   makeTile: ((ch: string) => HudNode | null) | null = null;
-  makePreview: (() => HudNode | null) | null = null;
   focusId = "";
-  private preview: HudNode | null = null;
 
   constructor(stage: { addChild: (c: unknown) => void }) {
     this.root = new createjs.Container();
@@ -356,27 +352,6 @@ export class ExtraHud {
     if (this.mascot.parent === this.root) this.root.removeChild?.(this.mascot);
   }
 
-  hueClips(): HudNode[] {
-    const out: HudNode[] = [];
-    if (this.mascot?.parent) out.push(this.mascot);
-    if (this.preview?.parent) out.push(this.preview);
-    return out;
-  }
-
-  private placePreview(x: number, y: number, hue = 0): void {
-    if (!this.preview && this.makePreview) this.preview = this.makePreview();
-    if (!this.preview) {
-      this.add(blockPreview(x, y, hue));
-      return;
-    }
-    this.preview.visible = true;
-    this.preview.mouseEnabled = false;
-    this.preview.scaleX = 0.34;
-    this.preview.scaleY = 0.34;
-    this.preview.x = x;
-    this.preview.y = y + 36;
-    this.add(this.preview);
-  }
 
   drawHome(title: string, items: MenuItem[], cursor: number, animate = false): void {
     this.clear();
@@ -563,8 +538,6 @@ export class ExtraHud {
     sfx: number;
     bgTint: number;
     bgHue: number;
-    blockHue: number;
-    hueShift: boolean;
   }): void {
     this.clear();
     this.hideMascot();
@@ -597,11 +570,6 @@ export class ExtraHud {
     this.add(text(t("settings.hue"), 40, 222, 12, this.focusId === "bghue" ? theme.hot : theme.ink));
     this.add(slider(160, 222, 120, opts.bgHue / 360, (v) => this.onAction("bghue:" + Math.round(v * 360))));
     this.add(text(String(Math.round(opts.bgHue)), 300, 222, 11, theme.muted));
-    this.add(text(t("settings.blockHue"), 40, 242, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
-    this.add(slider(150, 242, 90, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
-    this.add(swatch(248, 244, opts.blockHue, opts.blockHue > 0 || opts.hueShift ? 1 : 0.35));
-    this.add(this.act("toggle-hue-shift", `${this.focusId === "toggle-hue-shift" ? "> " : "  "}${t("settings.hueShift")}  ${onOff(opts.hueShift)}`, 278, 242, 11, false, 200));
-    this.placePreview(392, 198, opts.blockHue);
     this.add(this.act("remap", t("settings.remap"), 40, 264, 12, false, 160));
     this.add(this.act("export-save", t("settings.export"), 200, 264, 12, false, 130));
     this.add(this.act("import-save", t("settings.import"), 350, 264, 12, false, 160));
@@ -1014,20 +982,6 @@ function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMe
     .moveTo(a.x, a.y - h).lineTo(b.x, b.y - h).lineTo(c.x, c.y - h).lineTo(d.x, d.y - h).lineTo(a.x, a.y - h).endFill();
 }
 
-function blockPreview(x: number, y: number, hue: number): HudShape {
-  const face = rustFaces(hue);
-  const s = new createjs.Shape();
-  const ox = x + 18;
-  const oy = y + 28;
-  s.graphics.beginFill(face.top).beginStroke(face.edge).setStrokeStyle(1)
-    .moveTo(ox, oy - 22).lineTo(ox + 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox - 16, oy - 14).lineTo(ox, oy - 22).endFill();
-  s.graphics.beginFill(face.left)
-    .moveTo(ox - 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox, oy + 12).lineTo(ox - 16, oy + 4).lineTo(ox - 16, oy - 14).endFill();
-  s.graphics.beginFill(face.right)
-    .moveTo(ox, oy - 6).lineTo(ox + 16, oy - 14).lineTo(ox + 16, oy + 4).lineTo(ox, oy + 12).lineTo(ox, oy - 6).endFill();
-  s.mouseEnabled = false;
-  return s;
-}
 
 function swatch(x: number, y: number, hue: number, amt: number): HudShape {
   const s = new createjs.Shape();

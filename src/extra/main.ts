@@ -26,7 +26,6 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { clipHueAction, shiftingHue, wrapHue } from "./hue";
 import { armStageTitleClip, freezeStageTitleClip, stageTitleShouldArm, type StageTitleClip } from "./stageTitle";
 import {
   loadFinishedStages,
@@ -379,7 +378,6 @@ let letterbox: TintShape | null = null;
 let blocksWereIdle = true;
 let prevPadButtons = new Set<number>();
 let prevInstrStart = false;
-let hueShiftOrigin = 0;
 let uiBusy = false;
 let touchChrome: TouchChrome | null = null;
 let localSaveWrapped = false;
@@ -492,59 +490,6 @@ function atlasSheet(): SpriteSheetLike | undefined {
   }
 }
 
-function liveBlockHue(): number {
-  const s = loadSettings();
-  return shiftingHue(s.blockHue, s.hueShift, performance.now() - hueShiftOrigin);
-}
-
-type HueClip = {
-  visible?: boolean;
-  cacheID?: number;
-  filters?: unknown;
-  __bloxHue?: number;
-  cache?: (x: number, y: number, w: number, h: number) => void;
-  updateCache?: () => void;
-  uncache?: () => void;
-  getBounds?: () => { x: number; y: number; width: number; height: number } | null;
-};
-
-function applyClipHue(clip: HueClip | null | undefined, hue: number, rolling: boolean): void {
-  if (!clip) return;
-  const action = clipHueAction(clip.__bloxHue, hue, rolling);
-  if (action === "skip") return;
-  if (action === "clear") {
-    clip.filters = null;
-    clip.uncache?.();
-    clip.__bloxHue = 0;
-    return;
-  }
-  const cjs = window.createjs as {
-    ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
-    ColorMatrixFilter?: new (m: unknown) => unknown;
-  };
-  const Matrix = cjs?.ColorMatrix;
-  const Filter = cjs?.ColorMatrixFilter;
-  if (!Matrix || !Filter) return;
-  const box = clip.getBounds?.();
-  // Avoid caching an empty/unlaid-out clip — that blanks the cube until something else clears it.
-  if (!box || box.width < 1 || box.height < 1) return;
-  clip.uncache?.();
-  const mtx = new Matrix();
-  mtx.adjustHue(hue);
-  clip.filters = [new Filter(mtx)];
-  clip.cache?.(box.x, box.y, Math.max(40, box.width), Math.max(40, box.height));
-  clip.__bloxHue = wrapHue(hue);
-}
-
-function applyBlockHue(): void {
-  const hue = liveBlockHue();
-  for (const clip of hud?.hueClips() ?? []) {
-    if (!hue || clip.visible !== false) applyClipHue(clip, hue, false);
-  }
-  if (overlayMode === "run") {
-    for (const block of playBlocks()) applyClipHue(block, hue, !block.roll?.idle);
-  }
-}
 
 function ensureSky(): void {
   const st = window.stage;
@@ -1784,8 +1729,6 @@ function navItems(): NavItem[] {
       { id: "toggle-webcam" },
       { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
       { id: "bghue", adjust: (d) => handleHudAction("bghue:" + String(clampStep(s.bgHue, d * 12, 0, 360))) },
-      { id: "blockhue", adjust: (d) => handleHudAction("blockhue:" + String(clampStep(s.blockHue, d * 12, 0, 360))) },
-      { id: "toggle-hue-shift" },
       { id: "remap" },
       { id: "export-save" },
       { id: "import-save" },
@@ -2062,8 +2005,6 @@ function hudKey(): string {
     String(s.webcamBg),
     String(s.bgTint),
     String(s.bgHue),
-    String(s.blockHue),
-    String(s.hueShift),
     String(s.music),
     String(s.sfx),
     currentThemeId(),
@@ -2150,8 +2091,6 @@ function paintHud(): void {
       sfx: s.sfx,
       bgTint: s.bgTint,
       bgHue: s.bgHue,
-      blockHue: s.blockHue,
-      hueShift: s.hueShift,
     });
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
     placeSettingsChrome(true);
@@ -2342,8 +2281,6 @@ function applyTheme(theme: ThemeId, reload = false): void {
   setHdRendering(isHdTheme(id));
   void swapAtlasLive(id);
   applyLooks();
-  for (const clip of hud?.hueClips() ?? []) clip.__bloxHue = undefined;
-  applyBlockHue();
   lastTintKey = "";
   window.__bloxResetStoneStamp?.();
   refreshPlayTilesAfterTheme();
@@ -2771,22 +2708,6 @@ function handleHudAction(act: string): void {
     applyLooks();
     markHudDirty();
     paintHud();
-  } else if (act === "toggle-hue-shift") {
-    const s = loadSettings();
-    s.hueShift = !s.hueShift;
-    saveSettings(s);
-    hueShiftOrigin = performance.now();
-    markHudDirty();
-    paintHud();
-    applyBlockHue();
-  } else if (act.startsWith("blockhue:")) {
-    const s = loadSettings();
-    s.blockHue = Number(act.slice(9));
-    saveSettings(s);
-    hueShiftOrigin = performance.now();
-    markHudDirty();
-    paintHud();
-    applyBlockHue();
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
@@ -3334,7 +3255,6 @@ type PlayBlock = {
   spriteSheet?: unknown;
   filters?: unknown;
   cacheID?: number;
-  __bloxHue?: number;
   select?: OverlayNode;
   cache?: (x: number, y: number, w: number, h: number) => void;
   updateCache?: () => void;
@@ -4213,7 +4133,6 @@ function syncOverlay(): void {
     if (overlayMode !== "run") {
       overlayMode = "run";
       hushPlayAudio();
-      hueShiftOrigin = performance.now();
       enterPlayVisuals();
       raiseHud();
     }
@@ -4223,7 +4142,6 @@ function syncOverlay(): void {
     if (label === "instructions") pollInstructionsPad();
     syncSidePanel(playing && !!playSession?.classicRun && loadSettings().showTimer);
     applyPlayTint();
-    applyBlockHue();
     syncPlayChrome(playing);
     syncHowto(label === "instructions");
     syncPauseStats(playing && isPauseMenuOpen());
@@ -4333,7 +4251,6 @@ function syncOverlay(): void {
   if (playLaunching) return;
   if (extraView === "finish") {
     paintHud();
-    applyBlockHue();
     return;
   }
   if (!splashDone) {
@@ -4350,7 +4267,6 @@ function syncOverlay(): void {
   } else {
     paintHud();
   }
-  applyBlockHue();
 }
 
 declare global {
@@ -4499,7 +4415,6 @@ export function startBloxorzShell(): void {
       return new Spin() as never;
     };
     hud.makeMascot = makeSpin;
-    hud.makePreview = makeSpin;
     hud.makeClip = (name: ClipName) => {
       try {
         const lib = adobeLib() as unknown as Record<string, new () => unknown>;
@@ -4545,7 +4460,6 @@ export function startBloxorzShell(): void {
   parkCreateJsMenu();
   setMouseOverRate(5);
   applyLooks();
-  applyBlockHue();
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) {

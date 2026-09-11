@@ -72,8 +72,6 @@
   "settings.themeBg": "Theme background",
   "settings.tint": "Backdrop tint",
   "settings.hue": "Backdrop hue",
-  "settings.blockHue": "Block hue",
-  "settings.hueShift": "색상 이동",
   "settings.language": "언어",
   "settings.upload": "테마 올리기",
   "settings.template": "템플릿 받기",

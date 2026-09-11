@@ -72,8 +72,6 @@
   "settings.themeBg": "テーマ背景",
   "settings.tint": "背景の濃さ",
   "settings.hue": "背景の色相",
-  "settings.blockHue": "ブロックの色相",
-  "settings.hueShift": "色相シフト",
   "settings.language": "言語",
   "settings.upload": "テーマを入れる",
   "settings.template": "テンプレを保存",
