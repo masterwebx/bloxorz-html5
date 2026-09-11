@@ -11,7 +11,22 @@ export interface SavedStage {
   code: string;
   seed: string;
   def: LevelDef;
+  defs?: LevelDef[];
+  kind?: "single" | "pack";
   source?: "local" | "downloaded";
+}
+
+export function isPack(stage: SavedStage): boolean {
+  return stage.kind === "pack" || (stage.defs?.length ?? 0) > 1;
+}
+
+export function stageKindLabel(stage: SavedStage): "Single" | "Pack" {
+  return isPack(stage) ? "Pack" : "Single";
+}
+
+export function packDefs(stage: SavedStage): LevelDef[] {
+  if (stage.defs?.length) return stage.defs;
+  return stage.def ? [stage.def] : [];
 }
 
 export function padTiles(tiles: string[]): string[] {
@@ -269,11 +284,16 @@ export function decodeLevel(code: string): LevelDef | null {
 
 function hydrate(stage: SavedStage, source: SavedStage["source"]): SavedStage {
   const def = stage.def;
+  const defs = stage.defs?.length ? stage.defs : def ? [def] : [];
+  const kind = stage.kind === "pack" || defs.length > 1 ? "pack" : "single";
   return {
     ...stage,
     author: stage.author || "Unknown",
     source: stage.source ?? source,
-    seed: stage.seed || (def ? stageId(def) : ""),
+    kind,
+    defs,
+    def: defs[0] ?? def,
+    seed: stage.seed || (kind === "pack" && defs.length ? encodePack(defs) : def ? stageId(def) : ""),
   };
 }
 
@@ -304,6 +324,8 @@ export function occupiedTileCount(def: LevelDef): number {
 
 export function parseShare(text: string, extra: SavedStage[] = []): LevelDef | null {
   const t = text.trim();
+  const pack = decodePack(t);
+  if (pack?.length) return pack[0]!;
   const compact = t.match(/BXS\.[A-Za-z0-9_-]+/);
   if (compact) {
     const def = decodeSeed(compact[0]);
@@ -317,6 +339,43 @@ export function parseShare(text: string, extra: SavedStage[] = []): LevelDef | n
     if (hit) return hit.def;
   }
   return decodeLevel(t) ?? decodeSeed(t);
+}
+
+/** Decode a single stage or an ordered pack of stages from a share code. */
+export function parseShareDefs(text: string, extra: SavedStage[] = []): LevelDef[] | null {
+  const pack = decodePack(text);
+  if (pack?.length) return pack;
+  const one = parseShare(text, extra);
+  return one ? [one] : null;
+}
+
+/** Ordered multi-stage pack code (BXP.a~b~c…). */
+export function encodePack(defs: LevelDef[]): string {
+  if (!defs.length) return "";
+  return "BXP." + defs.map((d) => encodeSeed(d).replace(/^BXS\./i, "")).join("~");
+}
+
+export function decodePack(text: string): LevelDef[] | null {
+  const trimmed = text.trim();
+  const m = /^BXP\.(.+)$/i.exec(trimmed);
+  if (!m) return null;
+  const parts = m[1].split("~").filter(Boolean);
+  if (parts.length < 2) return null;
+  const defs: LevelDef[] = [];
+  for (const part of parts) {
+    const def = decodeSeed("BXS." + part);
+    if (!def) return null;
+    defs.push(def);
+  }
+  return defs;
+}
+
+export function shareCodeFor(stage: SavedStage): string {
+  if (isPack(stage)) {
+    const defs = packDefs(stage);
+    return stage.seed?.startsWith("BXP.") ? stage.seed : encodePack(defs);
+  }
+  return stage.seed || encodeSeed(stage.def);
 }
 
 export function findBySeed(seed: string, extra: SavedStage[] = []): SavedStage | undefined {
@@ -353,11 +412,20 @@ export function listAllStages(): SavedStage[] {
 
 export function saveStage(stage: SavedStage): void {
   const key = stage.source === "downloaded" ? DOWNLOADED : STORE;
-  const all = readList(key).filter((s) => s.code !== stage.code);
+  const defs = stage.defs?.length ? stage.defs : stage.def ? [stage.def] : [];
+  const kind = stage.kind === "pack" || defs.length > 1 ? "pack" : "single";
+  const code =
+    stage.code ||
+    (kind === "pack" ? encodePack(defs) : stage.seed || (stage.def ? stageId(stage.def) : String(Date.now())));
+  const all = readList(key).filter((s) => s.code !== code);
   all.unshift({
     ...stage,
+    code,
+    kind,
+    defs,
+    def: defs[0] ?? stage.def,
     source: stage.source ?? "local",
-    seed: stage.seed || stageId(stage.def),
+    seed: stage.seed || (kind === "pack" ? encodePack(defs) : stageId(defs[0] ?? stage.def)),
   });
   writeList(key, all);
 }

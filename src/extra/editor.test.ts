@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { occupiedCells, boardScreen, clipForTile, pickBoardCell } from "./coolmathBoard";
-import { emptyDraft, encodeLevel, decodeLevel, encodeSeed, decodeSeed, isPlayable, occupiedTileCount, parseShare, setTile, shareFromLocation, stageId } from "./customLevels";
+import { emptyDraft, encodeLevel, decodeLevel, encodePack, encodeSeed, decodePack, decodeSeed, isPack, isPlayable, occupiedTileCount, parseShare, parseShareDefs, setTile, shareFromLocation, stageId } from "./customLevels";
 import type { LevelDef } from "./types";
 import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
 import { Stage } from "./engine";
@@ -182,6 +182,24 @@ describe("reverse seeds", () => {
     paintEditorCell(def, 3, 4, state);
     paintEditorCell(def, 5, 4, state);
     expect(solveLevel(def, 80_000).ok).toBe(true);
+  });
+});
+
+describe("stage packs", () => {
+  it("round-trips an ordered pack code and marks packs", () => {
+    const a = emptyDraft();
+    const b = emptyDraft();
+    setTile(b, 3, 4, "b");
+    b.spawn = [3, 4];
+    const code = encodePack([a, b]);
+    expect(code.startsWith("BXP.")).toBe(true);
+    const back = decodePack(code);
+    expect(back).toHaveLength(2);
+    expect(back?.[0]?.tiles).toEqual(a.tiles);
+    expect(back?.[1]?.spawn).toEqual([3, 4]);
+    expect(parseShareDefs(code)).toHaveLength(2);
+    expect(parseShare(code)?.tiles).toEqual(a.tiles);
+    expect(isPack({ name: "p", author: "x", code, seed: code, def: a, defs: [a, b], kind: "pack" })).toBe(true);
   });
 });
 

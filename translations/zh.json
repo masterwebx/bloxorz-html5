@@ -282,5 +282,22 @@
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
   "settings.blockHue": "Block hue",
-  "seeded.endless": "无尽"
+  "seeded.endless": "无尽",
+  "settings.manageSave": "Manage save data",
+  "settings.delete": "Delete Data",
+  "settings.deleteHint": "Clears campaign progress, settings, and custom stages on this device.",
+  "settings.deleteSure1": "Delete all save data on this device?",
+  "settings.deleteSure2": "Really delete everything? This cannot be undone.",
+  "settings.deleteSure3": "Last chance — really really sure?",
+  "settings.deleteDone": "Save data deleted",
+  "gauntlet.difficulty": "Difficulty",
+  "touch.switch": "SWITCH",
+  "creator.share": "Share",
+  "creator.copied": "Copied to clipboard",
+  "creator.createPack": "Create stage pack",
+  "creator.packHint": "Select stages in order ({n} chosen).",
+  "creator.packName": "Pack ({n})",
+  "creator.packSaved": "Stage pack saved",
+  "creator.kindSingle": "Single",
+  "creator.kindPack": "Pack"
 }

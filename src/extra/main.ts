@@ -4,16 +4,22 @@ import {
   decodeSeed,
   deleteStage,
   emptyDraft,
+  encodePack,
   encodeSeed,
   findBySeed,
+  isPack,
   isPlayable,
   listSaved,
   occupiedTileCount,
+  packDefs,
   parseShare,
+  parseShareDefs,
   saveStage,
+  shareCodeFor,
   shareFromLocation,
   stageId,
   tileChar,
+  type SavedStage,
 } from "./customLevels";
 import { createJsToDef, defToCreateJs } from "./convert";
 import {
@@ -28,7 +34,9 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { blitHueRects, collectBlockFrameIndexes, wrapHue, type AtlasRect } from "./hue";
+import { blitHueRects, collectBlockFrameIndexes, needsBlockHueBake, wrapHue, type AtlasRect } from "./hue";
+import { displayMoveCount, focusedSelectIndex } from "./bridgeSync";
+import { applySaveBackup, buildSaveBackup, clearSaveData, parseSaveBackup } from "./saveBackup";
 import { armStageTitleClip, freezeStageTitleClip, pinStageTitleClip, stageTitleShouldArm, stageTitleShouldFreeze, type StageTitleClip } from "./stageTitle";
 import {
   loadFinishedStages,
@@ -57,6 +65,7 @@ import {
   saveSettings,
   setMobilePad,
   setRotateScreen,
+  updateSettings,
   type Action,
   type ThemeId,
 } from "./settings";
@@ -76,7 +85,6 @@ import {
   themeMenuItems,
 } from "./themePack";
 import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
-import { applySaveBackup, buildSaveBackup, parseSaveBackup } from "./saveBackup";
 import { clearTheme3d, syncTheme3d } from "./theme3d";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playStageSting, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
@@ -126,6 +134,8 @@ type Screen =
   | "creator-edit"
   | "creator-manage"
   | "creator-saved"
+  | "creator-pack"
+  | "settings-save"
   | "puzzles"
   | "puzzles-seeded"
   | "puzzles-gauntlet"
@@ -375,6 +385,9 @@ let atlasRects: AtlasRect[] | null = null;
 let atlasCanvas: HTMLCanvasElement | null = null;
 let atlasOriginal: HTMLCanvasElement | null = null;
 let bakedHue = -1;
+let hueBlitPending = false;
+let deleteSaveStep = 0;
+let packOrder: string[] = [];
 let beatBanner = "";
 let autoSolve = false;
 let solveTape: TapeCmd[] = [];
@@ -572,11 +585,21 @@ function clearPlayBlockHueFilters(): void {
   }
 }
 
-let hueBlitPending = false;
 function applyBlockHue(force = false): void {
   const hue = liveBlockHue();
-  if (!force && atlasRects && atlasOriginal && atlasCanvas && bakedHue >= 0 && hue === bakedHue) return;
+  const hasAtlas = !!(atlasRects && atlasOriginal && atlasCanvas);
+  if (!force && !needsBlockHueBake(hue, bakedHue, hasAtlas)) return;
   if (!atlasRects || !atlasCanvas || !atlasOriginal) {
+    // Defer the expensive first atlas collect off the critical path unless forced.
+    if (!force && typeof requestAnimationFrame === "function") {
+      if (hueBlitPending) return;
+      hueBlitPending = true;
+      requestAnimationFrame(() => {
+        hueBlitPending = false;
+        applyBlockHue(true);
+      });
+      return;
+    }
     const atlas = collectBlockAtlas();
     if (!atlas) return;
     atlasRects = atlas.rects;
@@ -1015,6 +1038,11 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   if (templateBtn) templateBtn.textContent = t("settings.template");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
   if (tintColor) {
+    // Single swatch next to the Backdrop tint label (no slider duplicate).
+    tintColor.style.left = "28%";
+    tintColor.style.top = "76.2%";
+    tintColor.style.width = "4.2%";
+    tintColor.style.height = "4.4%";
     tintColor.value = hueToHex(loadSettings().bgHue);
     tintColor.title = t("settings.tint");
   }
@@ -1134,13 +1162,14 @@ function bindSettingsChrome(): void {
   });
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   tintColor?.addEventListener("input", () => {
-    const s = loadSettings();
-    s.bgHue = hexToHue(tintColor.value);
-    saveSettings(s);
+    updateSettings((s) => {
+      s.bgHue = hexToHue(tintColor.value);
+      if (s.bgTint < 0.2) s.bgTint = 0.55;
+    });
     applyLooks();
-    markHudDirty();
-    paintHud();
+    scheduleHudPaint();
   });
+  tintColor?.addEventListener("click", (ev) => ev.stopPropagation());
   manage?.addEventListener("click", (ev) => {
     const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-id]")?.dataset.id;
     if (!id) return;
@@ -1394,8 +1423,9 @@ function placePauseStats(el: HTMLElement | null, node: OverlayNode | undefined, 
   const localY = b?.y ?? 0;
   const { sx, sy } = stageScale();
   const p = node.localToGlobal(localX, localY);
-  el.style.left = (p.x / sx / 550) * 100 + "%";
-  el.style.top = (p.y / sy / 300) * 100 + "%";
+  // Nudge HD pause stats down/right inside the black panel.
+  el.style.left = (p.x / sx / 550) * 100 + 1.4 + "%";
+  el.style.top = (p.y / sy / 300) * 100 + 1.8 + "%";
   el.style.transform = "none";
 }
 
@@ -1482,7 +1512,8 @@ function syncPlayChrome(on: boolean): void {
   }
   const world = window.stage?.bloxWorld as { moves?: number; background?: { menuButton?: { dispatchEvent?: (ev: unknown) => void } } } | undefined;
   const stageNo = window.stage?.levelNumber ?? 0;
-  const moves = (world?.moves ?? 0) + (window.stage?.totalMoves ?? 0);
+  const accumulate = !!playSession && keepRunTotals(playSession);
+  const moves = displayMoveCount(world?.moves ?? 0, window.stage?.totalMoves ?? 0, accumulate);
   const code = playSession?.defs[Math.max(0, stageNo - 1)]?.code || playDef()?.code || "";
   const classic = isClassicPlayHud();
   const classicFirst = !!playSession?.classicRun && playSession.kind === "campaign" && stageNo === 1;
@@ -1678,20 +1709,31 @@ function syncSelectPrompt(on: boolean): void {
   const el = $("play-select");
   if (!el) return;
   const hd = on && usesHdType();
-  let live: OverlayNode | undefined;
-  for (const block of playBlocks()) {
-    walkNodes(block, (node) => {
-      const sel = node.select;
-      if (!sel) return;
-      if (hd && !live && !sel._off && (sel.currentFrame ?? 0) > 0) live = sel;
-    });
-  }
   if (!hd) {
     el.hidden = true;
     return;
   }
+  const blocks = playBlocks();
+  const world = window.stage?.bloxWorld as { keys?: { focusIndex?: number } } | undefined;
+  const focus = focusedSelectIndex(blocks.length, world?.keys?.focusIndex);
+  let live: OverlayNode | undefined;
+  if (focus >= 0) {
+    const block = blocks[focus];
+    if (block) {
+      walkNodes(block, (node) => {
+        const sel = node.select;
+        if (!sel) return;
+        if (!sel._off && (sel.currentFrame ?? 0) > 0) live = sel;
+      });
+      if (!live) {
+        walkNodes(block, (node) => {
+          if (!live && node.select) live = node.select;
+        });
+      }
+    }
+  }
   el.textContent = t("play.select");
-  if (!live?.localToGlobal) {
+  if (!live?.localToGlobal || blocks.length <= 1) {
     el.hidden = true;
     return;
   }
@@ -1811,7 +1853,6 @@ function wrapGetLevels(): void {
 function keepRunTotals(session: PlaySession): boolean {
   return (
     session.card === "gauntlet" ||
-    (session.card === "seeded" && session.defs.length > 1) ||
     (!!session.classicRun && session.kind === "campaign" && !session.defs.length)
   );
 }
@@ -2032,12 +2073,17 @@ function navItems(): NavItem[] {
       { id: "toggle-webcam" },
       { id: "toggle-tab-cast" },
       ...(s.tabCastBg ? [{ id: "tab-crop" }] : []),
-      { id: "bgtint", adjust: (d) => handleHudAction("bgtint:" + clampStep(s.bgTint, d * 0.1, 0, 1).toFixed(2)) },
+      { id: "bgtint", adjust: () => ($("hud-bg-color") as HTMLInputElement | null)?.click() },
       { id: "blockhue", adjust: (d) => handleHudAction("blockhue:" + String(clampStep(s.blockHue, d * 12, 0, 360))) },
       { id: "remap" },
-      { id: "export-save" },
-      { id: "import-save" },
+      { id: "settings-save" },
     ];
+  }
+  if (extraView === "settings-save") {
+    if (deleteSaveStep > 0) {
+      return [{ id: "settings" }, { id: "delete-save-yes" }, { id: "delete-save-no" }];
+    }
+    return [{ id: "settings" }, { id: "export-save" }, { id: "import-save" }, { id: "delete-save" }];
   }
   if (extraView === "remap") {
     return [{ id: "settings" }, ...ACTIONS.map((id) => ({ id: "rebind:" + id }))];
@@ -2099,9 +2145,20 @@ function navItems(): NavItem[] {
     rows.forEach((_, i) => {
       const idx = listScroll + i;
       items.push({ id: prefix + idx });
+      items.push({ id: "share:" + idx });
       if (extraView === "creator-manage") items.push({ id: "delete:" + idx });
     });
+    if (extraView === "creator-manage") items.push({ id: "creator-pack" });
     return items;
+  }
+  if (extraView === "creator-pack") {
+    const singles = listSaved().filter((row) => !isPack(row));
+    const rows = singles.slice(listScroll, listScroll + LIST_PAGE);
+    return [
+      { id: "creator-manage" },
+      ...rows.map((_, i) => ({ id: "pack-toggle:" + (listScroll + i) })),
+      { id: "pack-save", disabled: packOrder.length < 2 },
+    ];
   }
   if (extraView === "creator-edit") {
     const issue = isPlayable(draft);
@@ -2357,6 +2414,8 @@ function hudKey(): string {
     gauntletSeed,
     draftName,
     String(listScroll),
+    String(deleteSaveStep),
+    packOrder.join(","),
     `${editCursor.x},${editCursor.y}`,
     paint.tool,
     paint.hint,
@@ -2433,6 +2492,8 @@ function paintHud(): void {
     });
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
     placeSettingsChrome(true);
+  } else if (extraView === "settings-save") {
+    hud.drawSaveData(deleteSaveStep);
   } else if (extraView === "remap") {
     hud.drawRemap(
       ACTIONS.map((id) => ({
@@ -2460,7 +2521,7 @@ function paintHud(): void {
     placeHudInput(true, "7.3%", "29.5%", "51%", t("puzzles.seed"), puzzleSeed, 24);
   } else if (extraView === "puzzles-gauntlet") {
     hud.drawGauntlet(puzzleDiff, gauntletCount);
-    placeHudInput(true, "7.3%", "58%", "51%", t("puzzles.seed"), gauntletSeed, 24);
+    placeHudInput(true, "7.3%", "62%", "51%", t("puzzles.seed"), gauntletSeed, 24);
   } else if (extraView === "history") {
     const all = loadFinishedStages();
     const maxScroll = Math.max(0, all.length - LIST_HISTORY);
@@ -2532,7 +2593,9 @@ function paintHud(): void {
         return {
           title: row.name,
           meta: row.author + " · " + row.seed,
+          kind: t(isPack(row) ? "creator.kindPack" : "creator.kindSingle"),
           openId: (extraView === "creator-manage" ? "manage:" : "saved:") + idx,
+          shareId: "share:" + idx,
           deleteId: extraView === "creator-manage" ? "delete:" + idx : undefined,
         };
       }),
@@ -2541,6 +2604,29 @@ function paintHud(): void {
       scroll: listScroll,
       total: all.length,
       pageSize: LIST_PAGE,
+      footerId: extraView === "creator-manage" ? "creator-pack" : undefined,
+      footerLabel: extraView === "creator-manage" ? t("creator.createPack") : undefined,
+    });
+  } else if (extraView === "creator-pack") {
+    const singles = listSaved().filter((row) => !isPack(row));
+    const maxScroll = Math.max(0, singles.length - LIST_PAGE);
+    if (listScroll > maxScroll) listScroll = maxScroll;
+    const page = singles.slice(listScroll, listScroll + LIST_PAGE);
+    hud.drawPackBuilder({
+      rows: page.map((row, i) => {
+        const idx = listScroll + i;
+        const ord = packOrder.indexOf(row.code) + 1;
+        return {
+          title: row.name,
+          meta: row.author + " · " + row.seed,
+          toggleId: "pack-toggle:" + idx,
+          ord,
+        };
+      }),
+      scroll: listScroll,
+      total: singles.length,
+      pageSize: LIST_PAGE,
+      selected: packOrder.length,
     });
   } else if (extraView === "creator-edit") {
     const issue = isPlayable(draft);
@@ -2567,7 +2653,9 @@ function openPanel(name: Screen): void {
   lastHudPaint = "";
   if (name === "home") animateHome = true;
   if (name === "load") loadError = "";
-  if (name === "creator-manage" || name === "creator-saved" || name === "history" || name === "achievements" || name === "records") listScroll = 0;
+  if (name === "creator-manage" || name === "creator-saved" || name === "creator-pack" || name === "history" || name === "achievements" || name === "records") listScroll = 0;
+  if (name === "creator-pack") packOrder = [];
+  if (name === "settings-save") deleteSaveStep = 0;
   if (name === "creator-edit") {
     editCursor = { x: draft.spawn[0], y: draft.spawn[1] };
     editorPaintHeld = false;
@@ -2735,12 +2823,20 @@ function goBack(): void {
     openPanel("settings");
     return;
   }
+  if (extraView === "settings-save") {
+    openPanel("settings");
+    return;
+  }
   if (extraView === "creator-edit") {
     openPanel("creator");
     return;
   }
   if (extraView === "creator-make" || extraView === "creator-play") {
     openPanel("creator");
+    return;
+  }
+  if (extraView === "creator-pack") {
+    openPanel("creator-manage");
     return;
   }
   if (extraView === "creator-manage" || extraView === "creator-saved") {
@@ -3037,6 +3133,31 @@ function handleHudAction(act: string): void {
     void exportSaveFile();
   } else if (act === "import-save") {
     ($("hud-save-import") as HTMLInputElement | null)?.click();
+  } else if (act === "settings-save") {
+    deleteSaveStep = 0;
+    openPanel("settings-save");
+  } else if (act === "delete-save") {
+    deleteSaveStep = 1;
+    markHudDirty();
+    paintHud();
+  } else if (act === "delete-save-yes") {
+    if (deleteSaveStep < 3) {
+      deleteSaveStep += 1;
+      markHudDirty();
+      paintHud();
+      return;
+    }
+    void clearSaveData().then(() => {
+      deleteSaveStep = 0;
+      refreshNameCache();
+      applyLooks();
+      showCopyToast(t("settings.deleteDone"));
+      openPanel("settings");
+    });
+  } else if (act === "delete-save-no") {
+    deleteSaveStep = 0;
+    markHudDirty();
+    paintHud();
   } else if (act === "toggle-seeded-endless") {
     seededEndless = !seededEndless;
     markHudDirty();
@@ -3073,9 +3194,9 @@ function handleHudAction(act: string): void {
     applyLooks();
     scheduleHudPaint();
   } else if (act.startsWith("blockhue:")) {
-    const s = loadSettings();
-    s.blockHue = Number(act.slice(9));
-    saveSettings(s);
+    updateSettings((s) => {
+      s.blockHue = Number(act.slice(9));
+    }, 160);
     applyBlockHue();
     scheduleHudPaint();
   } else if (act.startsWith("theme:")) {
@@ -3159,6 +3280,10 @@ function handleHudAction(act: string): void {
   } else if (act.startsWith("manage:")) {
     const row = listSaved()[Number(act.slice(7))];
     if (!row) return;
+    if (isPack(row)) {
+      playSavedPack(row, "creator-manage");
+      return;
+    }
     draft = structuredClone(row.def);
     draftName = row.name || "Untitled";
     beaten = true;
@@ -3167,7 +3292,51 @@ function handleHudAction(act: string): void {
     openPanel("creator-edit");
   } else if (act.startsWith("saved:")) {
     const row = listSaved()[Number(act.slice(6))];
-    if (row) playSavedStage(row, "creator-saved");
+    if (row) {
+      if (isPack(row)) playSavedPack(row, "creator-saved");
+      else playSavedStage(row, "creator-saved");
+    }
+  } else if (act.startsWith("share:")) {
+    const row = listSaved()[Number(act.slice(6))];
+    if (!row) return;
+    const code = shareCodeFor(row);
+    void navigator.clipboard?.writeText(code).catch(() => undefined);
+    noteCopiedSeed();
+    showCopyToast(t("creator.copied"));
+  } else if (act === "creator-pack") {
+    packOrder = [];
+    openPanel("creator-pack");
+  } else if (act.startsWith("pack-toggle:")) {
+    const singles = listSaved().filter((row) => !isPack(row));
+    const row = singles[Number(act.slice(12))];
+    if (!row) return;
+    const i = packOrder.indexOf(row.code);
+    if (i >= 0) packOrder.splice(i, 1);
+    else packOrder.push(row.code);
+    markHudDirty();
+    paintHud();
+  } else if (act === "pack-save") {
+    const singles = listSaved().filter((row) => !isPack(row));
+    const defs = packOrder
+      .map((code) => singles.find((row) => row.code === code)?.def)
+      .filter((d): d is LevelDef => !!d)
+      .map((d) => structuredClone(d));
+    if (defs.length < 2) return;
+    const code = encodePack(defs);
+    const pack: SavedStage = {
+      name: t("creator.packName", { n: defs.length }),
+      author: getName() || "BLOX",
+      code,
+      seed: code,
+      def: defs[0]!,
+      defs,
+      kind: "pack",
+      source: "local",
+    };
+    saveStage(pack);
+    noteSaved();
+    showCopyToast(t("creator.packSaved"));
+    openPanel("creator-manage");
   } else if (act.startsWith("delete:")) {
     const row = listSaved()[Number(act.slice(7))];
     if (!row) return;
@@ -3283,17 +3452,22 @@ function closeModal(): void {
   modalBox()?.classList.remove("is-open");
 }
 
-function playShareDef(def: ReturnType<typeof parseShare>, returnTo: Screen): void {
-  if (!def) return;
-  const saved = findBySeed(stageId(def), listSaved());
-  startCustom([def], returnTo, {
-    card: "custom",
-    title: saved?.name || t("play.custom"),
-    subtitle: saved?.author || "",
-    author: saved?.author,
-    entry: "code",
-    seed: encodeSeed(def),
-  });
+function playShareDef(defs: LevelDef[], returnTo: Screen, code = ""): void {
+  if (!defs.length) return;
+  const first = defs[0]!;
+  const saved = findBySeed(code || stageId(first), listSaved());
+  startCustom(
+    defs.map((d) => structuredClone(d)),
+    returnTo,
+    {
+      card: "custom",
+      title: saved?.name || (defs.length > 1 ? t("creator.kindPack") : t("play.custom")),
+      subtitle: saved?.author || "",
+      author: saved?.author,
+      entry: "code",
+      seed: code || (defs.length > 1 ? encodePack(defs) : encodeSeed(first)),
+    },
+  );
 }
 
 function submitModal(): void {
@@ -3301,14 +3475,14 @@ function submitModal(): void {
   const kind = modalKind;
   closeModal();
   if (kind === "code-play") {
-    const def = parseShare(value, listSaved());
-    if (!def) {
+    const defs = parseShareDefs(value, listSaved());
+    if (!defs?.length) {
       openPlayCodeModal();
       const titleEl = $("hud-modal-title");
       if (titleEl) titleEl.textContent = "Could not read that code.";
       return;
     }
-    playShareDef(def, "creator-play");
+    playShareDef(defs, "creator-play", value);
     return;
   }
   if (kind === "code-edit") {
@@ -3426,6 +3600,19 @@ function playSavedStage(row: { name: string; author: string; def: LevelDef }, re
     author: row.author,
     entry: "saved",
     seed: encodeSeed(row.def),
+  });
+}
+
+function playSavedPack(row: SavedStage, returnTo: Screen): void {
+  const defs = packDefs(row).map((d) => structuredClone(d));
+  if (!defs.length) return;
+  startCustom(defs, returnTo, {
+    card: "custom",
+    title: row.name || t("creator.kindPack"),
+    subtitle: row.author,
+    author: row.author,
+    entry: "saved",
+    seed: shareCodeFor(row),
   });
 }
 
@@ -4232,6 +4419,15 @@ function bind(): void {
         paintHud();
         return;
       }
+      if (extraView === "creator-pack") {
+        const max = Math.max(0, listSaved().filter((row) => !isPack(row)).length - LIST_PAGE);
+        if (!max) return;
+        ev.preventDefault();
+        listScroll = Math.max(0, Math.min(max, listScroll + (ev.deltaY > 0 ? 1 : -1)));
+        markHudDirty();
+        paintHud();
+        return;
+      }
       if (extraView !== "creator-manage" && extraView !== "creator-saved") return;
       const max = Math.max(0, listSaved().length - LIST_PAGE);
       if (!max) return;
@@ -4471,6 +4667,10 @@ function syncOverlay(): void {
       rumble(220, 0.45, 0.4);
       if (autoSolve) stopAutoSolve("");
       stageFailed = false;
+      // Seeded endless: reset move tally for each new stage in the chain.
+      if (playSession?.card === "seeded") {
+        stage.totalMoves = 0;
+      }
     }
     lastLevelNum = stage.levelNumber;
   }
@@ -4557,7 +4757,7 @@ function syncOverlay(): void {
     }
     hookWorldQuit();
     hookReplayCapture();
-    touchChrome?.sync(playing && !isPauseMenuOpen());
+    touchChrome?.sync(playing && !isPauseMenuOpen(), playBlocks().length > 1);
     if (label === "instructions") pollInstructionsPad();
     syncSidePanel(playing && !!playSession?.classicRun && playSession.entry === "start" && loadSettings().showTimer);
     applyPlayTint();
@@ -4767,6 +4967,21 @@ function showAchievementToasts(rows: AchievementDef[]): void {
   }
 }
 
+function showCopyToast(message: string): void {
+  const host = $("ach-toasts");
+  if (!host) return;
+  const el = document.createElement("div");
+  el.className = "ach-toast";
+  const title = document.createElement("b");
+  title.textContent = message;
+  el.append(title);
+  host.appendChild(el);
+  window.setTimeout(() => {
+    el.classList.add("is-out");
+    window.setTimeout(() => el.remove(), 380);
+  }, 2200);
+}
+
 export function startBloxorzShell(): void {
   window.__bloxShouldBakeFloor = shouldBakeFloor;
   window.__bloxShouldSkipSpawn = shouldSkipTileSpawn;
@@ -4885,7 +5100,10 @@ export function startBloxorzShell(): void {
   parkCreateJsMenu();
   setMouseOverRate(5);
   applyLooks();
-  applyBlockHue();
+  // Lazy block-hue bake: skip boot hitch when hue is still default.
+  if (liveBlockHue() !== 0) {
+    window.setTimeout(() => applyBlockHue(), 0);
+  }
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) {

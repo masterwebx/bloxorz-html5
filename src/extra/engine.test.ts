@@ -174,6 +174,17 @@ describe("bridges and switches", () => {
     expect(nextBridge(false, "off")).toBe(false);
   });
 
+  it("treats a deactivated bridge as not solid", () => {
+    const stage = new Stage(mini(["bbbbl"]));
+    const bridge = stage.bridgeAt(4, 0);
+    expect(bridge?.on).toBe(false);
+    expect(stage.isSolid(4, 0, true)).toBe(false);
+    if (bridge) bridge.on = true;
+    expect(stage.isSolid(4, 0, true)).toBe(true);
+    if (bridge) bridge.on = false;
+    expect(stage.isSolid(4, 0, true)).toBe(false);
+  });
+
   it("lets a soft switch toggle a bridge from a lying block", () => {
     const def = mini(["sbbbl"], [2, 0], {
       switches: [{ x: 0, y: 0, bridges: [{ x: 4, y: 0, mode: "onoff" }] }],

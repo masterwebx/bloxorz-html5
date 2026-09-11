@@ -139,6 +139,29 @@ export function saveSettings(s: Settings): void {
   localStorage.setItem(KEY, JSON.stringify(s));
 }
 
+let settingsWriteTimer = 0;
+
+/** Mutate cached settings and optionally debounce the localStorage write. */
+export function updateSettings(mut: (s: Settings) => void, flushMs = 0): Settings {
+  const s = loadSettings();
+  mut(s);
+  settingsCache = s;
+  if (flushMs <= 0) {
+    localStorage.setItem(KEY, JSON.stringify(s));
+    return s;
+  }
+  if (typeof window === "undefined") {
+    localStorage.setItem(KEY, JSON.stringify(s));
+    return s;
+  }
+  if (settingsWriteTimer) window.clearTimeout(settingsWriteTimer);
+  settingsWriteTimer = window.setTimeout(() => {
+    settingsWriteTimer = 0;
+    if (settingsCache) localStorage.setItem(KEY, JSON.stringify(settingsCache));
+  }, flushMs);
+  return s;
+}
+
 export function setMobilePad(on: boolean): Settings {
   const s = loadSettings();
   s.mobilePad = on;

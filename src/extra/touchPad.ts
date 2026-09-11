@@ -29,8 +29,16 @@ export function padDirToCode(dir: TouchDir, rotated: boolean): string {
   return DIR_CODE[rotated ? ROTATED_DIR[dir] : dir];
 }
 
-export function swapPadLabel(playing: boolean): string {
-  return playing ? t("touch.split") : t("touch.ok");
+/** Menu uses OK; in-play swap is Switch and only meaningful once already split. */
+export function swapPadLabel(playing: boolean, canSwitch = false): string {
+  if (!playing) return t("touch.ok");
+  return canSwitch ? t("touch.switch") : t("touch.ok");
+}
+
+export function showSwapPad(playing: boolean, canSwitch: boolean, creator: boolean): boolean {
+  if (creator) return true;
+  if (!playing) return true;
+  return canSwitch;
 }
 
 export function padMenuLabel(playing: boolean): string {
@@ -91,6 +99,7 @@ export class TouchChrome {
   private held = new Map<number, Held>();
   private deferred: { prompt: () => Promise<void> } | null = null;
   private playing = false;
+  private canSwitch = false;
   private settling = false;
   private viewportTimer = 0;
   private handlers: TouchPadHandlers = {
@@ -129,8 +138,9 @@ export class TouchChrome {
     }, 180);
   }
 
-  sync(playing?: boolean): void {
+  sync(playing?: boolean, canSwitch?: boolean): void {
     if (typeof playing === "boolean") this.playing = playing;
+    if (typeof canSwitch === "boolean") this.canSwitch = canSwitch;
     const enabled = loadSettings().mobilePad;
     const phone = isPhoneViewport();
     const portrait = isPortrait();
@@ -147,8 +157,12 @@ export class TouchChrome {
     const creator = document.body.classList.contains("is-creator-edit");
     if (this.pad) {
       this.pad.hidden = !showVirtualPad(enabled);
-      const swap = this.pad.querySelector(".tp-swap");
-      if (swap) swap.textContent = creator ? t("touch.paint") : swapPadLabel(this.playing);
+      const swap = this.pad.querySelector(".tp-swap") as HTMLElement | null;
+      if (swap) {
+        const show = showSwapPad(this.playing, this.canSwitch, creator);
+        swap.hidden = !show;
+        swap.textContent = creator ? t("touch.paint") : swapPadLabel(this.playing, this.canSwitch);
+      }
       const menu = this.pad.querySelector(".tp-menu");
       if (menu) menu.textContent = padMenuLabel(this.playing);
       const rotateBtn = this.pad.querySelector(".tp-rotate");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { looksLikeMobile, padDirToCode, padMenuLabel, showVirtualPad, swapPadLabel } from "./touchPad";
+import { looksLikeMobile, padDirToCode, padMenuLabel, showSwapPad, showVirtualPad, swapPadLabel } from "./touchPad";
 
 describe("virtual pad visibility", () => {
   it("shows the pad whenever mobile controls are on", () => {
@@ -14,9 +14,14 @@ describe("virtual pad visibility", () => {
 });
 
 describe("virtual pad labels and rotate map", () => {
-  it("uses OK in menus and SPLIT in a live stage", () => {
+  it("uses OK in menus and Switch only when a live stage is already split", () => {
     expect(swapPadLabel(false)).toBe("OK");
-    expect(swapPadLabel(true)).toBe("SPLIT");
+    expect(swapPadLabel(true, false)).toBe("OK");
+    expect(swapPadLabel(true, true)).toBe("SWITCH");
+    expect(showSwapPad(true, false, false)).toBe(false);
+    expect(showSwapPad(true, true, false)).toBe(true);
+    expect(showSwapPad(false, false, false)).toBe(true);
+    expect(showSwapPad(true, false, true)).toBe(true);
   });
 
   it("labels the menu button BACK off-stage and PAUSE in a live stage", () => {

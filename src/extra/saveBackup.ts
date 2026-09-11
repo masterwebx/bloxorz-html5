@@ -148,3 +148,13 @@ export async function applySaveBackup(data: SaveBackup): Promise<void> {
   applyLocalSave(data.local);
   await restoreThemePacks(data.themes);
 }
+
+/** Wipe campaign + plus save keys (and optional custom theme packs). */
+export function clearLocalSave(store: Storage = localStorage): void {
+  applyLocalSave({}, store);
+}
+
+export async function clearSaveData(): Promise<void> {
+  clearLocalSave();
+  await restoreThemePacks([]);
+}

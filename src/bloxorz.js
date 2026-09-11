@@ -12048,10 +12048,11 @@
           mc.keys.code = evt.code;
           if (evt.code === "Space" && mc.blocks.length > 1) {
             mc.keys.focusIndex = (mc.keys.focusIndex + 1) % mc.blocks.length;
-            var focus = mc.blocks[mc.keys.focusIndex];
-            if (focus.select) {
-              focus.select.gotoAndPlay("select");
-            }
+            mc.blocks.forEach(function (block, i) {
+              if (!block.select) return;
+              if (i === mc.keys.focusIndex) block.select.gotoAndPlay("select");
+              else block.select.gotoAndStop(0);
+            });
           }
         };
 
@@ -12278,6 +12279,8 @@
           var idle = tileIdleFrame(tile.type, tile.door && tile.door.state);
           if (idle != null && tile.gotoAndStop) tile.gotoAndStop(idle);
         }
+        // Closed idle frames never call onChange(false); keep collision aligned with visual state.
+        if (tile.door && tile.door.onChange) tile.door.onChange(!!tile.door.state);
         tile.tickEnabled = false;
         if (tile.flasher) {
           tile.flasher.tickEnabled = false;
@@ -12856,6 +12859,8 @@
           doors.forEach(function (door) {
             if (door.type === "onoff" || (door.type === "on" && !door.targetTile.door.state) || (door.type === "off" && door.targetTile.door.state)) {
               door.targetTile.door.state = !door.targetTile.door.state;
+              // Match shadows/visuals: passable tracks state as soon as the bridge flips.
+              if (door.targetTile.door.onChange) door.targetTile.door.onChange(!!door.targetTile.door.state);
               door.targetTile.play();
               door.targetTile.flasher.gotoAndPlay(door.targetTile.door.state ? "green" : "red");
             }

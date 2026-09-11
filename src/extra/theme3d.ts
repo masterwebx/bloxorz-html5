@@ -26,6 +26,7 @@ type TileLike = {
   type?: string;
   alpha?: number;
   visible?: boolean;
+  door?: { state?: boolean };
 };
 
 type BlockLike = {
@@ -163,7 +164,12 @@ export function syncTheme3d(opts: {
   if (gc.setChildIndex && gc.numChildren != null) gc.setChildIndex(host, Math.max(0, gc.numChildren - 1));
 
   const tiles = opts.tiles ?? [];
-  const key = tiles.map((t) => `${t.type ?? ""}:${Math.round(t.x ?? 0)}:${Math.round(t.y ?? 0)}:${t.visible !== false}`).join("|");
+  const key = tiles
+    .map((t) => {
+      const doorBit = t.door ? (t.door.state ? "1" : "0") : "-";
+      return `${t.type ?? ""}:${Math.round(t.x ?? 0)}:${Math.round(t.y ?? 0)}:${t.visible !== false}:${doorBit}`;
+    })
+    .join("|");
   if (key !== lastKey) {
     lastKey = key;
     host.removeAllChildren();
@@ -172,6 +178,8 @@ export function syncTheme3d(opts: {
       tile.alpha = 0;
       if (tile.visible === false) continue;
       const ch = tile.type ?? "b";
+      // Closed bridges must disappear in the 3D overlay the same as vanilla tiles.
+      if ((ch === "l" || ch === "k" || ch === "r" || ch === "q") && tile.door && !tile.door.state) continue;
       const face = FACE[ch] ?? FACE.b;
       const s = cjsShape();
       if (!s) continue;

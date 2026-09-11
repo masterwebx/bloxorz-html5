@@ -35,6 +35,10 @@ describe("i18n", () => {
     expect(t("settings.template")).toBe("Download Template");
     expect(t("settings.templateBusy")).toBe("Downloading template…");
     expect(t("settings.blockHue")).toBe("Block hue");
+    expect(t("gauntlet.difficulty")).toBe("Difficulty");
+    expect(t("touch.switch")).toBe("SWITCH");
+    expect(t("creator.copied")).toBe("Copied to clipboard");
+    expect(t("settings.manageSave")).toBe("Manage save data");
     expect(t("settings.playTime")).toBe("Show time under moves");
     expect(t("settings.tabCast")).toBe("Cast tab background");
     expect(t("settings.stageName")).toBe("Stage name");

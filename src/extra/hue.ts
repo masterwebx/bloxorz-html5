@@ -100,6 +100,14 @@ export function atlasHueFilter(hue: number): string {
   return n ? `hue-rotate(${n}deg)` : "none";
 }
 
+/** Skip atlas collect/blit when hue is still default and nothing has been baked. */
+export function needsBlockHueBake(hue: number, bakedHue: number, hasAtlas: boolean): boolean {
+  const n = wrapHue(hue);
+  if (!n && bakedHue < 0 && !hasAtlas) return false;
+  if (hasAtlas && bakedHue >= 0 && n === bakedHue) return false;
+  return true;
+}
+
 export type AtlasRect = { x: number; y: number; width: number; height: number };
 
 type HueBlitCtx = {

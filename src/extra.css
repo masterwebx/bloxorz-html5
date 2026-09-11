@@ -253,8 +253,8 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #pause-stats {
 	position: absolute;
 	/* Fallback before the first sync; JS retargets left/top to the sliding stats clip. */
-	left: 67.7%;
-	top: 44.3%;
+	left: 69%;
+	top: 46%;
 	transform: none;
 	z-index: 14;
 	pointer-events: none;
@@ -263,6 +263,8 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	text-shadow: 0 0 0.4cqh #c45a18;
 	min-width: 11em;
 	text-align: left;
+	padding: 0.55em 0.35em 0.35em 0.7em;
+	box-sizing: border-box;
 }
 
 #pause-time,
@@ -513,14 +515,25 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #hud-bg-color {
 	position: absolute;
 	z-index: 30;
-	left: 64%;
-	top: 75.8%;
-	width: 3.2%;
-	height: 3.6%;
+	left: 28%;
+	top: 76.2%;
+	width: 4.2%;
+	height: 4.4%;
 	padding: 0;
 	border: 1px solid #c45a18;
 	background: transparent;
 	cursor: pointer;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+#hud-bg-color::-webkit-color-swatch-wrapper {
+	padding: 0;
+}
+
+#hud-bg-color::-webkit-color-swatch {
+	border: none;
+	border-radius: 0;
 }
 
 #hud-theme-manage {

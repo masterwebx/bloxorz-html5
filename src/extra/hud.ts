@@ -600,16 +600,32 @@ export class ExtraHud {
       this.add(this.act("tab-crop", `${this.focusId === "tab-crop" ? "> " : "  "}${t("settings.tabCrop")}`, 300, 210, 11, false, 180));
     }
     this.add(text(t("settings.tint"), 40, 230, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
-    this.add(slider(150, 230, 140, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
-    // Swatch sits to the right of the tint +/- so the HTML color input stays clickable.
-    this.add(swatch(352, 232, opts.bgHue, Math.max(0.35, opts.bgTint)));
+    // One clickable HTML color swatch only (no slider / no CreateJS duplicate).
     this.add(text(t("settings.blockHue"), 40, 250, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
     this.add(slider(150, 250, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
     this.add(swatch(330, 252, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
     this.placePreview(392, 210, opts.blockHue);
     this.add(this.act("remap", t("settings.remap"), 40, 272, 12, false, 160));
-    this.add(this.act("export-save", t("settings.export"), 200, 272, 12, false, 130));
-    this.add(this.act("import-save", t("settings.import"), 350, 272, 12, false, 160));
+    this.add(this.act("settings-save", t("settings.manageSave"), 220, 272, 12, false, 220));
+  }
+
+  drawSaveData(deleteStep = 0): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(this.act("settings", t("common.back"), 24, 12, 12, false, 80));
+    this.add(text(t("settings.manageSave"), 275, 12, 18, theme.ink, "center"));
+    this.add(this.act("export-save", t("settings.export"), 40, 80, 14, false, 220));
+    this.add(this.act("import-save", t("settings.import"), 40, 118, 14, false, 220));
+    if (deleteStep <= 0) {
+      this.add(this.act("delete-save", t("settings.delete"), 40, 156, 14, false, 220));
+      this.add(text(t("settings.deleteHint"), 40, 210, 11, theme.muted));
+    } else {
+      const prompts = [t("settings.deleteSure1"), t("settings.deleteSure2"), t("settings.deleteSure3")];
+      this.add(text(prompts[Math.min(2, deleteStep - 1)]!, 40, 156, 13, theme.hot));
+      this.add(this.act("delete-save-yes", t("common.continue"), 40, 200, 14, false, 160));
+      this.add(this.act("delete-save-no", t("common.cancel"), 220, 200, 14, false, 120));
+    }
   }
 
   drawRemap(rows: { id: string; label: string; bind: string }[], waiting: string | null): void {
@@ -703,18 +719,19 @@ export class ExtraHud {
     const theme = paint();
     this.add(this.act("puzzles", t("common.back"), 24, 16, 12, false, 80));
     this.add(text(t("gauntlet.title"), 275, 28, 20, theme.ink, "center"));
+    this.add(text(t("gauntlet.difficulty"), 40, 56, 12, theme.muted));
     (["easy", "medium", "hard", "insane"] as const).forEach((d, i) => {
       const mark = d === diff ? "> " : "  ";
-      this.add(this.act("diff:" + d, mark + t("diff." + d), 40 + i * 120, 68, 13, false, 100));
+      this.add(this.act("diff:" + d, mark + t("diff." + d), 40 + i * 120, 78, 13, false, 100));
     });
-    this.add(text(t("gauntlet.stages"), 40, 98, 12, theme.muted));
+    this.add(text(t("gauntlet.stages"), 40, 112, 12, theme.muted));
     ([5, 10, 15, 33] as const).forEach((n, i) => {
       const mark = n === count ? "> " : "  ";
-      this.add(this.act("glen:" + n, mark + String(n), 40 + i * 70, 118, 13, false, 56));
+      this.add(this.act("glen:" + n, mark + String(n), 40 + i * 70, 132, 13, false, 56));
     });
-    this.add(text(t("gauntlet.seed"), 40, 156, 12, theme.muted));
-    this.add(fieldBox(40, 174, 280));
-    this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 214, 14, false, 180));
+    this.add(text(t("gauntlet.seed"), 40, 168, 12, theme.muted));
+    this.add(fieldBox(40, 186, 280));
+    this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 226, 14, false, 180));
   }
 
   drawTitleCard(title: string, subtitle = ""): void {
@@ -784,12 +801,14 @@ export class ExtraHud {
 
   drawCreatorList(opts: {
     title: string;
-    rows: { title: string; meta: string; openId: string; deleteId?: string }[];
+    rows: { title: string; meta: string; openId: string; deleteId?: string; shareId?: string; kind?: string }[];
     empty: string;
     backId: string;
     scroll: number;
     total: number;
     pageSize: number;
+    footerId?: string;
+    footerLabel?: string;
   }): void {
     this.clear();
     this.hideMascot();
@@ -798,18 +817,65 @@ export class ExtraHud {
     this.add(text(opts.title, 275, 18, 18, theme.ink, "center"));
     if (!opts.rows.length) {
       this.add(text(opts.empty, 40, 80, 12, theme.muted));
+      if (opts.footerId && opts.footerLabel) {
+        this.add(this.act(opts.footerId, opts.footerLabel, 40, 250, 13, false, 240));
+      }
       return;
     }
     opts.rows.forEach((row, i) => {
       const y = 48 + i * 38;
-      this.add(this.act(row.openId, row.title || "Untitled", 40, y, 13, false, 300));
-      this.add(text(row.meta, 40, y + 18, 10, theme.muted));
-      if (row.deleteId) this.add(this.act(row.deleteId, t("creator.delete"), 420, y, 13, false, 96));
+      const kind = row.kind ? ` · ${row.kind}` : "";
+      this.add(this.act(row.openId, row.title || "Untitled", 40, y, 13, false, 250));
+      this.add(text(row.meta + kind, 40, y + 18, 10, theme.muted));
+      if (row.shareId) this.add(this.act(row.shareId, t("creator.share"), 310, y, 12, false, 72));
+      if (row.deleteId) this.add(this.act(row.deleteId, t("creator.delete"), 400, y, 12, false, 80));
     });
+    if (opts.footerId && opts.footerLabel) {
+      this.add(this.act(opts.footerId, opts.footerLabel, 40, 250, 13, false, 240));
+    }
     if (opts.total > opts.pageSize) {
-      const trackH = 210;
+      const trackH = 190;
       const trackX = 528;
       const trackY = 50;
+      const bar = new createjs.Shape();
+      bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
+      const thumbH = Math.max(18, trackH * (opts.pageSize / opts.total));
+      const max = Math.max(1, opts.total - opts.pageSize);
+      const thumbY = trackY + (trackH - thumbH) * (opts.scroll / max);
+      bar.graphics.beginFill(theme.fill).drawRect(trackX, thumbY, 6, thumbH);
+      bar.mouseEnabled = false;
+      this.add(bar);
+    }
+  }
+
+  drawPackBuilder(opts: {
+    rows: { title: string; meta: string; toggleId: string; ord: number }[];
+    scroll: number;
+    total: number;
+    pageSize: number;
+    selected: number;
+  }): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(this.act("creator-manage", t("common.back"), 24, 16, 12, false, 80));
+    this.add(text(t("creator.createPack"), 275, 18, 18, theme.ink, "center"));
+    this.add(text(t("creator.packHint", { n: opts.selected }), 40, 42, 11, theme.muted));
+    if (!opts.rows.length) {
+      this.add(text(t("creator.empty"), 40, 90, 12, theme.muted));
+      return;
+    }
+    opts.rows.forEach((row, i) => {
+      const y = 68 + i * 36;
+      const mark = row.ord > 0 ? `${row.ord}. ` : "  ";
+      this.add(this.act(row.toggleId, mark + (row.title || "Untitled"), 40, y, 13, false, 360));
+      this.add(text(row.meta, 40, y + 16, 10, theme.muted));
+    });
+    this.add(this.act("pack-save", t("common.save"), 40, 250, 14, opts.selected < 2, 140));
+    if (opts.total > opts.pageSize) {
+      const trackH = 160;
+      const trackX = 528;
+      const trackY = 68;
       const bar = new createjs.Shape();
       bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
       const thumbH = Math.max(18, trackH * (opts.pageSize / opts.total));
@@ -877,13 +943,14 @@ export class ExtraHud {
     EDITOR_TOOLS.forEach((tool, i) => {
       const col = pad ? i % 2 : i < 6 ? 0 : 1;
       const row = pad ? Math.floor(i / 2) : i < 6 ? i : i - 6;
-      const x = pad ? 372 + col * 86 : 372 + col * 88;
+      // Push columns left and widen the gap so Link Switch isn't clipped.
+      const x = pad ? 348 + col * 98 : 348 + col * 102;
       const y = pad ? 28 + row * 26 : 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
       const icon = this.toolClip(tool.id, x, y);
       this.add(icon);
       const label = t("editor." + tool.id);
-      this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, pad ? 9 : 11, false, pad ? 80 : col === 0 ? 104 : 88));
+      this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, pad ? 9 : 11, false, pad ? 90 : col === 0 ? 110 : 100));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, pad ? 214 : 236, 10, theme.muted));
@@ -943,8 +1010,10 @@ export class ExtraHud {
       else drawBoardCell(mesh, cell.x, cell.y, cell.ch);
     }
     const spawn = boardScreen(opts.spawn[0], opts.spawn[1]);
-    const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]) || spawnMarker(spawn.x, spawn.y);
-    this.board.addChild(block);
+    // Always show an obvious spawn marker; the Block clip alone blends into stone.
+    const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]);
+    if (block) this.board.addChild(block);
+    this.board.addChild(spawnMarker(spawn.x, spawn.y));
     for (const mark of opts.marks) {
       const p = boardScreen(mark.x, mark.y);
       this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
@@ -952,7 +1021,12 @@ export class ExtraHud {
     if (opts.cursor) {
       const p = boardScreen(opts.cursor.x, opts.cursor.y);
       const ring = new createjs.Shape();
-      ring.graphics.beginStroke("#fff4c8").setStrokeStyle(3).beginFill("rgba(255,200,80,0.28)").drawCircle(p.x, p.y - 4, 12);
+      ring.graphics
+        .beginStroke("#ffe082")
+        .setStrokeStyle(4)
+        .beginFill("rgba(255,200,60,0.35)")
+        .drawCircle(p.x, p.y - 4, 14);
+      ring.graphics.beginStroke("#fff").setStrokeStyle(1.5).drawCircle(p.x, p.y - 4, 7);
       ring.mouseEnabled = false;
       this.board.addChild(ring);
     }
@@ -1002,6 +1076,13 @@ export class ExtraHud {
     wrap.y = y;
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
+    if (id === "spawn") {
+      const mark = spawnMarker(8, 12);
+      mark.scaleX = 0.85;
+      mark.scaleY = 0.85;
+      wrap.addChild(mark);
+      return wrap;
+    }
     const ch = TOOL_CH[id] ?? " ";
     const icon = ch === " " ? null : this.placeBoardClip(ch, 0, 0);
     if (icon) {
@@ -1041,7 +1122,8 @@ function drawBoardCell(shape: HudShape, x: number, y: number, ch: string): void 
 
 function spawnMarker(x: number, y: number): HudShape {
   const block = new createjs.Shape();
-  block.graphics.beginFill("#ff7a18").drawRect(-5, -14, 10, 16);
+  block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(1.5).drawRect(-6, -16, 12, 18);
+  block.graphics.beginFill("#ffe082").drawRect(-3, -22, 6, 6);
   block.x = x;
   block.y = y;
   block.mouseEnabled = false;

@@ -9,6 +9,7 @@ import {
   hueRotateRgb,
   isBlockSpriteName,
   makeImageData,
+  needsBlockHueBake,
   rustFaces,
   shiftingHue,
   clipHueAction,
@@ -54,6 +55,12 @@ describe("block hue bake", () => {
     expect(clipHueAction(10, 11, false)).toBe("apply");
     expect(clipHueAction(11, 11, true)).toBe("update");
     expect(clipHueAction(11, 11, false)).toBe("skip");
+  });
+
+  it("skips atlas work when hue is still default and nothing is baked", () => {
+    expect(needsBlockHueBake(0, -1, false)).toBe(false);
+    expect(needsBlockHueBake(12, -1, false)).toBe(true);
+    expect(needsBlockHueBake(12, 12, true)).toBe(false);
   });
 
   it("blits block rects with hue-rotate instead of walking pixels", () => {

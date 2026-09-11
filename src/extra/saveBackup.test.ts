@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyLocalSave, dumpLocalSave, parseSaveBackup, SAVE_BACKUP_VERSION } from "./saveBackup";
+import { applyLocalSave, clearLocalSave, dumpLocalSave, parseSaveBackup, SAVE_BACKUP_VERSION } from "./saveBackup";
 
 function memoryStore(seed: Record<string, string> = {}) {
   const data = { ...seed };
@@ -53,5 +53,19 @@ describe("save backup", () => {
     expect(() => parseSaveBackup("{}")).toThrow();
     const ok = parseSaveBackup(JSON.stringify({ v: SAVE_BACKUP_VERSION, local: { theme: "gray" }, themes: [] }));
     expect(ok.local.theme).toBe("gray");
+  });
+
+  it("clears all bloxorz save keys", () => {
+    const { data, store } = memoryStore({
+      "bloxorz-settings-v1": "{}",
+      theme: "gray",
+      level: "3",
+      other: "keep",
+    });
+    clearLocalSave(store);
+    expect(data.theme).toBeUndefined();
+    expect(data.level).toBeUndefined();
+    expect(data["bloxorz-settings-v1"]).toBeUndefined();
+    expect(data.other).toBe("keep");
   });
 });
