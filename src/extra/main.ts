@@ -44,7 +44,7 @@ import {
   type AtlasRect,
   type PackedBlockLayout,
 } from "./hue";
-import { displayMoveCount, focusedSelectIndex } from "./bridgeSync";
+import { displayMoveCount, doorsSettled, focusedSelectIndex } from "./bridgeSync";
 import { applySaveBackup, buildSaveBackup, clearSaveData, parseSaveBackup } from "./saveBackup";
 import { armStageTitleClip, freezeStageTitleClip, pinStageTitleClip, stageTitleShouldArm, stageTitleShouldFreeze, type StageTitleClip } from "./stageTitle";
 import {
@@ -3981,6 +3981,16 @@ function blocksIdle(): boolean {
   return blocks.every((b) => b.roll?.idle);
 }
 
+/** Bridges must finish open/close before auto-solve presses the next key (Stage 5 race). */
+function bridgesIdle(): boolean {
+  const world = window.stage?.bloxWorld as
+    | { tiles?: { door?: { state: boolean; passable: boolean }; tickEnabled?: boolean }[] }
+    | undefined;
+  const tiles = world?.tiles;
+  if (!tiles?.length) return true;
+  return doorsSettled(tiles);
+}
+
 function solveCmdsForCurrent(): WalkCmd[] | null {
   const def = playDef();
   if (def) {
@@ -4011,7 +4021,8 @@ function tickSolve(): void {
   if (currentLabel() !== "game") return;
   if (!stage?.triggerKeyDown) return;
   const hasBlock = playBlocks().length > 0;
-  const idle = hasBlock && blocksIdle();
+  // Wait for block AND bridge settle — Stage 5 toggles then crosses within ~2 rolls.
+  const idle = hasBlock && blocksIdle() && bridgesIdle();
   const act = tickFeeder(solveFeeder, { idle, hasBlock });
   if (act.release && solveCode) {
     stage.triggerKeyUp?.({ code: solveCode });

@@ -12357,8 +12357,10 @@
             initialState: initialDoorStates[type],
             state: initialDoorStates[type],
             passable: false,
-            onChange: function (passable) {
-              tile.door.passable = passable;
+            onChange: function (/* timelineArg */) {
+              // Timeline open/close scripts can fire the wrong bool during rapid
+              // OFF→ON toggles; collision always follows logical door.state.
+              tile.door.passable = !!tile.door.state;
             },
           };
         }
@@ -12856,20 +12858,31 @@
 
         _.switchDoors = function (doors) {
           uncacheFloor(_);
+          var toggled = [];
           doors.forEach(function (door) {
             if (door.type === "onoff" || (door.type === "on" && !door.targetTile.door.state) || (door.type === "off" && door.targetTile.door.state)) {
               door.targetTile.door.state = !door.targetTile.door.state;
               // Match shadows/visuals: passable tracks state as soon as the bridge flips.
               if (door.targetTile.door.onChange) door.targetTile.door.onChange(!!door.targetTile.door.state);
+              // Seek the previous idle so play() always runs the correct open/close strip
+              // (closed 32/122 → open; open 39/129 → close). Prevents Stage 5 glitches.
+              var nextOpen = !!door.targetTile.door.state;
+              var fromIdle = tileIdleFrame(door.targetTile.type, !nextOpen);
+              wakeTile(door.targetTile);
+              if (fromIdle != null && door.targetTile.gotoAndStop) door.targetTile.gotoAndStop(fromIdle);
               door.targetTile.play();
-              door.targetTile.flasher.gotoAndPlay(door.targetTile.door.state ? "green" : "red");
+              door.targetTile.flasher.gotoAndPlay(nextOpen ? "green" : "red");
+              toggled.push(door.targetTile);
             }
           });
           _.updateShadows();
+          if (!toggled.length) return;
+          var settleGen = (_.__bloxDoorSettleGen = (_.__bloxDoorSettleGen || 0) + 1);
           wait(32, function () {
             if (stage.bloxWorld !== _) return;
-            doors.forEach(function (door) {
-              restIdleTile(door.targetTile);
+            if (_.__bloxDoorSettleGen !== settleGen) return;
+            toggled.forEach(function (tile) {
+              restIdleTile(tile);
             });
             bakeFloor(_);
           });

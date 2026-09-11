@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { displayMoveCount, doorWalkableWhenSettled, focusedSelectIndex, syncDoorPassable } from "./bridgeSync";
+import {
+  displayMoveCount,
+  doorWalkableWhenSettled,
+  doorsSettled,
+  focusedSelectIndex,
+  passableFromDoorState,
+  syncDoorPassable,
+} from "./bridgeSync";
 import { needsBlockHueBake } from "./hue";
 
 describe("bridge passable sync", () => {
@@ -21,6 +28,23 @@ describe("bridge passable sync", () => {
     syncDoorPassable(door);
     expect(door.passable).toBe(true);
     expect(doorWalkableWhenSettled(door)).toBe(true);
+  });
+
+  it("ignores timeline onChange args that disagree with door.state", () => {
+    expect(passableFromDoorState(true, false)).toBe(true);
+    expect(passableFromDoorState(false, true)).toBe(false);
+    expect(passableFromDoorState(true, true)).toBe(true);
+  });
+
+  it("reports doors unsettled while passable lags state or a clip is ticking", () => {
+    expect(
+      doorsSettled([
+        { door: { state: true, passable: true }, tickEnabled: false },
+        { door: { state: false, passable: false }, tickEnabled: false },
+      ]),
+    ).toBe(true);
+    expect(doorsSettled([{ door: { state: true, passable: false }, tickEnabled: false }])).toBe(false);
+    expect(doorsSettled([{ door: { state: true, passable: true }, tickEnabled: true }])).toBe(false);
   });
 });
 
