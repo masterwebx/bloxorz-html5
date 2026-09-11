@@ -586,7 +586,8 @@ body:not(.is-settings-colors) #hud-color-slots {
 	position: absolute;
 	z-index: 32;
 	left: 58%;
-	top: 89%;
+	/* Below the "Load preset" label (~y=248); was overlapping at 89%. */
+	top: 91.5%;
 	width: 22%;
 	pointer-events: auto;
 }
@@ -610,26 +611,8 @@ body:not(.is-settings-colors) #hud-color-preset-select {
 }
 
 #attract-title {
-	position: fixed;
-	left: 50%;
-	bottom: 4.5%;
-	transform: translateX(-50%);
-	z-index: 91;
-	pointer-events: none;
-	margin: 0;
-	padding: 0 12px;
-	font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-	font-size: clamp(14px, 2.4vw, 22px);
-	font-weight: 700;
-	letter-spacing: 0.12em;
-	color: #ffe6c0;
-	text-shadow: 0 1px 0 #3a1808, 0 0 12px rgba(0, 0, 0, 0.65);
-	opacity: 0;
-	transition: opacity 0.45s ease;
-}
-
-#attract-title.is-on {
-	opacity: 1;
+	/* Legacy HTML title — attract now uses in-canvas billboard glyphs. Kept hidden. */
+	display: none !important;
 }
 
 #hud-theme-manage {

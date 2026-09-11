@@ -1,7 +1,13 @@
 /** Title-screen arcade attract (idle demo) helpers. */
 
 export const ATTRACT_IDLE_MS = 60_000;
+export const ATTRACT_IDLE_DEV_MS = 30_000;
 export const ATTRACT_FADE_MS = 700;
+
+/** Idle duration: 30s while DEV is signed in, otherwise ~1 minute. */
+export function attractIdleMs(dev: boolean): number {
+  return dev ? ATTRACT_IDLE_DEV_MS : ATTRACT_IDLE_MS;
+}
 
 /** True when the home idle clock should fire attract mode. */
 export function shouldStartAttract(opts: {
@@ -12,9 +18,10 @@ export function shouldStartAttract(opts: {
   navigating: boolean;
   alreadyAttracting: boolean;
   idleMs?: number;
+  dev?: boolean;
 }): boolean {
   if (opts.alreadyAttracting || !opts.onHome || opts.navigating) return false;
-  const need = opts.idleMs ?? ATTRACT_IDLE_MS;
+  const need = opts.idleMs ?? attractIdleMs(!!opts.dev);
   return opts.now - opts.lastInputAt >= need;
 }
 

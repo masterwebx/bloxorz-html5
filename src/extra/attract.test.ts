@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ATTRACT_IDLE_DEV_MS,
   ATTRACT_IDLE_MS,
+  attractIdleMs,
   attractTitleLabel,
   bumpAttractIdle,
   shouldStartAttract,
@@ -27,6 +29,32 @@ describe("title attract idle gate", () => {
         alreadyAttracting: false,
       }),
     ).toBe(true);
+  });
+
+  it("uses a 30s idle gate in dev", () => {
+    expect(attractIdleMs(true)).toBe(ATTRACT_IDLE_DEV_MS);
+    expect(attractIdleMs(false)).toBe(ATTRACT_IDLE_MS);
+    const t0 = 5_000;
+    expect(
+      shouldStartAttract({
+        now: t0 + ATTRACT_IDLE_DEV_MS,
+        lastInputAt: t0,
+        onHome: true,
+        navigating: false,
+        alreadyAttracting: false,
+        dev: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldStartAttract({
+        now: t0 + ATTRACT_IDLE_DEV_MS - 1,
+        lastInputAt: t0,
+        onHome: true,
+        navigating: false,
+        alreadyAttracting: false,
+        dev: true,
+      }),
+    ).toBe(false);
   });
 
   it("does not start while navigating or already attracting or off home", () => {

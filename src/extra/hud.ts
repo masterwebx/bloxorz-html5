@@ -358,7 +358,7 @@ export class ExtraHud {
     this.mascot.scaleY = 0.82;
     this.mascot.x = brandX + brandWidth + 10;
     // Sit below the billboard top edge so the spinning block isn't cropped.
-    this.mascot.y = brandY + 74;
+    this.mascot.y = brandY + 58;
     this.mascot.shadow = new createjs.Shadow("rgba(255,102,0,1)", 0, 0, 16);
     if (this.mascot.parent !== this.root) this.root.addChild(this.mascot);
   }
@@ -655,8 +655,8 @@ export class ExtraHud {
     });
     this.add(this.act("colors-reset", t("settings.resetColors"), 24, 268, 11, false, 100));
     this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 268, 11, false, 120));
-    this.add(text(t("settings.loadPreset"), 260, 268, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
-    // HTML preset dropdown is placed by placeSettingsChrome beside this label.
+    this.add(text(t("settings.loadPreset"), 260, 248, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
+    // HTML preset dropdown sits below this label (placeSettingsChrome).
 
     const tiles = colorPreviewTiles();
     const wrap = new createjs.Container();
@@ -679,12 +679,44 @@ export class ExtraHud {
         marks: [],
         colors: opts.colors,
         // Shapes while dragging / before bake; real atlas clips after bake-on-exit.
-        forceShapes: !opts.tileAtlasReady,
+        forceShapes: true, // shapes: live recolor + Bridge L/R stay correct
       });
     } catch {
       /* preview is optional */
     }
     this.add(wrap);
+  }
+
+  
+  /** Attract-mode brand as billboard glyphs inside the game screen. */
+  drawAttractTitle(label: string): void {
+    this.clear();
+    this.hideMascot();
+    const title = foldBillboard(label).slice(0, 18);
+    if (!canBillboard(title)) {
+      const theme = paint();
+      this.add(text(title || "BLOXORZ+", 275, 28, 18, theme.ink, "center"));
+      return;
+    }
+    const pitch = Math.min(4.6, 500 / (Math.max(1, title.length) * 6));
+    const width = title.length * 6 * pitch;
+    drawBillboard(this.layer, title, 275 - width / 2, 28, 500);
+  }
+
+  /** Live Customize Colors board refresh without rebuilding chrome (keeps native picker open). */
+  refreshColorPreview(colors: ColorCustom): void {
+    if (!this.board) return;
+    try {
+      this.refreshCreatorBoard({
+        tiles: colorPreviewTiles(),
+        spawn: COLOR_PREVIEW_SPAWN,
+        marks: [],
+        colors,
+        forceShapes: true,
+      });
+    } catch {
+      /* preview is optional */
+    }
   }
 
   drawSaveData(deleteStep = 0): void {

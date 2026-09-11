@@ -26,7 +26,6 @@ import {
   GAUNTLET_COUNTS,
   GAUNTLET_LEN,
   generateDaily,
-  generatePuzzle,
   generateRun,
   generateSeeded,
   utcDateLabel,
@@ -569,6 +568,7 @@ function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): HT
     canvas.height = source.naturalHeight || source.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(source, 0, 0);
   } else {
     return null;
@@ -633,6 +633,8 @@ function makeHueCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: 
   canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
+  // Nearest-neighbor — smoothed copies softens tile edges when baking into the atlas.
+  ctx.imageSmoothingEnabled = false;
   return { canvas, ctx };
 }
 
@@ -1594,6 +1596,10 @@ function bindSettingsChrome(): void {
       // Do NOT scheduleHudPaint here — paintHud would close the native picker.
       if (id === "block") scheduleBlockHueBake(120);
       else if (id === "bg") applyLooks();
+      // Live tile board preview while the native swatch is open.
+      if (extraView === "settings-colors") {
+        hud?.refreshColorPreview(loadSettings().colorCustom);
+      }
     });
     el.addEventListener("change", endSlotPick);
     el.addEventListener("blur", endSlotPick);
@@ -3182,7 +3188,11 @@ function openPanel(name: Screen): void {
   extraView = name;
   markHudDirty();
   lastHudPaint = "";
-  if (name === "home") animateHome = true;
+  if (name === "home") {
+    animateHome = true;
+    // Idle only counts on the main menu; arriving must not instantly attract.
+    noteTitleActivity();
+  }
   if (name === "load") loadError = "";
   if (name === "creator-manage" || name === "creator-saved" || name === "creator-pack" || name === "history" || name === "achievements" || name === "records") listScroll = 0;
   if (name === "creator-pack") {
@@ -4322,15 +4332,21 @@ function setAttractFade(on: boolean): void {
 }
 
 function showAttractTitle(on: boolean): void {
+  // Always clear the legacy HTML overlay so it cannot leak onto the main menu.
   const el = ensureAttractTitle();
-  el.textContent = attractTitleLabel(brandName(getName()));
-  el.classList.toggle("is-on", on);
+  el.textContent = "";
+  el.classList.remove("is-on");
+  if (!on) return;
+  const label = attractTitleLabel(brandName(getName()));
+  hud?.setVisible(true);
+  raiseHud();
+  hud?.drawAttractTitle(label);
 }
 
 function startAttractRun(): void {
   const seed = freshSeed();
-  // Easy seeded puzzles keep attract snappy and reliably auto-solvable.
-  const p = generatePuzzle(seed, "easy");
+  // Same stage quality as random seeded runs (not the degraded easy path).
+  const p = generateSeeded(seed);
   startCustom([p.def], "home", {
     card: "seeded",
     title: t("play.seeded"),
@@ -4391,6 +4407,7 @@ function tickAttractIdle(): void {
       onHome: true,
       navigating: browsing,
       alreadyAttracting: attractMode,
+      dev: cachedDev,
     })
   ) {
     beginAttractMode();
@@ -4499,6 +4516,7 @@ function leavePlayTo(view: Screen): void {
   run = null;
   unlimitedLevelArmed = -1;
   lastTintKey = "";
+  showAttractTitle(false);
   syncPlayChrome(false);
   syncHowto(false);
   syncStageCard(false);
@@ -5638,7 +5656,8 @@ function syncOverlay(): void {
       syncHowto(false);
       syncPauseStats(false);
       syncSelectPrompt(false);
-      hud?.setVisible(false);
+      // Hide classic menu/moves/passcode bitmaps (syncPlayChrome(false) would show them).
+      setBitmapPlayText(false);
       showAttractTitle(true);
       tickSolve();
       syncHelpText();
