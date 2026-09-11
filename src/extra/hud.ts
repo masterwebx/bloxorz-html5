@@ -10,7 +10,6 @@ import {
   type ClipName,
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
-import { GAUNTLET_QUALITY } from "./generate";
 import { TILE_FACE, TOOL_CH, isoPt, type IsoMetrics } from "./isoBoard";
 import { rustFaces } from "./hue";
 import { t } from "./i18n";
@@ -602,10 +601,11 @@ export class ExtraHud {
     }
     this.add(text(t("settings.tint"), 40, 230, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
     this.add(slider(150, 230, 140, opts.bgTint, (v) => this.onAction("bgtint:" + v.toFixed(2))));
-    this.add(swatch(310, 232, opts.bgHue, Math.max(0.35, opts.bgTint)));
+    // Swatch sits to the right of the tint +/- so the HTML color input stays clickable.
+    this.add(swatch(352, 232, opts.bgHue, Math.max(0.35, opts.bgTint)));
     this.add(text(t("settings.blockHue"), 40, 250, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
     this.add(slider(150, 250, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
-    this.add(swatch(290, 252, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
+    this.add(swatch(330, 252, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
     this.placePreview(392, 210, opts.blockHue);
     this.add(this.act("remap", t("settings.remap"), 40, 272, 12, false, 160));
     this.add(this.act("export-save", t("settings.export"), 200, 272, 12, false, 130));
@@ -633,7 +633,6 @@ export class ExtraHud {
     moves: number;
     falls: number;
     fails: number;
-    showStats: boolean;
     rows: { title: string; meta: string }[];
   }): void {
     this.clear();
@@ -650,16 +649,13 @@ export class ExtraHud {
     }
     this.add(text(opts.cleared, 275, 62, 12, theme.muted, "center"));
     this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 86, 12, theme.ink, "center"));
-    this.add(this.act("toggle-stats", opts.showStats ? t("finish.hide") : t("finish.show"), 40, 110, 12, false, 150));
-    this.add(this.act("screenshot", t("finish.screenshot"), 200, 110, 12, false, 130));
-    this.add(this.act("back", t("common.menu"), 340, 110, 12, false, 90));
-    if (opts.showStats) {
-      if (!opts.rows.length) this.add(text(t("finish.none"), 40, 146, 11, theme.muted));
-      opts.rows.slice(0, 5).forEach((row, i) => {
-        this.add(text(row.title, 40, 146 + i * 22, 11));
-        this.add(text(row.meta, 320, 146 + i * 22, 11, theme.muted));
-      });
-    }
+    this.add(this.act("screenshot", t("finish.screenshot"), 40, 110, 12, false, 130));
+    this.add(this.act("back", t("common.menu"), 200, 110, 12, false, 90));
+    if (!opts.rows.length) this.add(text(t("finish.none"), 40, 146, 11, theme.muted));
+    opts.rows.slice(0, 5).forEach((row, i) => {
+      this.add(text(row.title, 40, 146 + i * 22, 11));
+      this.add(text(row.meta, 320, 146 + i * 22, 11, theme.muted));
+    });
   }
 
   drawPuzzles(date: string): void {
@@ -679,16 +675,26 @@ export class ExtraHud {
     this.add(this.act("puzzles-gauntlet", t("puzzles.gauntlet"), 200, 208, 14, false, 140));
   }
 
-  drawSeeded(): void {
+  drawSeeded(endless = false): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
+    const onOff = (on: boolean) => (on ? t("common.on") : t("common.off"));
     this.add(this.act("puzzles", t("common.back"), 24, 16, 12, false, 80));
     this.add(text(t("seeded.title"), 275, 28, 20, theme.ink, "center"));
-    this.add(text(t("seeded.hint"), 40, 80, 12, theme.muted));
-    this.add(fieldBox(40, 112, 280));
-    this.add(this.act("puzzle-seed-go", t("common.play"), 40, 154, 14, false, 100));
-    this.add(text(t("seeded.same"), 40, 200, 11, theme.muted));
+    this.add(fieldBox(40, 88, 280));
+    this.add(this.act("puzzle-seed-go", t("common.play"), 40, 130, 14, false, 100));
+    this.add(
+      this.act(
+        "toggle-seeded-endless",
+        `${this.focusId === "toggle-seeded-endless" ? "> " : "  "}${t("seeded.endless")}  ${onOff(endless)}`,
+        40,
+        172,
+        13,
+        false,
+        220,
+      ),
+    );
   }
 
   drawGauntlet(diff: string, count = 5): void {
@@ -706,12 +712,9 @@ export class ExtraHud {
       const mark = n === count ? "> " : "  ";
       this.add(this.act("glen:" + n, mark + String(n), 40 + i * 70, 118, 13, false, 56));
     });
-    const band = diff === "easy" || diff === "medium" || diff === "hard" || diff === "insane" ? diff : "easy";
-    const era = band === "easy" ? t("hint.era.mid") : band === "medium" ? t("hint.era.late") : t("hint.era.end");
-    this.add(text(t("hint.campaign", { n: GAUNTLET_QUALITY[band].minMoves, era }), 40, 146, 11, theme.muted));
-    this.add(text(t("gauntlet.seed"), 40, 168, 12, theme.muted));
-    this.add(fieldBox(40, 186, 280));
-    this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 226, 14, false, 180));
+    this.add(text(t("gauntlet.seed"), 40, 156, 12, theme.muted));
+    this.add(fieldBox(40, 174, 280));
+    this.add(this.act("gauntlet-go", t("gauntlet.play"), 40, 214, 14, false, 180));
   }
 
   drawTitleCard(title: string, subtitle = ""): void {
@@ -834,7 +837,7 @@ export class ExtraHud {
     this.clear();
     this.hideMascot();
     const theme = paint();
-    this.add(this.act("creator-make", t("common.back"), 10, 6, 12, false, 56));
+    this.add(this.act("creator", t("common.back"), 10, 6, 12, false, 56));
     this.add(text(t("creator.name"), 72, 8, 12));
     this.add(fieldBox(118, 6, 100));
     this.add(text(opts.badge, 330, 8, 11, theme.green));

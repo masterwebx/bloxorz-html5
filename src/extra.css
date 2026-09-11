@@ -43,11 +43,14 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #play-menu,
 #play-pass,
 #play-moves,
+#play-time,
 #play-stage-name,
 #play-pass-lab,
 #play-moves-lab,
+#play-time-lab,
 #play-pass-val,
-#play-moves-val {
+#play-moves-val,
+#play-time-val {
 	text-shadow:
 		0 0 1px #fff,
 		0 0 0.45cqh #fff,
@@ -115,8 +118,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	box-sizing: border-box;
 	letter-spacing: 0;
 	white-space: nowrap;
-	color: #fff;
-	text-shadow: 0 0 0.4cqh #c45a18;
+	color: #000;
 	pointer-events: none;
 }
 
@@ -259,21 +261,30 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	font: 700 calc(11 * 100cqh / 300) / 1.75 Orbitron, Arial, Helvetica, sans-serif;
 	color: #fff;
 	text-shadow: 0 0 0.4cqh #c45a18;
-	min-width: 9em;
+	min-width: 11em;
+	text-align: left;
 }
 
 #pause-time,
 #pause-stage,
 #pause-tries {
 	display: grid;
-	grid-template-columns: auto 1fr;
-	column-gap: 0.7em;
+	grid-template-columns: 6.6em 1fr;
+	column-gap: 0.55em;
 	align-items: baseline;
+}
+
+#pause-stats .lab {
+	text-align: left;
+	white-space: nowrap;
 }
 
 #pause-stats .val {
 	letter-spacing: 0.14em;
 	font-weight: 700;
+	text-align: left;
+	justify-self: start;
+	font-variant-numeric: tabular-nums;
 }
 
 #howto-nav,
@@ -502,7 +513,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #hud-bg-color {
 	position: absolute;
 	z-index: 30;
-	left: 56.5%;
+	left: 64%;
 	top: 75.8%;
 	width: 3.2%;
 	height: 3.6%;

@@ -102,7 +102,7 @@
   "seeded.hint": "玩这个种子，或另输一个。",
   "seeded.same": "多种子，同地图。",
   "gauntlet.title": "试炼",
-  "gauntlet.seed": "种子 — 发给朋友。",
+  "gauntlet.seed": "种子",
   "gauntlet.play": "开始试炼",
   "gauntlet.five": "五关。多种子，同试炼。",
   "diff.easy": "简单",
@@ -281,5 +281,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "无尽"
 }

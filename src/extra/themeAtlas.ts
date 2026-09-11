@@ -61,7 +61,7 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 
 async function loadAll(srcs: string[]): Promise<Map<string, HTMLImageElement>> {
   const out = new Map<string, HTMLImageElement>();
-  const chunk = 24;
+  const chunk = 48;
   for (let i = 0; i < srcs.length; i += chunk) {
     const slice = srcs.slice(i, i + chunk);
     const imgs = await Promise.all(slice.map(loadImage));

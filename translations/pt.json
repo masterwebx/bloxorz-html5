@@ -102,7 +102,7 @@
   "seeded.hint": "Jogue esta semente, ou digite outra.",
   "seeded.same": "Mesma semente, mesmo mapa.",
   "gauntlet.title": "Desafio",
-  "gauntlet.seed": "Semente — compartilhe.",
+  "gauntlet.seed": "Semente",
   "gauntlet.play": "Jogar desafio",
   "gauntlet.five": "Cinco fases. Mesma semente, mesmo desafio.",
   "diff.easy": "Fácil",
@@ -281,5 +281,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "Infinito"
 }

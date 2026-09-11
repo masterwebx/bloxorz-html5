@@ -102,7 +102,7 @@
   "seeded.hint": "Jouez cette graine, ou tapez-en une autre.",
   "seeded.same": "Même graine, même carte.",
   "gauntlet.title": "Défi",
-  "gauntlet.seed": "Graine — à partager.",
+  "gauntlet.seed": "Graine",
   "gauntlet.play": "Lancer le défi",
   "gauntlet.five": "Cinq niveaux. Même graine, même défi.",
   "diff.easy": "Facile",
@@ -281,5 +281,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "Sans fin"
 }

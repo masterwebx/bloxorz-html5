@@ -215,6 +215,7 @@ type PauseMenuClip = {
     quitToMenu?: PauseBtn;
   };
   stats?: PauseStats;
+  status?: PauseStats;
 };
 
 type BloxWorld = {
@@ -342,6 +343,7 @@ let draftName = "Untitled";
 let listScroll = 0;
 let puzzleSeed = "";
 let gauntletSeed = "";
+let seededEndless = false;
 let sidePanelOn: boolean | null = null;
 let versionHidden: boolean | null = null;
 let mouseOverHz = -1;
@@ -366,7 +368,6 @@ let finishReturnTo: Screen = "home";
 let finishKind: PlayCard = "classic";
 let finishTitle = "";
 let finishSubtitle = "";
-let showStats = false;
 let webcamStream: MediaStream | null = null;
 let tabCastStream: MediaStream | null = null;
 let tabCastPrompt: Promise<void> | null = null;
@@ -396,6 +397,17 @@ let localSaveWrapped = false;
 
 function markHudDirty(): void {
   hudDirty = true;
+}
+
+/** Coalesce HUD redraws while dragging hue/tint so the atlas blit stays responsive. */
+let hudPaintTimer = 0;
+function scheduleHudPaint(delayMs = 32): void {
+  markHudDirty();
+  if (hudPaintTimer) return;
+  hudPaintTimer = window.setTimeout(() => {
+    hudPaintTimer = 0;
+    paintHud();
+  }, delayMs);
 }
 
 function refreshNameCache(): void {
@@ -540,6 +552,10 @@ function collectBlockAtlas(): { live: HTMLCanvasElement; original: HTMLCanvasEle
   if (!source || !rects.length) return null;
   const live = adoptAtlasCanvas(sheet, source);
   if (!live) return null;
+  // Reuse an existing pristine snapshot when the live canvas already holds one.
+  if (atlasOriginal && atlasOriginal.width === live.width && atlasOriginal.height === live.height && atlasRects) {
+    return { live, original: atlasOriginal, rects };
+  }
   const original = snapshotAtlas(live);
   if (!original) return null;
   return { live, original, rects };
@@ -556,9 +572,10 @@ function clearPlayBlockHueFilters(): void {
   }
 }
 
-function applyBlockHue(): void {
+let hueBlitPending = false;
+function applyBlockHue(force = false): void {
   const hue = liveBlockHue();
-  if (atlasRects && atlasOriginal && atlasCanvas && bakedHue >= 0 && hue === bakedHue) return;
+  if (!force && atlasRects && atlasOriginal && atlasCanvas && bakedHue >= 0 && hue === bakedHue) return;
   if (!atlasRects || !atlasCanvas || !atlasOriginal) {
     const atlas = collectBlockAtlas();
     if (!atlas) return;
@@ -566,11 +583,22 @@ function applyBlockHue(): void {
     atlasCanvas = atlas.live;
     atlasOriginal = atlas.original;
   }
-  const ctx = atlasCanvas.getContext("2d");
-  if (!ctx) return;
-  blitHueRects(ctx, atlasOriginal, atlasRects, hue);
-  bakedHue = hue;
-  clearPlayBlockHueFilters();
+  // Coalesce rapid slider steps onto one rAF blit; run() re-reads the latest hue.
+  if (!force && hueBlitPending) return;
+  hueBlitPending = true;
+  const run = () => {
+    hueBlitPending = false;
+    if (!atlasCanvas || !atlasOriginal || !atlasRects) return;
+    const next = liveBlockHue();
+    if (bakedHue >= 0 && next === bakedHue) return;
+    const ctx = atlasCanvas.getContext("2d");
+    if (!ctx) return;
+    blitHueRects(ctx, atlasOriginal, atlasRects, next);
+    bakedHue = next;
+    clearPlayBlockHueFilters();
+  };
+  if (force || typeof requestAnimationFrame !== "function") run();
+  else requestAnimationFrame(run);
 }
 
 
@@ -1571,41 +1599,46 @@ function syncPauseStats(on: boolean): void {
   const box = $("pause-stats");
   const nav = $("pause-nav");
   if (!box) return;
-  const settled = on && usesHdType() && pauseMenuFrame() === 12;
-  const show = settled;
-  box.hidden = !show;
-  if (nav) nav.hidden = !show;
+  const frame = pauseMenuFrame();
+  const hd = usesHdType();
+  const settled = on && hd && frame === 12;
+  // Keep legacy bitmap glyphs hidden for the whole open/close tween so HD copy never flashes.
+  const hideBitmaps = on && hd && frame > 0;
+  box.hidden = !settled;
+  if (nav) nav.hidden = !settled;
   const menu = pauseMenuClip();
-  const stats = menu?.stats;
+  const panels = [menu?.stats, menu?.status];
   const buttons = menu?.buttons;
-  const digitMarks = [
-    stats?.instance,
-    stats?.instance_1,
-    stats?.instance_2,
-    stats?.instance_3,
-    stats?.instance_4,
-    stats?.digit1,
-    stats?.digit2,
-    stats?.digit3,
-    stats?.digit4,
-    stats?.digit5,
-    stats?.digit6,
-    stats?.stage1,
-    stats?.stage2,
-    stats?.falls1,
-    stats?.falls2,
-    stats?.falls3,
-    stats?.falls4,
-  ];
+  const digitMarks: Array<BitmapMark | undefined> = [];
+  for (const stats of panels) {
+    digitMarks.push(
+      stats?.instance,
+      stats?.instance_1,
+      stats?.instance_2,
+      stats?.instance_3,
+      stats?.instance_4,
+      stats?.digit1,
+      stats?.digit2,
+      stats?.digit3,
+      stats?.digit4,
+      stats?.digit5,
+      stats?.digit6,
+      stats?.stage1,
+      stats?.stage2,
+      stats?.falls1,
+      stats?.falls2,
+      stats?.falls3,
+      stats?.falls4,
+    );
+  }
   const btnMarks = [buttons?.returnToGame, buttons?.toggleSound, buttons?.quitToMenu];
-  if (!show) {
-    for (const mark of digitMarks) setMarkAlpha(mark, 1, false);
-    for (const mark of btnMarks) setMarkAlpha(mark, 1, true);
-    placePauseStats(box, stats, false);
+  const glyphAlpha = hideBitmaps ? 0 : 1;
+  for (const mark of digitMarks) setMarkAlpha(mark, glyphAlpha, false);
+  for (const mark of btnMarks) setMarkAlpha(mark, glyphAlpha, true);
+  if (!settled) {
+    placePauseStats(box, menu?.stats, false);
     return;
   }
-  for (const mark of digitMarks) setMarkAlpha(mark, 0, false);
-  for (const mark of btnMarks) setMarkAlpha(mark, 0, true);
   const timeLab = $("pause-time")?.querySelector(".lab");
   const stageLab = $("pause-stage")?.querySelector(".lab");
   const tryLab = $("pause-tries")?.querySelector(".lab");
@@ -1635,7 +1668,7 @@ function syncPauseStats(on: boolean): void {
     quit.textContent = t("pause.quit");
     quit.classList.toggle("is-focus", pauseFocus === 2);
   }
-  placePauseStats(box, stats, true);
+  placePauseStats(box, menu?.stats, true);
   placeOverlay(ret, buttons?.returnToGame, true, "left");
   placeOverlay(sound, buttons?.toggleSound, true, "left");
   placeOverlay(quit, buttons?.quitToMenu, true, "left");
@@ -1776,7 +1809,11 @@ function wrapGetLevels(): void {
 }
 
 function keepRunTotals(session: PlaySession): boolean {
-  return session.card === "gauntlet" || (!!session.classicRun && session.kind === "campaign" && !session.defs.length);
+  return (
+    session.card === "gauntlet" ||
+    (session.card === "seeded" && session.defs.length > 1) ||
+    (!!session.classicRun && session.kind === "campaign" && !session.defs.length)
+  );
 }
 
 function wrapLocalSave(): void {
@@ -2009,7 +2046,7 @@ function navItems(): NavItem[] {
     return [{ id: "back" }, { id: "puzzle-daily" }, { id: "puzzles-seeded" }, { id: "puzzles-gauntlet" }];
   }
   if (extraView === "puzzles-seeded") {
-    return [{ id: "puzzles" }, { id: "puzzle-seed-go" }];
+    return [{ id: "puzzles" }, { id: "puzzle-seed-go" }, { id: "toggle-seeded-endless" }];
   }
   if (extraView === "puzzles-gauntlet") {
     return [
@@ -2038,9 +2075,15 @@ function navItems(): NavItem[] {
       ...achievementRows(listScroll, ACH_PAGE).map((row) => ({ id: "ach:" + row.n })),
     ];
   }
-  if (extraView === "finish") return [{ id: "toggle-stats" }, { id: "screenshot" }, { id: "back" }];
+  if (extraView === "finish") return [{ id: "screenshot" }, { id: "back" }];
   if (extraView === "creator") {
-    return [{ id: "creator-make" }, { id: "creator-play" }, { id: "back" }];
+    return [
+      { id: "creator-new-stage" },
+      { id: "creator-saved" },
+      { id: "creator-manage" },
+      { id: "creator-load" },
+      { id: "back" },
+    ];
   }
   if (extraView === "creator-make") {
     return [{ id: "creator-new-stage" }, { id: "creator-manage" }, { id: "creator" }];
@@ -2051,7 +2094,7 @@ function navItems(): NavItem[] {
   if (extraView === "creator-manage" || extraView === "creator-saved") {
     const rows = listSaved().slice(listScroll, listScroll + LIST_PAGE);
     const prefix = extraView === "creator-manage" ? "manage:" : "saved:";
-    const back = extraView === "creator-manage" ? "creator-make" : "creator-play";
+    const back = "creator";
     const items: NavItem[] = [{ id: back }];
     rows.forEach((_, i) => {
       const idx = listScroll + i;
@@ -2063,7 +2106,7 @@ function navItems(): NavItem[] {
   if (extraView === "creator-edit") {
     const issue = isPlayable(draft);
     return [
-      { id: "creator-make" },
+      { id: "creator" },
       { id: "creator-test" },
       ...EDITOR_TOOLS.map((tool) => ({ id: "tool:" + tool.id })),
       { id: "creator-new" },
@@ -2310,6 +2353,7 @@ function hudKey(): string {
     puzzleDiff,
     String(gauntletCount),
     puzzleSeed,
+    String(seededEndless),
     gauntletSeed,
     draftName,
     String(listScroll),
@@ -2407,17 +2451,16 @@ function paintHud(): void {
       moves: lastFinished?.totalMoves ?? st?.totalMoves ?? 0,
       falls: st?.totalFalls ?? 0,
       fails: lastFinished?.fails ?? 0,
-      showStats,
       rows: finishStatRows(),
     });
   } else if (extraView === "puzzles") {
     hud.drawPuzzles(utcDateLabel());
   } else if (extraView === "puzzles-seeded") {
-    hud.drawSeeded();
-    placeHudInput(true, "7.3%", "37.5%", "51%", t("puzzles.seed"), puzzleSeed, 24);
+    hud.drawSeeded(seededEndless);
+    placeHudInput(true, "7.3%", "29.5%", "51%", t("puzzles.seed"), puzzleSeed, 24);
   } else if (extraView === "puzzles-gauntlet") {
     hud.drawGauntlet(puzzleDiff, gauntletCount);
-    placeHudInput(true, "7.3%", "62%", "51%", t("puzzles.seed"), gauntletSeed, 24);
+    placeHudInput(true, "7.3%", "58%", "51%", t("puzzles.seed"), gauntletSeed, 24);
   } else if (extraView === "history") {
     const all = loadFinishedStages();
     const maxScroll = Math.max(0, all.length - LIST_HISTORY);
@@ -2459,8 +2502,10 @@ function paintHud(): void {
     });
   } else if (extraView === "creator") {
     hud.drawCreatorHub(t("menu.creator"), [
-      { id: "creator-make", label: t("creator.create") },
-      { id: "creator-play", label: t("creator.play") },
+      { id: "creator-new-stage", label: t("creator.create") },
+      { id: "creator-saved", label: t("creator.play") },
+      { id: "creator-manage", label: t("creator.manage") },
+      { id: "creator-load", label: t("creator.code") },
       { id: "back", label: t("common.back") },
     ], menuCursor);
   } else if (extraView === "creator-make") {
@@ -2492,7 +2537,7 @@ function paintHud(): void {
         };
       }),
       empty: extraView === "creator-manage" ? t("creator.empty") : t("creator.emptySaved"),
-      backId: extraView === "creator-manage" ? "creator-make" : "creator-play",
+      backId: "creator",
       scroll: listScroll,
       total: all.length,
       pageSize: LIST_PAGE,
@@ -2691,19 +2736,15 @@ function goBack(): void {
     return;
   }
   if (extraView === "creator-edit") {
-    openPanel("creator-make");
+    openPanel("creator");
     return;
   }
   if (extraView === "creator-make" || extraView === "creator-play") {
     openPanel("creator");
     return;
   }
-  if (extraView === "creator-manage") {
-    openPanel("creator-make");
-    return;
-  }
-  if (extraView === "creator-saved") {
-    openPanel("creator-play");
+  if (extraView === "creator-manage" || extraView === "creator-saved") {
+    openPanel("creator");
     return;
   }
   if (extraView === "puzzles-seeded" || extraView === "puzzles-gauntlet") {
@@ -2996,8 +3037,8 @@ function handleHudAction(act: string): void {
     void exportSaveFile();
   } else if (act === "import-save") {
     ($("hud-save-import") as HTMLInputElement | null)?.click();
-  } else if (act === "toggle-stats") {
-    showStats = !showStats;
+  } else if (act === "toggle-seeded-endless") {
+    seededEndless = !seededEndless;
     markHudDirty();
     paintHud();
   } else if (act === "screenshot") {
@@ -3024,22 +3065,19 @@ function handleHudAction(act: string): void {
     s.bgTint = Number(act.slice(7));
     saveSettings(s);
     applyLooks();
-    markHudDirty();
-    paintHud();
+    scheduleHudPaint();
   } else if (act.startsWith("bghue:")) {
     const s = loadSettings();
     s.bgHue = Number(act.slice(6));
     saveSettings(s);
     applyLooks();
-    markHudDirty();
-    paintHud();
+    scheduleHudPaint();
   } else if (act.startsWith("blockhue:")) {
     const s = loadSettings();
     s.blockHue = Number(act.slice(9));
     saveSettings(s);
-    markHudDirty();
-    paintHud();
     applyBlockHue();
+    scheduleHudPaint();
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
@@ -3335,6 +3373,22 @@ function playDaily(): void {
 function playSeededRun(seed: string): void {
   const clean = seed.trim() || freshSeed();
   puzzleSeed = clean;
+  if (seededEndless) {
+    const run = generateRun(clean, "insane", 33);
+    startCustom(
+      run.map((p) => p.def),
+      "puzzles-seeded",
+      {
+        card: "seeded",
+        title: t("play.seeded"),
+        subtitle: clean,
+        seed: clean,
+        entry: "puzzle",
+        diff: "insane",
+      },
+    );
+    return;
+  }
   const p = generateSeeded(clean);
   startCustom([p.def], "puzzles-seeded", {
     card: "seeded",
@@ -4441,7 +4495,6 @@ function syncOverlay(): void {
       run.totalTimeMs = Date.now() - run.at;
       run.totalMoves = stage?.totalMoves ?? run.totalMoves;
       lastFinished = run;
-      showStats = false;
       saveRun(run);
       run = null;
     } else {
@@ -4455,7 +4508,6 @@ function syncOverlay(): void {
         complete: true,
         levels: [],
       };
-      showStats = false;
     }
     rememberFinish(playSession);
     lastLabel = label;
@@ -4748,13 +4800,17 @@ export function startBloxorzShell(): void {
   $("pause-sound")?.addEventListener("click", () => clickPauseButton("toggleSound"));
   $("pause-quit")?.addEventListener("click", () => clickPauseButton("quitToMenu"));
   void (async () => {
-    const theme = await bootThemes(currentTheme(), cachedDev);
+    const savedTheme = currentTheme();
+    const warmAtlas = composeThemeAtlas(savedTheme).catch(() => null);
+    const theme = await bootThemes(savedTheme, cachedDev);
     setCurrentThemeId(theme);
     await loadExtraLocales();
     applyDocumentLocale(localeId());
     applyDomCopy();
     setHdRendering(isHdTheme(theme));
     applyThemeMedia();
+    if (theme !== savedTheme) await composeThemeAtlas(theme).catch(() => null);
+    else await warmAtlas;
     void swapAtlasLive(theme);
     lastHudPaint = "";
     markHudDirty();

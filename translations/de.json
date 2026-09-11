@@ -102,7 +102,7 @@
   "seeded.hint": "Diesen Seed spielen oder einen anderen.",
   "seeded.same": "Gleicher Seed, gleiche Karte.",
   "gauntlet.title": "Parcours",
-  "gauntlet.seed": "Seed — mit Freunden teilen.",
+  "gauntlet.seed": "Seed",
   "gauntlet.play": "Parcours spielen",
   "gauntlet.five": "Fünf Stufen. Gleicher Seed, gleicher Parcours.",
   "diff.easy": "Leicht",
@@ -281,5 +281,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "Endlos"
 }

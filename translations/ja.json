@@ -102,7 +102,7 @@
   "seeded.hint": "このシードか、別のものを。",
   "seeded.same": "同じシード、同じマップ。",
   "gauntlet.title": "ガントレット",
-  "gauntlet.seed": "シード — 友達に渡して。",
+  "gauntlet.seed": "シード",
   "gauntlet.play": "ガントレット開始",
   "gauntlet.five": "5面。同じシード、同じガントレット。",
   "diff.easy": "やさしい",
@@ -281,5 +281,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "エンドレス"
 }

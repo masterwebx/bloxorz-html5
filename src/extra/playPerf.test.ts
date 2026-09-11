@@ -11,10 +11,10 @@ import {
 describe("dense playfield helpers", () => {
   it("bakes the floor only once a board is packed", () => {
     expect(shouldBakeFloor(12)).toBe(false);
-    expect(shouldBakeFloor(30)).toBe(true);
+    expect(shouldBakeFloor(24)).toBe(true);
     expect(shouldSkipTileSpawn(8)).toBe(false);
-    expect(shouldSkipTileSpawn(40)).toBe(false);
-    expect(shouldSkipTileSpawn(60)).toBe(true);
+    expect(shouldSkipTileSpawn(39)).toBe(false);
+    expect(shouldSkipTileSpawn(40)).toBe(true);
   });
 
   it("rests switches on the idle frame, not the empty spawn label", () => {

@@ -350,12 +350,15 @@ export async function bootThemes(saved?: string | null, dev = false): Promise<st
   if (!themesBooted) {
     try {
       const idx = (await fetch("themes/index.json").then((r) => (r.ok ? r.json() : []))) as string[];
-      for (const id of idx) {
-        if (packs.has(id) || id.startsWith("_")) continue;
-        const raw = (await fetch(`themes/${id}/theme.json`).then((r) => (r.ok ? r.json() : null))) as RawTheme | null;
-        if (!raw) continue;
-        const pack = normalizePack(raw, id, true);
-        packs.set(pack.id, pack);
+      const ids = idx.filter((id) => !packs.has(id) && !id.startsWith("_"));
+      const loaded = await Promise.all(
+        ids.map(async (id) => {
+          const raw = (await fetch(`themes/${id}/theme.json`).then((r) => (r.ok ? r.json() : null))) as RawTheme | null;
+          return raw ? normalizePack(raw, id, true) : null;
+        }),
+      );
+      for (const pack of loaded) {
+        if (pack) packs.set(pack.id, pack);
       }
     } catch {
       /* bundled builtins are enough */

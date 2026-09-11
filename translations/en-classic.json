@@ -103,7 +103,7 @@
   "seeded.hint": "Play this seed, or type another.",
   "seeded.same": "Same seed, same map.",
   "gauntlet.title": "Gauntlet",
-  "gauntlet.seed": "Seed — share this with friends.",
+  "gauntlet.seed": "Seed",
   "gauntlet.play": "Play Gauntlet",
   "gauntlet.five": "Five stages. Same seed, same gauntlet.",
   "diff.easy": "Easy",
@@ -284,5 +284,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "Endless"
 }

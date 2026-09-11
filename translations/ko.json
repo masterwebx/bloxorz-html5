@@ -102,7 +102,7 @@
   "seeded.hint": "Play this seed, or type another.",
   "seeded.same": "Same seed, same map.",
   "gauntlet.title": "챌린지",
-  "gauntlet.seed": "시드 — 친구와 공유하세요.",
+  "gauntlet.seed": "시드",
   "gauntlet.play": "챌린지 시작",
   "gauntlet.five": "다섯 스테이지. 같은 시드, 같은 챌린지.",
   "diff.easy": "Easy",
@@ -281,5 +281,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "엔드리스"
 }

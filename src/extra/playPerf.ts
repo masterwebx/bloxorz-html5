@@ -1,5 +1,5 @@
-export const DENSE_TILE_COUNT = 30;
-export const SKIP_SPAWN_TILE_COUNT = 60;
+export const DENSE_TILE_COUNT = 24;
+export const SKIP_SPAWN_TILE_COUNT = 40;
 
 export function shouldBakeFloor(tileCount: number): boolean {
   return tileCount >= DENSE_TILE_COUNT;

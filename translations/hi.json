@@ -102,7 +102,7 @@
   "seeded.hint": "Play this seed, or type another.",
   "seeded.same": "Same seed, same map.",
   "gauntlet.title": "चुनौती",
-  "gauntlet.seed": "सीड — दोस्तों से साझा करें।",
+  "gauntlet.seed": "सीड",
   "gauntlet.play": "चुनौती खेलें",
   "gauntlet.five": "पाँच स्टेज। वही सीड, वही चुनौती।",
   "diff.easy": "Easy",
@@ -281,5 +281,6 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue"
+  "settings.blockHue": "Block hue",
+  "seeded.endless": "एंडलेस"
 }
