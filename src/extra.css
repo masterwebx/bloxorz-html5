@@ -13,6 +13,12 @@
 	object-fit: cover;
 }
 
+#theme-webcam {
+	display: block;
+	max-width: none;
+	max-height: none;
+}
+
 /* Partial desaturate before tint — keeps backdrop contrast, still tracks the swatch. */
 body.has-bg-tint #theme-media img,
 body.has-bg-tint #theme-media video,
@@ -754,6 +760,105 @@ body.is-playing #canvas {
 
 #hud-modal.is-open {
 	display: flex;
+}
+
+#tab-crop-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 45;
+	display: flex;
+	flex-direction: column;
+	pointer-events: auto;
+	background: rgba(0, 0, 0, 0.28);
+}
+
+#tab-crop-overlay[hidden] {
+	display: none !important;
+}
+
+#tab-crop-stage {
+	position: relative;
+	flex: 1 1 auto;
+	min-height: 0;
+	cursor: crosshair;
+	touch-action: none;
+}
+
+#tab-crop-rect {
+	position: absolute;
+	box-sizing: border-box;
+	border: 2px solid #ffc070;
+	box-shadow:
+		0 0 0 9999px rgba(0, 0, 0, 0.45),
+		inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+	pointer-events: none;
+}
+
+#tab-crop-bar {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 8px;
+	background: rgba(12, 8, 6, 0.92);
+	border-top: 1px solid #c45a18;
+}
+
+#tab-crop-hint {
+	margin: 0;
+	flex: 1 1 auto;
+	font: 700 calc(10 * 100cqh / 300) / 1.2 Orbitron, sans-serif;
+	color: #ffe6c4;
+}
+
+#tab-crop-actions {
+	display: flex;
+	gap: 6px;
+	flex: 0 0 auto;
+}
+
+#tab-crop-actions button {
+	pointer-events: auto;
+	padding: 4px 8px;
+	border: 1px solid #c45a18;
+	background: #1a120c;
+	color: #ffe6c4;
+	font: 700 calc(10 * 100cqh / 300) / 1 Orbitron, sans-serif;
+	cursor: pointer;
+}
+
+#tab-crop-actions button:hover {
+	background: #2a1810;
+}
+
+body.is-tab-cropping #canvas {
+	pointer-events: none;
+	opacity: 0;
+}
+
+body.is-tab-cropping #theme-media {
+	z-index: 1;
+}
+
+body.is-tab-cropping #play-chrome,
+body.is-tab-cropping #howto-nav,
+body.is-tab-cropping #howto-page,
+body.is-tab-cropping #howto-copy,
+body.is-tab-cropping #pause-nav,
+body.is-tab-cropping #pause-stats,
+body.is-tab-cropping #stage-card,
+body.is-tab-cropping #play-stage-name,
+body.is-tab-cropping #hud-theme-select,
+body.is-tab-cropping #hud-locale-select,
+body.is-tab-cropping #hud-theme-upload-btn,
+body.is-tab-cropping #hud-theme-template-btn,
+body.is-tab-cropping #hud-theme-manage-btn,
+body.is-tab-cropping #hud-color-slots,
+body.is-tab-cropping #hud-color-preset-select,
+body.is-tab-cropping #hud-input,
+body.is-tab-cropping #build-version {
+	visibility: hidden;
 }
 
 #hud-busy {

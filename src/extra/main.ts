@@ -119,6 +119,15 @@ import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
 import { ExtraHud, canBillboard, type MenuItem } from "./hud";
+import {
+  DEFAULT_TAB_CROP,
+  containLayout,
+  coverCropLayout,
+  cropFromDrag,
+  cropToOverlayRect,
+  normalizeTabCrop,
+  type TabCrop,
+} from "./tabCrop";
 import { shouldBakeFloor, shouldSkipTileSpawn, tileIdleFrame } from "./playPerf";
 import {
   ATTRACT_FADE_MS,
@@ -478,6 +487,13 @@ let localSaveWrapped = false;
 let tintPicking = false;
 let blockPicking = false;
 let colorSlotPicking: ColorSlotId | null = null;
+/** Click-drag crop editor open over the game screen. */
+let tabCropOpen = false;
+let tabCropDraft: TabCrop = { ...DEFAULT_TAB_CROP };
+let tabCropBackup: TabCrop = { ...DEFAULT_TAB_CROP };
+let tabCropDrag: { x0: number; y0: number; pointerId: number } | null = null;
+let tabCropBound = false;
+let tabCropResizeObs: ResizeObserver | null = null;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -1034,24 +1050,52 @@ function applyLooks(): void {
   applyTabCrop();
 }
 
+function resetWebcamVideoLayout(cam: HTMLVideoElement): void {
+  cam.style.clipPath = "";
+  cam.style.objectPosition = "";
+  cam.style.objectFit = "";
+  cam.style.transform = "";
+  cam.style.transformOrigin = "";
+  cam.style.position = "";
+  cam.style.left = "";
+  cam.style.top = "";
+  cam.style.width = "";
+  cam.style.height = "";
+}
+
+/** Fill the game screen (#theme-media) with the cropped cast — uniform scale, no stretch. */
 function applyTabCrop(): void {
   const cam = $("theme-webcam") as HTMLVideoElement | null;
   if (!cam) return;
   const s = loadSettings();
-  if (!s.tabCastBg) {
-    cam.style.clipPath = "";
-    cam.style.objectPosition = "";
+  if (!s.tabCastBg || tabCropOpen) {
+    if (!s.tabCastBg) resetWebcamVideoLayout(cam);
+    return;
+  }
+  const wrap = $("theme-media");
+  const cw = wrap?.clientWidth || 0;
+  const ch = wrap?.clientHeight || 0;
+  const vw = cam.videoWidth || 0;
+  const vh = cam.videoHeight || 0;
+  if (!cw || !ch || !vw || !vh) {
+    // Metadata / layout not ready — cover the game screen without warping.
+    cam.style.position = "absolute";
+    cam.style.left = "0";
+    cam.style.top = "0";
+    cam.style.width = "100%";
+    cam.style.height = "100%";
+    cam.style.objectFit = "cover";
     cam.style.transform = "";
     return;
   }
-  const c = s.tabCrop;
-  const invW = 1 / Math.max(0.05, c.w);
-  const invH = 1 / Math.max(0.05, c.h);
-  cam.style.objectFit = "cover";
-  cam.style.transformOrigin = "0 0";
-  cam.style.transform = `translate(${-c.x * invW * 100}%, ${-c.y * invH * 100}%) scale(${invW}, ${invH})`;
-  cam.style.width = "100%";
-  cam.style.height = "100%";
+  const layout = coverCropLayout(s.tabCrop, vw, vh, cw, ch);
+  cam.style.position = "absolute";
+  cam.style.objectFit = "fill";
+  cam.style.transform = "";
+  cam.style.width = `${layout.width}px`;
+  cam.style.height = `${layout.height}px`;
+  cam.style.left = `${layout.left}px`;
+  cam.style.top = `${layout.top}px`;
 }
 
 function applyThemeMedia(): void {
@@ -1211,7 +1255,10 @@ async function startTabCast(cam: HTMLVideoElement | null): Promise<void> {
       tabCastStream = stream;
       cam.srcObject = stream;
       cam.hidden = false;
+      const onMeta = () => applyTabCrop();
+      cam.addEventListener("loadedmetadata", onMeta, { once: true });
       void cam.play().catch(() => undefined);
+      applyTabCrop();
       stream.getVideoTracks()[0]?.addEventListener("ended", () => {
         const s = loadSettings();
         s.tabCastBg = false;
@@ -1815,6 +1862,14 @@ function applyDomCopy(): void {
   if (themeBtn) themeBtn.setAttribute("aria-label", t("settings.theme"));
   const localeBtn = $("hud-locale-btn");
   if (localeBtn) localeBtn.setAttribute("aria-label", t("settings.language"));
+  const cropHint = $("tab-crop-hint");
+  if (cropHint) cropHint.textContent = t("settings.tabCropHint");
+  const cropApply = $("tab-crop-apply");
+  if (cropApply) cropApply.textContent = t("common.ok");
+  const cropCancel = $("tab-crop-cancel");
+  if (cropCancel) cropCancel.textContent = t("common.cancel");
+  const cropReset = $("tab-crop-reset");
+  if (cropReset) cropReset.textContent = t("settings.tabCropReset");
   const stageHead = $("timer-stage-head");
   if (stageHead) stageHead.textContent = t("timer.stage");
   const timeHead = $("timer-time-head");
@@ -3805,7 +3860,7 @@ function handleHudAction(act: string): void {
     markHudDirty();
     paintHud();
   } else if (act === "tab-crop") {
-    openTabCropModal();
+    openTabCropEditor();
   } else if (act === "export-save") {
     void exportSaveFile();
   } else if (act === "import-save") {
@@ -4185,28 +4240,232 @@ function openModal(kind: "code-play" | "code-edit", title: string, placeholder: 
   window.setTimeout(() => input?.focus(), 0);
 }
 
-/** Simple percent crop editor for the cast tab background. */
-function openTabCropModal(): void {
+/** Click-and-drag crop editor over the game screen (not a percent prompt). */
+function tabCropOverlay(): HTMLElement | null {
+  return $("tab-crop-overlay");
+}
+
+function tabCropStage(): HTMLElement | null {
+  return $("tab-crop-stage");
+}
+
+function tabCropRectEl(): HTMLElement | null {
+  return $("tab-crop-rect");
+}
+
+function showTabCropPreviewContain(): void {
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
+  const wrap = $("theme-media");
+  if (!cam || !wrap) return;
+  const cw = wrap.clientWidth;
+  const ch = wrap.clientHeight;
+  const vw = cam.videoWidth || 0;
+  const vh = cam.videoHeight || 0;
+  cam.style.position = "absolute";
+  cam.style.transform = "";
+  cam.style.objectFit = "fill";
+  if (!vw || !vh || !cw || !ch) {
+    cam.style.left = "0";
+    cam.style.top = "0";
+    cam.style.width = "100%";
+    cam.style.height = "100%";
+    cam.style.objectFit = "contain";
+    return;
+  }
+  const layout = containLayout(vw, vh, cw, ch);
+  cam.style.width = `${layout.displayW}px`;
+  cam.style.height = `${layout.displayH}px`;
+  cam.style.left = `${layout.offsetX}px`;
+  cam.style.top = `${layout.offsetY}px`;
+}
+
+function paintTabCropRect(): void {
+  const stage = tabCropStage();
+  const rect = tabCropRectEl();
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
+  if (!stage || !rect || !cam) return;
+  const cw = stage.clientWidth;
+  const ch = stage.clientHeight;
+  const vw = cam.videoWidth || 0;
+  const vh = cam.videoHeight || 0;
+  if (!vw || !vh || !cw || !ch) {
+    rect.hidden = true;
+    return;
+  }
+  const box = cropToOverlayRect(tabCropDraft, vw, vh, cw, ch);
+  rect.hidden = false;
+  rect.style.left = `${box.left}px`;
+  rect.style.top = `${box.top}px`;
+  rect.style.width = `${box.width}px`;
+  rect.style.height = `${box.height}px`;
+}
+
+function refreshTabCropEditor(): void {
+  if (!tabCropOpen) return;
+  showTabCropPreviewContain();
+  paintTabCropRect();
+}
+
+function openTabCropEditor(): void {
+  if (!loadSettings().tabCastBg) return;
+  ensureTabCropBound();
+  const overlay = tabCropOverlay();
+  if (!overlay) return;
   const s = loadSettings();
-  const cur = s.tabCrop;
-  const raw = window.prompt(
-    t("settings.tabCropPrompt"),
-    `${Math.round(cur.x * 100)},${Math.round(cur.y * 100)},${Math.round(cur.w * 100)},${Math.round(cur.h * 100)}`,
-  );
-  if (raw == null) return;
-  const parts = raw.split(/[,\s]+/).map((n) => Number(n));
-  if (parts.length < 4 || parts.some((n) => !Number.isFinite(n))) return;
-  const [x, y, w, h] = parts;
-  s.tabCrop = {
-    x: Math.max(0, Math.min(0.95, x / 100)),
-    y: Math.max(0, Math.min(0.95, y / 100)),
-    w: Math.max(5, Math.min(100, w)) / 100,
-    h: Math.max(5, Math.min(100, h)) / 100,
-  };
-  saveSettings(s);
+  tabCropBackup = normalizeTabCrop(s.tabCrop);
+  tabCropDraft = { ...tabCropBackup };
+  tabCropOpen = true;
+  tabCropDrag = null;
+  overlay.hidden = false;
+  document.body.classList.add("is-tab-cropping");
+  const hint = $("tab-crop-hint");
+  if (hint) hint.textContent = t("settings.tabCropHint");
+  const applyBtn = $("tab-crop-apply");
+  if (applyBtn) applyBtn.textContent = t("common.ok");
+  const cancelBtn = $("tab-crop-cancel");
+  if (cancelBtn) cancelBtn.textContent = t("common.cancel");
+  const resetBtn = $("tab-crop-reset");
+  if (resetBtn) resetBtn.textContent = t("settings.tabCropReset");
+  refreshTabCropEditor();
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
+  cam?.removeEventListener("loadedmetadata", refreshTabCropEditor);
+  cam?.addEventListener("loadedmetadata", refreshTabCropEditor);
+  if (!tabCropResizeObs) {
+    tabCropResizeObs = new ResizeObserver(() => {
+      if (tabCropOpen) refreshTabCropEditor();
+      else applyTabCrop();
+    });
+    const wrap = $("theme-media") || $("animation_container");
+    if (wrap) tabCropResizeObs.observe(wrap);
+  }
+}
+
+function closeTabCropEditor(save: boolean): void {
+  if (!tabCropOpen) return;
+  tabCropOpen = false;
+  tabCropDrag = null;
+  const overlay = tabCropOverlay();
+  if (overlay) overlay.hidden = true;
+  document.body.classList.remove("is-tab-cropping");
+  const cam = $("theme-webcam") as HTMLVideoElement | null;
+  cam?.removeEventListener("loadedmetadata", refreshTabCropEditor);
+  if (save) {
+    updateSettings((s) => {
+      s.tabCrop = normalizeTabCrop(tabCropDraft);
+    });
+  } else {
+    updateSettings((s) => {
+      s.tabCrop = normalizeTabCrop(tabCropBackup);
+    });
+  }
   applyTabCrop();
   markHudDirty();
   paintHud();
+}
+
+function stagePointerToLocal(stage: HTMLElement, ev: PointerEvent): { x: number; y: number } {
+  const r = stage.getBoundingClientRect();
+  return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+
+function ensureTabCropBound(): void {
+  if (tabCropBound) return;
+  tabCropBound = true;
+  const stage = tabCropStage();
+  const overlay = tabCropOverlay();
+  if (!stage || !overlay) return;
+
+  stage.addEventListener("pointerdown", (ev) => {
+    if (!tabCropOpen || ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const p = stagePointerToLocal(stage, ev);
+    tabCropDrag = { x0: p.x, y0: p.y, pointerId: ev.pointerId };
+    stage.setPointerCapture(ev.pointerId);
+    const cam = $("theme-webcam") as HTMLVideoElement | null;
+    const vw = cam?.videoWidth || 0;
+    const vh = cam?.videoHeight || 0;
+    if (vw && vh) {
+      tabCropDraft = cropFromDrag({
+        x0: p.x,
+        y0: p.y,
+        x1: p.x + 4,
+        y1: p.y + 4,
+        vw,
+        vh,
+        cw: stage.clientWidth,
+        ch: stage.clientHeight,
+      });
+      paintTabCropRect();
+    }
+  });
+
+  stage.addEventListener("pointermove", (ev) => {
+    if (!tabCropOpen || !tabCropDrag || ev.pointerId !== tabCropDrag.pointerId) return;
+    ev.preventDefault();
+    const p = stagePointerToLocal(stage, ev);
+    const cam = $("theme-webcam") as HTMLVideoElement | null;
+    const vw = cam?.videoWidth || 0;
+    const vh = cam?.videoHeight || 0;
+    if (!vw || !vh) return;
+    tabCropDraft = cropFromDrag({
+      x0: tabCropDrag.x0,
+      y0: tabCropDrag.y0,
+      x1: p.x,
+      y1: p.y,
+      vw,
+      vh,
+      cw: stage.clientWidth,
+      ch: stage.clientHeight,
+    });
+    paintTabCropRect();
+  });
+
+  const endDrag = (ev: PointerEvent) => {
+    if (!tabCropDrag || ev.pointerId !== tabCropDrag.pointerId) return;
+    tabCropDrag = null;
+    try {
+      stage.releasePointerCapture(ev.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
+  stage.addEventListener("pointerup", endDrag);
+  stage.addEventListener("pointercancel", endDrag);
+
+  $("tab-crop-apply")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeTabCropEditor(true);
+  });
+  $("tab-crop-cancel")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeTabCropEditor(false);
+  });
+  $("tab-crop-reset")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    tabCropDraft = { ...DEFAULT_TAB_CROP };
+    paintTabCropRect();
+  });
+
+  window.addEventListener(
+    "keydown",
+    (ev) => {
+      if (!tabCropOpen) return;
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeTabCropEditor(false);
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeTabCropEditor(true);
+      }
+    },
+    true,
+  );
 }
 
 function closeModal(): void {
@@ -5430,6 +5689,7 @@ function bind(): void {
   }, true);
 
   window.addEventListener("keydown", (ev) => {
+    if (tabCropOpen) return;
     if (uiBusy) {
       ev.preventDefault();
       return;
