@@ -233,6 +233,7 @@
   "play.select": "चुनें",
   "timer.stage": "स्टेज",
   "timer.time": "समय",
+  "timer.moves": "# चालें",
   "finish.screenshot": "स्क्रीनशॉट",
   "finish.dailyTitle": "दैनिक पहेली",
   "finish.dailyCleared": "आज की पहेली पूरी। {day}",

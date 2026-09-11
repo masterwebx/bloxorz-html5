@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { occupiedCells, boardCellCenter, boardCellCorners, boardScreen, clipForTile, pickBoardCell } from "./coolmathBoard";
-import { emptyDraft, encodeLevel, decodeLevel, encodePack, encodeSeed, decodePack, decodeSeed, isPack, isPlayable, occupiedTileCount, parseShare, parseShareDefs, setTile, shareFromLocation, stageId } from "./customLevels";
+import { emptyDraft, encodeLevel, decodeLevel, encodePack, encodeSeed, decodePack, decodeSeed, findBySeed, isPack, isPlayable, occupiedTileCount, parseShare, parseShareDefs, setTile, shareFromLocation, stageId } from "./customLevels";
 import type { LevelDef } from "./types";
 import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
 import { Stage } from "./engine";
@@ -200,6 +200,28 @@ describe("stage packs", () => {
     expect(parseShareDefs(code)).toHaveLength(2);
     expect(parseShare(code)?.tiles).toEqual(a.tiles);
     expect(isPack({ name: "p", author: "x", code, seed: code, def: a, defs: [a, b], kind: "pack" })).toBe(true);
+  });
+});
+
+describe("findBySeed", () => {
+  it("matches reverse seed codes as well as short stage ids", () => {
+    const def = emptyDraft();
+    setTile(def, 2, 4, "b");
+    setTile(def, 3, 4, "e");
+    def.spawn = [2, 4];
+    const reverse = encodeSeed(def);
+    const short = stageId(def);
+    const row = {
+      name: "Seed Match",
+      author: "Test",
+      code: reverse,
+      seed: short,
+      def,
+      source: "local" as const,
+    };
+    expect(findBySeed(reverse, [row])?.name).toBe("Seed Match");
+    expect(findBySeed(short, [row])?.name).toBe("Seed Match");
+    expect(findBySeed(encodeSeed(def), [row])?.name).toBe("Seed Match");
   });
 });
 

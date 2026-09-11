@@ -425,6 +425,8 @@ let prevInstrStart = false;
 let uiBusy = false;
 let touchChrome: TouchChrome | null = null;
 let localSaveWrapped = false;
+/** Native color picker open — skip HUD rebuilds that dismiss it. */
+let tintPicking = false;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -1083,8 +1085,11 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const manageBtn = $("hud-theme-manage-btn");
   const manage = $("hud-theme-manage");
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
+  const pickingTint = tintPicking || (!!tintColor && document.activeElement === tintColor);
   for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn, tintColor]) {
     if (!el) continue;
+    // Toggling hidden / rewriting .value while the OS color UI is open dismisses it.
+    if (el === tintColor && pickingTint) continue;
     el.hidden = !on;
   }
   if (upload) upload.hidden = true;
@@ -1106,7 +1111,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
     tintColor.style.top = "78.4%";
     tintColor.style.width = "4.2%";
     tintColor.style.height = "4.4%";
-    tintColor.value = hueToHex(loadSettings().bgHue);
+    if (!pickingTint) tintColor.value = hueToHex(loadSettings().bgHue);
     tintColor.title = t("settings.tint");
   }
   if (!on) {
@@ -1186,11 +1191,20 @@ function bindSettingsChrome(): void {
     closeSettingsDropdowns();
     applyLanguage(id);
   });
+  const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   document.addEventListener(
     "pointerdown",
     (ev) => {
       const node = ev.target as Node | null;
-      if (themeSel?.contains(node) || localeSel?.contains(node) || manageBtn?.contains(node) || manage?.contains(node)) return;
+      if (
+        themeSel?.contains(node) ||
+        localeSel?.contains(node) ||
+        manageBtn?.contains(node) ||
+        manage?.contains(node) ||
+        tintColor?.contains(node)
+      ) {
+        return;
+      }
       closeSettingsDropdowns();
       if (manage) manage.hidden = true;
     },
@@ -1223,15 +1237,25 @@ function bindSettingsChrome(): void {
     ev.stopPropagation();
     toggleThemeManage(false);
   });
-  const tintColor = $("hud-bg-color") as HTMLInputElement | null;
+  const endTintPick = () => {
+    if (!tintPicking) return;
+    tintPicking = false;
+    scheduleHudPaint();
+  };
+  tintColor?.addEventListener("focus", () => {
+    tintPicking = true;
+  });
   tintColor?.addEventListener("input", () => {
+    tintPicking = true;
     updateSettings((s) => {
       s.bgHue = hexToHue(tintColor.value);
       if (s.bgTint < 0.2) s.bgTint = 0.55;
     });
+    // Live backdrop only — paintHud/placeSettingsChrome would close the native picker.
     applyLooks();
-    scheduleHudPaint();
   });
+  tintColor?.addEventListener("change", endTintPick);
+  tintColor?.addEventListener("blur", endTintPick);
   tintColor?.addEventListener("click", (ev) => ev.stopPropagation());
   manage?.addEventListener("click", (ev) => {
     const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-id]")?.dataset.id;
@@ -1338,6 +1362,8 @@ function applyDomCopy(): void {
   if (stageHead) stageHead.textContent = t("timer.stage");
   const timeHead = $("timer-time-head");
   if (timeHead) timeHead.textContent = t("timer.time");
+  const movesHead = $("timer-moves-head");
+  if (movesHead) movesHead.textContent = t("timer.moves");
 }
 
 type BitmapMark = { alpha?: number; visible?: boolean; children?: { alpha?: number; visible?: boolean }[] };
@@ -1837,6 +1863,33 @@ function syncSidePanel(show: boolean): void {
   panel.style.display = show ? "" : "none";
   $("animation_container")?.classList.toggle("has-speedrun", show);
   $("play-chrome")?.classList.toggle("has-speedrun", show);
+}
+
+/** Speedrun side panel: classic campaign starts, plus gauntlets and multi-stage packs. */
+function wantsSpeedrunPanel(session: PlaySession | null | undefined): boolean {
+  if (!session || !loadSettings().showTimer) return false;
+  if (session.classicRun && session.entry === "start") return true;
+  if (session.card === "gauntlet") return true;
+  if (session.card === "custom" && session.defs.length > 1) return true;
+  return false;
+}
+
+function speedrunStageCount(session: PlaySession): number {
+  if (session.defs.length > 1) return session.defs.length;
+  return 33;
+}
+
+function armSpeedrunTimer(session: PlaySession, levelNumber: number): void {
+  const w = window as unknown as {
+    setTimerStageCount?: (n: number) => void;
+    ResetTimer?: () => void;
+    StartTimer?: () => void;
+  };
+  w.setTimerStageCount?.(speedrunStageCount(session));
+  w.ResetTimer?.();
+  // Classic stage 1 starts the clock from the instructions frame; others arm here.
+  const classicIntro = session.classicRun && session.kind === "campaign" && levelNumber === 1;
+  if (!classicIntro) w.StartTimer?.();
 }
 
 function hideVanillaMenu(): void {
@@ -3318,8 +3371,9 @@ function handleHudAction(act: string): void {
   else if (act === "creator-redo") creatorRedo();
   else if (act === "creator-copy") copySeed();
   else if (act === "creator-load") {
-    if (extraView === "creator-play") openPlayCodeModal();
-    else openCodeModal();
+    // Hub / Play: paste → play immediately. Editor tray still loads into the canvas.
+    if (extraView === "creator-edit") openCodeModal();
+    else openPlayCodeModal();
   }
   else if (act.startsWith("tool:")) {
     paint.tool = act.slice(5) as EditorToolId;
@@ -3545,17 +3599,33 @@ function closeModal(): void {
 function playShareDef(defs: LevelDef[], returnTo: Screen, code = ""): void {
   if (!defs.length) return;
   const first = defs[0]!;
-  const saved = findBySeed(code || stageId(first), listSaved());
+  const pasted = code.trim();
+  const saved = findBySeed(pasted || stageId(first), listSaved());
+  if (!saved) {
+    // New paste → Saved, unless the user already has this stage or its reverse seed.
+    const pack = defs.length > 1;
+    saveStage({
+      name: pack ? t("creator.kindPack") : t("play.custom"),
+      author: getName() || "Unknown",
+      code: pasted || (pack ? encodePack(defs) : encodeSeed(first)),
+      seed: pack ? encodePack(defs) : stageId(first),
+      def: structuredClone(first),
+      defs: pack ? defs.map((d) => structuredClone(d)) : undefined,
+      kind: pack ? "pack" : "single",
+      source: "local",
+    });
+  }
+  const row = saved ?? findBySeed(pasted || stageId(first), listSaved());
   startCustom(
     defs.map((d) => structuredClone(d)),
     returnTo,
     {
       card: "custom",
-      title: saved?.name || (defs.length > 1 ? t("creator.kindPack") : t("play.custom")),
-      subtitle: saved?.author || "",
-      author: saved?.author,
+      title: row?.name || (defs.length > 1 ? t("creator.kindPack") : t("play.custom")),
+      subtitle: row?.author || "",
+      author: row?.author,
       entry: "code",
-      seed: code || (defs.length > 1 ? encodePack(defs) : encodeSeed(first)),
+      seed: pasted || (defs.length > 1 ? encodePack(defs) : encodeSeed(first)),
     },
   );
 }
@@ -3601,11 +3671,11 @@ function loadShareIntoEditor(def: LevelDef): void {
 function applyPendingShare(): boolean {
   const raw = shareFromLocation(location.search, location.hash);
   if (!raw) return false;
-  const def = parseShare(raw, listSaved());
-  if (!def) return false;
+  const defs = parseShareDefs(raw, listSaved());
+  if (!defs?.length) return false;
   splashDone = true;
   if (!getName()) setName("BLOX");
-  loadShareIntoEditor(def);
+  playShareDef(defs, "creator", raw);
   try {
     history.replaceState(null, "", `${location.pathname}${location.search.replace(/[?&](code|seed)=[^&]*/g, "").replace(/^&/, "?")}`);
   } catch {
@@ -3865,7 +3935,9 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   wrapLocalSave();
   if (!keepRunTotals(session) || levelNumber <= 1) resetStageTotals();
   (window as unknown as { setCurrentLevel?: (n: number) => void }).setCurrentLevel?.(levelNumber);
-  syncSidePanel(!!session.classicRun && session.entry === "start" && loadSettings().showTimer);
+  const showSpeedrun = wantsSpeedrunPanel(session);
+  if (showSpeedrun) armSpeedrunTimer(session, levelNumber);
+  syncSidePanel(showSpeedrun);
   if (session.replay) {
     window.exportRoot?.gotoAndPlay?.("game");
     return;
@@ -4859,7 +4931,7 @@ function syncOverlay(): void {
     hookReplayCapture();
     touchChrome?.sync(playing && !isPauseMenuOpen(), playBlocks().length > 1);
     if (label === "instructions") pollInstructionsPad();
-    syncSidePanel(playing && !!playSession?.classicRun && playSession.entry === "start" && loadSettings().showTimer);
+    syncSidePanel(playing && wantsSpeedrunPanel(playSession));
     applyPlayTint();
     applyBlockHue();
     syncPlayChrome(playing);

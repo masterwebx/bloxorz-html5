@@ -380,7 +380,17 @@ export function shareCodeFor(stage: SavedStage): string {
 
 export function findBySeed(seed: string, extra: SavedStage[] = []): SavedStage | undefined {
   const want = seed.trim().toUpperCase();
-  return [...listAllStages(), ...extra].find((s) => (s.seed || stageId(s.def)).toUpperCase() === want);
+  if (!want) return undefined;
+  return [...listAllStages(), ...extra].find((s) => {
+    const keys = [
+      s.seed,
+      s.code,
+      s.def ? stageId(s.def) : "",
+      s.def ? encodeSeed(s.def) : "",
+      ...(s.defs && s.defs.length > 1 ? [encodePack(s.defs)] : []),
+    ];
+    return keys.some((k) => !!k && k.toUpperCase() === want);
+  });
 }
 
 function readList(key: string): SavedStage[] {

@@ -233,6 +233,7 @@
   "play.select": "ESCOLHER",
   "timer.stage": "Fase",
   "timer.time": "Tempo",
+  "timer.moves": "# Movs",
   "finish.screenshot": "Captura",
   "finish.dailyTitle": "Puzzle diário",
   "finish.dailyCleared": "Puzzle de hoje concluído. {day}",

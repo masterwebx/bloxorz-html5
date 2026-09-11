@@ -94,7 +94,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #play-pass,
 #play-moves {
 	position: absolute;
-	left: 71.45%;
+	left: 69.6%;
 	width: 27.3%;
 	height: 6.67%;
 	display: grid;
@@ -107,7 +107,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 
 #play-time {
 	position: absolute;
-	left: 71.45%;
+	left: 69.6%;
 	width: 27.3%;
 	top: 7.2%;
 	height: 6.67%;

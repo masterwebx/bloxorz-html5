@@ -233,6 +233,7 @@
   "play.select": "ВЫБОР",
   "timer.stage": "Сцена",
   "timer.time": "Время",
+  "timer.moves": "# Ходы",
   "finish.screenshot": "Снимок",
   "finish.dailyTitle": "Ежедневная головоломка",
   "finish.dailyCleared": "Сегодняшняя головоломка пройдена. {day}",

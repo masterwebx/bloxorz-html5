@@ -233,6 +233,7 @@
   "play.select": "اختيار",
   "timer.stage": "مرحلة",
   "timer.time": "الوقت",
+  "timer.moves": "# الحركات",
   "finish.screenshot": "لقطة",
   "finish.dailyTitle": "لغز اليوم",
   "finish.dailyCleared": "أنهيت لغز اليوم. {day}",

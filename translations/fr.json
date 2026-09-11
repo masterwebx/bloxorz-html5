@@ -233,6 +233,7 @@
   "play.select": "CHOISIR",
   "timer.stage": "Niveau",
   "timer.time": "Temps",
+  "timer.moves": "# Coups",
   "finish.screenshot": "Capture",
   "finish.dailyTitle": "Puzzle du jour",
   "finish.dailyCleared": "Puzzle du jour réussi. {day}",

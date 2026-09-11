@@ -2,6 +2,7 @@ var currentLevel = 1;
 var TOTAL_STAGES = 33;
 var tableInitialized = false;
 var stageTimeCells = [];
+var stageMovesCells = [];
 var currentLevelCell = null;
 var timerActive = false;
 var pausedElapsed = 0;
@@ -15,8 +16,29 @@ function setCurrentLevel(levelNumber) {
     UpdateTable();
   }
 }
+
+/** Rebuild the side-panel table for classic (33) or shorter gauntlet/pack runs. */
+function setTimerStageCount(n) {
+  var count = Math.max(1, Math.floor(Number(n)) || 33);
+  if (count === TOTAL_STAGES && tableInitialized) return;
+  TOTAL_STAGES = count;
+  tableInitialized = false;
+  EnsureTable();
+}
+
+function liveMoveCount() {
+  try {
+    var world = window.stage && window.stage.bloxWorld;
+    if (world && typeof world.moves === "number") return Math.max(0, world.moves);
+  } catch (e) {
+    /* ignore */
+  }
+  return 0;
+}
+
 var startTime = Date.now();
 var times = [];
+var moves = [];
 
 function EnsureTable() {
   if (tableInitialized) return;
@@ -26,14 +48,23 @@ function EnsureTable() {
 
   var html = "";
   for (let i = 1; i <= TOTAL_STAGES; i++) {
-    html += `<tr id='stage${i}'><td>${i}</td><td id='stage${i}time'>-</td></tr>`;
+    html +=
+      `<tr id='stage${i}'><td>${i}</td>` +
+      `<td id='stage${i}time'>-</td>` +
+      `<td id='stage${i}moves'>-</td></tr>`;
   }
 
   timeRows.innerHTML = html;
 
+  stageTimeCells = [];
+  stageMovesCells = [];
   for (let i = 1; i <= TOTAL_STAGES; i++) {
     stageTimeCells[i] = document.getElementById(`stage${i}time`);
+    stageMovesCells[i] = document.getElementById(`stage${i}moves`);
   }
+
+  var table = document.getElementById("timeTable");
+  if (table) table.style.setProperty("--timer-rows", String(TOTAL_STAGES + 1));
 
   tableInitialized = true;
   currentLevelCell = stageTimeCells[currentLevel] || null;
@@ -50,6 +81,7 @@ function highlightCurrentStage() {
 function ResetTimer() {
   startTime = Date.now();
   times = [];
+  moves = [];
   timerActive = false;
   pausedElapsed = 0;
 
@@ -57,8 +89,12 @@ function ResetTimer() {
 
   for (let i = 1; i <= TOTAL_STAGES; i++) {
     times[i] = 0;
+    moves[i] = null;
     if (stageTimeCells[i]) {
       stageTimeCells[i].textContent = "-";
+    }
+    if (stageMovesCells[i]) {
+      stageMovesCells[i].textContent = "-";
     }
   }
 
@@ -114,9 +150,13 @@ function AddStageByLevel(level) {
 
   var elapsed = Date.now() - startTime;
   times[level] = elapsed;
+  moves[level] = liveMoveCount();
 
   if (stageTimeCells[level]) {
     stageTimeCells[level].textContent = FormatDuration(elapsed);
+  }
+  if (stageMovesCells[level]) {
+    stageMovesCells[level].textContent = String(moves[level]);
   }
 
   StartTimer();
@@ -138,6 +178,9 @@ function UpdateTable() {
   if (!currentLevelCell) return;
 
   currentLevelCell.textContent = FormatDuration(Date.now() - startTime);
+  if (stageMovesCells[currentLevel]) {
+    stageMovesCells[currentLevel].textContent = String(liveMoveCount());
+  }
 }
 
 function pad(num, places) {

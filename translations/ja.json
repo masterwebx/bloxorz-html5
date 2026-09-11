@@ -233,6 +233,7 @@
   "play.select": "選択",
   "timer.stage": "ステージ",
   "timer.time": "タイム",
+  "timer.moves": "# 手数",
   "finish.screenshot": "スクショ",
   "finish.dailyTitle": "デイリーパズル",
   "finish.dailyCleared": "今日のパズルをクリア。{day}",

@@ -1019,10 +1019,14 @@ export class ExtraHud {
       if (clip) this.board.addChild(clip);
       else drawBoardCell(mesh, cell.x, cell.y, cell.ch);
     }
-    // Spawn sits on the diamond face (Coolmath shadow mask), not only the tip tip.
+    // Spawn marker must always draw; Adobe Block frame_0 needs roll stubs the creator never installs.
     const spawnFace = boardCellCenter(opts.spawn[0], opts.spawn[1]);
-    const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]);
-    if (block) this.board.addChild(block);
+    try {
+      const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]);
+      if (block) this.board.addChild(block);
+    } catch {
+      /* marker below is the visible spawn cue */
+    }
     this.board.addChild(spawnMarker(spawnFace.x, spawnFace.y));
     if (opts.spawnTool && opts.cursor && (opts.cursor.x !== opts.spawn[0] || opts.cursor.y !== opts.spawn[1])) {
       const ghost = boardCellCenter(opts.cursor.x, opts.cursor.y);
@@ -1057,7 +1061,15 @@ export class ExtraHud {
       block.scaleY = BOARD_SCALE;
       block.mouseEnabled = false;
       if (block.tickEnabled !== undefined) block.tickEnabled = false;
-      block.gotoAndStop?.(0);
+      // Live play installs roll via addBlockRoll; creator preview never does, and frame_0
+      // assigns this.roll.idle — stub it so gotoAndStop does not throw and wipe the board.
+      const clip = block as { roll?: { idle: boolean; position: string }; gotoAndStop?: (n: number) => void };
+      if (!clip.roll) clip.roll = { idle: true, position: "up" };
+      try {
+        clip.gotoAndStop?.(0);
+      } catch {
+        /* keep the clip even if the timeline script still fails */
+      }
       return block;
     }
     const tile = this.makeTile?.(ch);
@@ -1142,11 +1154,12 @@ function drawBoardCell(shape: HudShape, x: number, y: number, ch: string): void 
 }
 
 function spawnMarker(x: number, y: number, alpha = 1): HudShape {
+  // Compact orange cuboid on the cell face — must stay visible (not a huge empty hit-circle).
   const block = new createjs.Shape();
-  block.graphics.beginFill("rgba(0,0,0,0.45)").drawEllipse(-11, 4, 22, 10);
-  block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(2).drawRect(-7, -20, 14, 22);
-  block.graphics.beginFill("#ffe082").drawRect(-4, -28, 8, 8);
-  block.graphics.beginStroke("#ffef9a").setStrokeStyle(1.5).drawCircle(0, -10, 16);
+  block.graphics.beginFill("rgba(0,0,0,0.5)").drawEllipse(-10, 2, 20, 9);
+  block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(2).drawRect(-6, -18, 12, 20);
+  block.graphics.beginFill("#ffe082").drawRect(-3.5, -25, 7, 7);
+  block.graphics.beginStroke("#ffef9a").setStrokeStyle(1.5).drawCircle(0, -9, 11);
   block.x = x;
   block.y = y;
   block.alpha = alpha;

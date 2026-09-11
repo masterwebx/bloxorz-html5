@@ -233,6 +233,7 @@
   "play.select": "선택",
   "timer.stage": "스테이지",
   "timer.time": "시간",
+  "timer.moves": "# 수",
   "finish.screenshot": "스크린샷",
   "finish.dailyTitle": "오늘의 퍼즐",
   "finish.dailyCleared": "오늘 퍼즐을 깼습니다. {day}",

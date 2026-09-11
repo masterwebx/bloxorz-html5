@@ -233,6 +233,7 @@
   "play.select": "选择",
   "timer.stage": "关卡",
   "timer.time": "时间",
+  "timer.moves": "# 步数",
   "finish.screenshot": "截图",
   "finish.dailyTitle": "每日谜题",
   "finish.dailyCleared": "今日谜题已通关。{day}",

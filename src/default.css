@@ -125,6 +125,7 @@
 }
 
 #timeTable {
+	--timer-rows: 34;
 	border-collapse: collapse;
 	border-spacing: 0;
 	height: 100%;
@@ -141,7 +142,7 @@
 }
 
 #timeTable tr {
-	height: calc(100% / 34);
+	height: calc(100% / var(--timer-rows));
 }
 
 #timeTable tr:nth-child(even) {

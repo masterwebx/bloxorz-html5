@@ -233,6 +233,7 @@
   "play.select": "WÄHLEN",
   "timer.stage": "Level",
   "timer.time": "Zeit",
+  "timer.moves": "# Züge",
   "finish.screenshot": "Screenshot",
   "finish.dailyTitle": "Tagesrätsel",
   "finish.dailyCleared": "Heutiges Rätsel geschafft. {day}",
