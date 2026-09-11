@@ -1,6 +1,7 @@
 # Bloxorz+
 
-<img width="1133" height="765" alt="Bloxorz+" src="https://github.com/user-attachments/assets/9ab02db6-e01f-4428-ae38-9eff7f474d19" />
+<img width="1569" height="839" alt="image" src="https://github.com/user-attachments/assets/abdecaec-d4ff-4ba2-9f1e-f16a5a36df93" />
+
 
 Coolmath’s HTML5 Bloxorz — Damien Clarke’s puzzle, still rolling in their CreateJS export — plus a painter, a daily that remixes the late campaign, ghosts, live themes, and a speedrun clock that sits on the 550×300 stage.
 
