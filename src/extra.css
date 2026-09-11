@@ -136,8 +136,9 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #play-chrome.has-speedrun #play-pass,
 #play-chrome.has-speedrun #play-moves,
 #play-chrome.has-speedrun #play-time {
-	left: 61%;
-	width: 32%;
+	/* Clear the speedrun side panel so time never overlaps it. */
+	left: 52%;
+	width: 34%;
 }
 
 #play-pass,
@@ -512,7 +513,8 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	width: 10%;
 }
 
-#hud-bg-color {
+#hud-bg-color,
+#hud-block-color {
 	position: absolute;
 	z-index: 30;
 	left: 28%;
@@ -528,11 +530,13 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	appearance: none;
 }
 
-#hud-bg-color::-webkit-color-swatch-wrapper {
+#hud-bg-color::-webkit-color-swatch-wrapper,
+#hud-block-color::-webkit-color-swatch-wrapper {
 	padding: 0;
 }
 
-#hud-bg-color::-webkit-color-swatch {
+#hud-bg-color::-webkit-color-swatch,
+#hud-block-color::-webkit-color-swatch {
 	border: none;
 	border-radius: 0;
 }
@@ -596,6 +600,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #hud-theme-manage-btn[hidden],
 #hud-theme-manage[hidden],
 #hud-bg-color[hidden],
+#hud-block-color[hidden],
 #play-chrome[hidden],
 #play-pass[hidden],
 #play-stage-name[hidden],

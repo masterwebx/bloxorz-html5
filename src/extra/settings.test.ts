@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  hexCss,
+  hexToHue,
   hueRgb,
+  hueToHex,
   invalidateSettingsCache,
   loadSettings,
+  normalizeHex,
   setMobilePad,
   setRotateScreen,
+  updateSettings,
 } from "./settings";
 
 const mem: Record<string, string> = {};
@@ -93,5 +98,19 @@ describe("mobile settings", () => {
     localStorage.setItem("bloxorz-settings-v1", JSON.stringify({ unlimitedEndless: true }));
     invalidateSettingsCache();
     expect(loadSettings().unlimitedEndless).toBe(true);
+  });
+
+  it("stores free backdrop and block swatch hex colors", () => {
+    updateSettings((s) => {
+      s.bgColor = "#33aaff";
+      s.bgHue = hexToHue("#33aaff");
+      s.blockColor = "#ff3366";
+      s.blockHue = hexToHue("#ff3366");
+    });
+    const s = loadSettings();
+    expect(normalizeHex(s.bgColor)).toBe("#33aaff");
+    expect(normalizeHex(s.blockColor)).toBe("#ff3366");
+    expect(hexCss("#33aaff", 0.5)).toBe("rgba(51,170,255,0.5)");
+    expect(hueToHex(s.bgHue).startsWith("#")).toBe(true);
   });
 });

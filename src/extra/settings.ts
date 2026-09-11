@@ -41,7 +41,11 @@ export interface Settings {
   tabCrop: { x: number; y: number; w: number; h: number };
   bgTint: number;
   bgHue: number;
+  /** Full backdrop tint color (#rrggbb). Free picker; bgHue stays in sync for legacy paths. */
+  bgColor: string;
   blockHue: number;
+  /** Last block swatch hex (picker UX); bake still uses blockHue rotation. */
+  blockColor: string;
   unlimitedEndless: boolean;
   playerName: string;
   locale: string;
@@ -67,7 +71,9 @@ const DEFAULTS: Settings = {
   tabCrop: { ...DEFAULT_TAB_CROP },
   bgTint: 0,
   bgHue: 28,
+  bgColor: "#b86a2e",
   blockHue: 0,
+  blockColor: "#b86a2e",
   unlimitedEndless: false,
   playerName: "",
   locale: "",
@@ -123,7 +129,17 @@ export function loadSettings(): Settings {
       tabCrop: normalizeTabCrop(parsed.tabCrop),
       bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
+      bgColor: normalizeHex(
+        typeof parsed.bgColor === "string" ? parsed.bgColor : hueToHex(clampHue(parsed.bgHue ?? DEFAULTS.bgHue)),
+        DEFAULTS.bgColor,
+      ),
       blockHue: clampHue(parsed.blockHue ?? DEFAULTS.blockHue),
+      blockColor: normalizeHex(
+        typeof parsed.blockColor === "string"
+          ? parsed.blockColor
+          : hueToHex(clampHue(parsed.blockHue ?? DEFAULTS.blockHue)),
+        DEFAULTS.blockColor,
+      ),
       unlimitedEndless: parsed.unlimitedEndless === true,
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       locale: typeof parsed.locale === "string" ? parsed.locale : "",
@@ -209,6 +225,11 @@ function normalizeTabCrop(raw: unknown): { x: number; y: number; w: number; h: n
   };
 }
 
+export function normalizeHex(hex: string, fallback = "#b86a2e"): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  return m ? `#${m[1]!.toLowerCase()}` : fallback;
+}
+
 export function hueToHex(hue: number): string {
   const [r, g, b] = hueRgb(hue);
   return `#${[r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
@@ -217,7 +238,7 @@ export function hueToHex(hue: number): string {
 export function hexToHue(hex: string): number {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return DEFAULTS.bgHue;
-  const n = parseInt(m[1], 16);
+  const n = parseInt(m[1]!, 16);
   const r = ((n >> 16) & 255) / 255;
   const g = ((n >> 8) & 255) / 255;
   const b = (n & 255) / 255;
@@ -230,6 +251,17 @@ export function hexToHue(hex: string): number {
   else if (max === g) h = ((b - r) / d + 2) / 6;
   else h = ((r - g) / d + 4) / 6;
   return clampHue(h * 360);
+}
+
+/** Parse #rrggbb into an rgba() CSS color with the given alpha. */
+export function hexCss(hex: string, alpha = 1): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return `rgba(184,106,46,${clamp01(alpha)})`;
+  const n = parseInt(m[1]!, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${clamp01(alpha)})`;
 }
 
 export function hueRgb(hue: number): [number, number, number] {

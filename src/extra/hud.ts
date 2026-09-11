@@ -602,10 +602,8 @@ export class ExtraHud {
       this.add(this.act("tab-crop", `${this.focusId === "tab-crop" ? "> " : "  "}${t("settings.tabCrop")}`, 300, 210, 11, false, 180));
     }
     this.add(text(t("settings.tint"), 40, 234, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
-    // One clickable HTML color swatch only (no slider / no CreateJS duplicate).
+    // HTML color swatches for tint + block (see placeSettingsChrome); no CreateJS sliders.
     this.add(text(t("settings.blockHue"), 40, 254, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
-    this.add(slider(150, 254, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
-    this.add(swatch(330, 256, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
     this.placePreview(392, 214, opts.blockHue);
     this.add(this.act("remap", t("settings.remap"), 40, 276, 12, false, 160));
     this.add(this.act("settings-save", t("settings.manageSave"), 220, 276, 12, false, 220));
@@ -1019,18 +1017,18 @@ export class ExtraHud {
       if (clip) this.board.addChild(clip);
       else drawBoardCell(mesh, cell.x, cell.y, cell.ch);
     }
-    // Spawn marker must always draw; Adobe Block frame_0 needs roll stubs the creator never installs.
-    const spawnFace = boardCellCenter(opts.spawn[0], opts.spawn[1]);
+    // Spawn = the Block alone (no yellow circle/keyhole overlay). Stub roll so frame_0 cannot wipe the board.
     try {
       const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]);
       if (block) this.board.addChild(block);
+      else this.board.addChild(spawnBlockOnly(boardCellCenter(opts.spawn[0], opts.spawn[1]).x, boardCellCenter(opts.spawn[0], opts.spawn[1]).y));
     } catch {
-      /* marker below is the visible spawn cue */
+      const face = boardCellCenter(opts.spawn[0], opts.spawn[1]);
+      this.board.addChild(spawnBlockOnly(face.x, face.y));
     }
-    this.board.addChild(spawnMarker(spawnFace.x, spawnFace.y));
     if (opts.spawnTool && opts.cursor && (opts.cursor.x !== opts.spawn[0] || opts.cursor.y !== opts.spawn[1])) {
       const ghost = boardCellCenter(opts.cursor.x, opts.cursor.y);
-      this.board.addChild(spawnMarker(ghost.x, ghost.y, 0.55));
+      this.board.addChild(spawnBlockOnly(ghost.x, ghost.y, 0.55));
     }
     for (const mark of opts.marks) {
       const p = boardCellCenter(mark.x, mark.y);
@@ -1103,7 +1101,7 @@ export class ExtraHud {
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
     if (id === "spawn") {
-      const mark = spawnMarker(8, 12);
+      const mark = spawnBlockOnly(8, 12);
       mark.scaleX = 0.85;
       mark.scaleY = 0.85;
       wrap.addChild(mark);
@@ -1153,13 +1151,12 @@ function drawBoardCell(shape: HudShape, x: number, y: number, ch: string): void 
     .moveTo(a.x, a.y).lineTo(b.x, b.y).lineTo(c.x, c.y).lineTo(d.x, d.y).lineTo(a.x, a.y).endFill();
 }
 
-function spawnMarker(x: number, y: number, alpha = 1): HudShape {
-  // Compact orange cuboid on the cell face — must stay visible (not a huge empty hit-circle).
+function spawnBlockOnly(x: number, y: number, alpha = 1): HudShape {
+  // Cuboid only — no circle/keyhole overlay (spawn must read as the block alone).
   const block = new createjs.Shape();
   block.graphics.beginFill("rgba(0,0,0,0.5)").drawEllipse(-10, 2, 20, 9);
   block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(2).drawRect(-6, -18, 12, 20);
   block.graphics.beginFill("#ffe082").drawRect(-3.5, -25, 7, 7);
-  block.graphics.beginStroke("#ffef9a").setStrokeStyle(1.5).drawCircle(0, -9, 11);
   block.x = x;
   block.y = y;
   block.alpha = alpha;

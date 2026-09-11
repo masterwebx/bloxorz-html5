@@ -62,6 +62,7 @@ import {
   ACTIONS,
   brandName,
   currentTheme,
+  hexCss,
   hexToHue,
   hueCss,
   hueRgb,
@@ -69,6 +70,7 @@ import {
   isDevName,
   loadSettings,
   NAME_MAX,
+  normalizeHex,
   normalizeTheme,
   prettyKey,
   saveSettings,
@@ -383,6 +385,7 @@ let editorPaintHeld = false;
 let replayExclude: TapeCmd[] = [];
 let prevCreatorPad = new Set<number>();
 let lastFinished: RunRecord | null = null;
+let lastFinishFalls = 0;
 let finishReturnTo: Screen = "home";
 let finishKind: PlayCard = "classic";
 let finishTitle = "";
@@ -427,6 +430,7 @@ let touchChrome: TouchChrome | null = null;
 let localSaveWrapped = false;
 /** Native color picker open — skip HUD rebuilds that dismiss it. */
 let tintPicking = false;
+let blockPicking = false;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -770,10 +774,14 @@ function usingLiveBg(): boolean {
 function applyLooks(): void {
   const s = loadSettings();
   const live = s.webcamBg || s.tabCastBg;
+  const tintHex = s.bgColor || hueToHex(s.bgHue);
   document.body.classList.toggle("no-theme-bg", !s.themeBg && !live);
   document.body.classList.toggle("has-webcam-bg", live);
-  document.body.style.setProperty("--bg-tint", hueCss(s.bgHue, s.bgTint * 0.55));
-  document.body.style.setProperty("--play-tint", live ? "transparent" : s.bgTint > 0.01 ? hueCss(s.bgHue, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000");
+  document.body.style.setProperty("--bg-tint", hexCss(tintHex, s.bgTint * 0.55));
+  document.body.style.setProperty(
+    "--play-tint",
+    live ? "transparent" : s.bgTint > 0.01 ? hexCss(tintHex, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000",
+  );
   ensureTint();
   lastTintKey = "";
   if (sky) (sky as SkyClip & { __bloxTintKey?: string }).__bloxTintKey = "";
@@ -783,7 +791,7 @@ function applyLooks(): void {
   if (tintLayer) {
     tintLayer.graphics.clear();
     if (s.bgTint > 0.01 && !live) {
-      tintLayer.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(0, 0, 550, 300);
+      tintLayer.graphics.beginFill(hexCss(tintHex, 1)).drawRect(0, 0, 550, 300);
       tintLayer.alpha = s.bgTint * 0.42;
       tintLayer.visible = true;
     } else {
@@ -1085,11 +1093,14 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const manageBtn = $("hud-theme-manage-btn");
   const manage = $("hud-theme-manage");
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
+  const blockColor = $("hud-block-color") as HTMLInputElement | null;
   const pickingTint = tintPicking || (!!tintColor && document.activeElement === tintColor);
-  for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn, tintColor]) {
+  const pickingBlock = blockPicking || (!!blockColor && document.activeElement === blockColor);
+  for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn, tintColor, blockColor]) {
     if (!el) continue;
     // Toggling hidden / rewriting .value while the OS color UI is open dismisses it.
     if (el === tintColor && pickingTint) continue;
+    if (el === blockColor && pickingBlock) continue;
     el.hidden = !on;
   }
   if (upload) upload.hidden = true;
@@ -1105,14 +1116,24 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   if (uploadBtn) uploadBtn.textContent = themeUploadMsg || t("settings.upload");
   if (templateBtn) templateBtn.textContent = t("settings.template");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
+  const s = loadSettings();
   if (tintColor) {
-    // Single swatch next to the Backdrop tint label (no slider duplicate).
+    // Full free color swatch next to Backdrop tint (not a hue-only slider).
     tintColor.style.left = "28%";
     tintColor.style.top = "78.4%";
     tintColor.style.width = "4.2%";
     tintColor.style.height = "4.4%";
-    if (!pickingTint) tintColor.value = hueToHex(loadSettings().bgHue);
+    if (!pickingTint) tintColor.value = normalizeHex(s.bgColor || hueToHex(s.bgHue));
     tintColor.title = t("settings.tint");
+  }
+  if (blockColor) {
+    // Block swatch — same free picker UX as tint (bake maps hex → hue rotate).
+    blockColor.style.left = "28%";
+    blockColor.style.top = "85.2%";
+    blockColor.style.width = "4.2%";
+    blockColor.style.height = "4.4%";
+    if (!pickingBlock) blockColor.value = normalizeHex(s.blockColor || hueToHex(s.blockHue));
+    blockColor.title = t("settings.blockHue");
   }
   if (!on) {
     closeSettingsDropdowns();
@@ -1192,6 +1213,7 @@ function bindSettingsChrome(): void {
     applyLanguage(id);
   });
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
+  const blockColorEl = $("hud-block-color") as HTMLInputElement | null;
   document.addEventListener(
     "pointerdown",
     (ev) => {
@@ -1201,7 +1223,8 @@ function bindSettingsChrome(): void {
         localeSel?.contains(node) ||
         manageBtn?.contains(node) ||
         manage?.contains(node) ||
-        tintColor?.contains(node)
+        tintColor?.contains(node) ||
+        blockColorEl?.contains(node)
       ) {
         return;
       }
@@ -1248,7 +1271,8 @@ function bindSettingsChrome(): void {
   tintColor?.addEventListener("input", () => {
     tintPicking = true;
     updateSettings((s) => {
-      s.bgHue = hexToHue(tintColor.value);
+      s.bgColor = normalizeHex(tintColor.value);
+      s.bgHue = hexToHue(s.bgColor);
       if (s.bgTint < 0.2) s.bgTint = 0.55;
     });
     // Live backdrop only — paintHud/placeSettingsChrome would close the native picker.
@@ -1257,6 +1281,29 @@ function bindSettingsChrome(): void {
   tintColor?.addEventListener("change", endTintPick);
   tintColor?.addEventListener("blur", endTintPick);
   tintColor?.addEventListener("click", (ev) => ev.stopPropagation());
+  const blockColor = $("hud-block-color") as HTMLInputElement | null;
+  const endBlockPick = () => {
+    if (!blockPicking) return;
+    blockPicking = false;
+    scheduleHudPaint();
+  };
+  blockColor?.addEventListener("focus", () => {
+    blockPicking = true;
+  });
+  blockColor?.addEventListener("input", () => {
+    blockPicking = true;
+    const hex = normalizeHex(blockColor.value);
+    updateSettings((s) => {
+      s.blockColor = hex;
+      s.blockHue = hexToHue(hex);
+    });
+    // Live preview via HUD cube; settle-bake atlas after picker closes / idle.
+    scheduleHudPaint();
+    scheduleBlockHueBake(120);
+  });
+  blockColor?.addEventListener("change", endBlockPick);
+  blockColor?.addEventListener("blur", endBlockPick);
+  blockColor?.addEventListener("click", (ev) => ev.stopPropagation());
   manage?.addEventListener("click", (ev) => {
     const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-id]")?.dataset.id;
     if (!id) return;
@@ -1425,6 +1472,18 @@ function setBitmapPlayText(show: boolean): void {
 
 function instructionTextMark(): OverlayNode | undefined {
   return (window.exportRoot?.inst as { instance_4?: OverlayNode } | undefined)?.instance_4;
+}
+
+
+/** Keep classic bitmap pages/glyphs dead while HD text is on — no one-frame leaks. */
+function suppressClassicBitmapsForHd(label = currentLabel()): void {
+  if (!usesHdType()) return;
+  setInstructionBitmaps(false);
+  for (const btn of instructionGlyphs()) setGlyphVisible(btn, false);
+  setVanillaCongraVisible(false);
+  if (label === "stagetitle" || label === "finish" || label === "instructions") {
+    setVanillaTitleVisible(false);
+  }
 }
 
 function setInstructionBitmaps(show: boolean): void {
@@ -1667,8 +1726,14 @@ function syncHowto(on: boolean): void {
     copy.hidden = true;
     page.hidden = true;
     if (nav) nav.hidden = true;
-    setInstructionBitmaps(true);
-    for (const btn of instructionGlyphs()) setGlyphVisible(btn, true);
+    // Never re-show classic instruction bitmaps under HD text (avoids one-frame flashes).
+    if (usesHdType()) {
+      setInstructionBitmaps(false);
+      for (const btn of instructionGlyphs()) setGlyphVisible(btn, false);
+    } else {
+      setInstructionBitmaps(true);
+      for (const btn of instructionGlyphs()) setGlyphVisible(btn, true);
+    }
     return;
   }
   setInstructionBitmaps(false);
@@ -2190,7 +2255,7 @@ function navItems(): NavItem[] {
       { id: "toggle-tab-cast" },
       ...(s.tabCastBg ? [{ id: "tab-crop" }] : []),
       { id: "bgtint", adjust: () => ($("hud-bg-color") as HTMLInputElement | null)?.click() },
-      { id: "blockhue", adjust: (d) => handleHudAction("blockhue:" + String(clampStep(s.blockHue, d * 12, 0, 360))) },
+      { id: "blockhue", adjust: () => ($("hud-block-color") as HTMLInputElement | null)?.click() },
       { id: "remap" },
       { id: "settings-save" },
     ];
@@ -2523,7 +2588,9 @@ function hudKey(): string {
     String(s.tabCastBg),
     String(s.bgTint),
     String(s.bgHue),
+    String(s.bgColor || ""),
     String(s.blockHue),
+    String(s.blockColor || ""),
     String(s.music),
     String(s.sfx),
     currentThemeId(),
@@ -2638,7 +2705,7 @@ function paintHud(): void {
       title: copy.title,
       cleared: copy.cleared,
       moves: lastFinished?.totalMoves ?? st?.totalMoves ?? 0,
-      falls: st?.totalFalls ?? 0,
+      falls: lastFinishFalls || st?.totalFalls || 0,
       fails: lastFinished?.fails ?? 0,
       rows: finishStatRows(),
     });
@@ -3795,16 +3862,19 @@ function hushPlayAudio(): void {
 }
 
 function finishStatRows(): { title: string; meta: string }[] {
-  const levels = (lastFinished?.levels ?? []).filter((lv) => lv.tapes.some((row) => row.won && row.cmds.length) || lv.moves);
+  // Prefer recorded per-stage rows; keep stages that have moves even if the winning tape lacked cmds.
+  const levels = (lastFinished?.levels ?? []).filter(
+    (lv) => lv.moves > 0 || lv.tapes.some((row) => row.won && row.cmds.length) || lv.attempts > 0,
+  );
   if (levels.length) {
     return levels.map((lv) => ({
       title: t("play.stage", { n: String(lv.stage).padStart(2, "0") }),
-      meta: `${lv.moves} ${t("play.moves")} · ${lv.attempts} ${t("finish.attempts")}`,
+      meta: `${lv.moves} ${t("play.moves")} · ${Math.max(1, lv.attempts)} ${t("finish.attempts")}`,
     }));
   }
   const st = window.stage;
   const moves = lastFinished?.totalMoves ?? st?.totalMoves ?? 0;
-  const attempts = (lastFinished?.fails ?? 0) + 1;
+  const attempts = Math.max(1, (lastFinished?.fails ?? 0) + 1);
   const stageNo = lastFinished?.levels[0]?.stage ?? st?.levelNumber ?? 1;
   return [
     {
@@ -4182,7 +4252,7 @@ function applyPlayTint(): void {
   applySkySpriteTint(cam ? null : skySpr, s.bgHue, s.bgTint);
   applySkySpriteTint(cam ? null : sky, s.bgHue, s.bgTint);
   if (!gc?.addChildAt || !cjs?.Shape) return;
-  const key = `${s.bgTint}|${s.bgHue}|${s.themeBg}|${cam}`;
+  const key = `${s.bgTint}|${s.bgColor || s.bgHue}|${s.themeBg}|${cam}`;
   let overlay = gc.__bloxTint;
   const listed = !!(overlay && gc.children?.includes(overlay));
   if (!listed) {
@@ -4204,7 +4274,7 @@ function applyPlayTint(): void {
   lastTintKey = key;
   overlay.graphics.clear();
   if (s.themeBg && s.bgTint > 0.01 && !cam) {
-    overlay.graphics.beginFill(hueCss(s.bgHue, 1)).drawRect(-40, -40, 630, 380);
+    overlay.graphics.beginFill(hexCss(s.bgColor || hueToHex(s.bgHue), 1)).drawRect(-40, -40, 630, 380);
     overlay.alpha = Math.min(0.55, 0.12 + s.bgTint * 0.4);
     overlay.visible = true;
   } else {
@@ -4234,7 +4304,8 @@ function commitTape(won: boolean, stageNo: number): void {
     lv.attempts += 1;
     if (won) {
       lv.tapes = [{ cmds: tape.slice(), won: true }];
-      lv.moves = tape.length;
+      const liveMoves = window.stage?.bloxWorld?.moves ?? window.stage?.totalMoves ?? 0;
+      lv.moves = tape.length || liveMoves || lv.moves;
     } else {
       run.fails += 1;
     }
@@ -4365,6 +4436,8 @@ function advanceInstructions(dir: 1 | -1 | 0): void {
   const inst = instructionClip();
   if (!inst?.play) return;
   if (inst.paused === false) return;
+  // Hide classic pages before the timeline advances so HD never flashes a bitmap frame.
+  if (usesHdType()) suppressClassicBitmapsForHd("instructions");
   const frame = inst.currentFrame ?? 0;
   if (dir === 0) {
     inst.gotoAndPlay?.("skip");
@@ -4789,6 +4862,9 @@ function bind(): void {
 function syncOverlay(): void {
   const version = $("build-version");
   const label = currentLabel();
+  // Kill classic bitmap pages under HD before any label work — covers howto paging and
+  // stage-complete/win (finish) so CreateJS never paints one classic frame under HD text.
+  if (usesHdType()) suppressClassicBitmapsForHd(label);
   const stage = window.stage;
   const labeledRun =
     label === "game" || label === "restart" || label === "stagetitle" || label === "instructions";
@@ -4862,10 +4938,27 @@ function syncOverlay(): void {
       persistWonStage(finishStage);
     }
     reportPlayWin(finishStage);
+    const finishMoves = stage?.totalMoves ?? tape.length;
+    const finishFalls = stage?.totalFalls ?? 0;
+    lastFinishFalls = finishFalls;
     if (run && playSession?.record) {
       run.complete = true;
       run.totalTimeMs = Date.now() - run.at;
-      run.totalMoves = stage?.totalMoves ?? run.totalMoves;
+      run.totalMoves = finishMoves || run.totalMoves;
+      // Guarantee the finishing stage appears even if the last tape was empty.
+      if (!run.levels.some((lv) => lv.stage === finishStage)) {
+        run.levels.push({
+          stage: finishStage,
+          timeMs: 0,
+          moves: finishMoves,
+          attempts: finishFalls + 1,
+          tapes: tape.length ? [{ cmds: tape.slice(), won: true }] : [],
+        });
+      } else {
+        const lv = run.levels.find((l) => l.stage === finishStage)!;
+        if (!lv.moves) lv.moves = finishMoves;
+        if (!lv.attempts) lv.attempts = finishFalls + 1;
+      }
       lastFinished = run;
       saveRun(run);
       run = null;
@@ -4875,10 +4968,18 @@ function syncOverlay(): void {
         at: Date.now(),
         player: getName() || "BLOX",
         totalTimeMs: 0,
-        totalMoves: stage?.totalMoves ?? 0,
-        fails: stage?.totalFalls ?? 0,
+        totalMoves: finishMoves,
+        fails: 0,
         complete: true,
-        levels: [],
+        levels: [
+          {
+            stage: finishStage,
+            timeMs: 0,
+            moves: finishMoves,
+            attempts: finishFalls + 1,
+            tapes: tape.length ? [{ cmds: tape.slice(), won: true }] : [],
+          },
+        ],
       };
     }
     rememberFinish(playSession);
@@ -4894,16 +4995,21 @@ function syncOverlay(): void {
       return;
     }
     setVanillaCongraVisible(false);
+    suppressClassicBitmapsForHd("finish");
     playSession = null;
     showFinish();
     overlayMode = "menu";
     return;
   }
-  if (label === "finish" && !usesHdType()) {
-    setVanillaCongraVisible(true);
-    hud?.setVisible(false);
-    setExportRootMouse(true);
-    return;
+  if (label === "finish") {
+    // Stay on finish: classic shows Congrats bitmap; HD keeps it suppressed every tick.
+    if (!usesHdType()) {
+      setVanillaCongraVisible(true);
+      hud?.setVisible(false);
+      setExportRootMouse(true);
+      return;
+    }
+    suppressClassicBitmapsForHd("finish");
   }
   lastLabel = label;
 
@@ -4935,6 +5041,7 @@ function syncOverlay(): void {
     applyPlayTint();
     applyBlockHue();
     syncPlayChrome(playing);
+    suppressClassicBitmapsForHd(label);
     syncHowto(label === "instructions");
     syncPauseStats(playing && isPauseMenuOpen());
     syncSelectPrompt(playing);
