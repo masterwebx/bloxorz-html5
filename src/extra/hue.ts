@@ -241,8 +241,9 @@ export function parseHexRgb(hex: string): [number, number, number] | null {
 }
 
 /**
- * Fully desaturate the source pixel, then tint with the target RGB.
- * Shading comes from luminance only — the swatch color is what you get.
+ * Desaturate toward gray, then tint with the target RGB — but keep local
+ * face contrast (channel ratios + expanded luminance) so the block/tiles
+ * don't flatten into a single plastic color.
  */
 export function recolorRgb(
   r: number,
@@ -255,8 +256,16 @@ export function recolorRgb(
 ): [number, number, number] {
   const lum = luminance(r, g, b);
   const baseLum = Math.max(1, luminance(base[0], base[1], base[2]));
-  const scale = lum / baseLum;
-  return [clampByte(tr * scale), clampByte(tg * scale), clampByte(tb * scale)];
+  // Expand shading around the base so dark/light faces stay distinct.
+  const rel = lum / baseLum;
+  const contrast = 1 + (rel - 1) * 1.35;
+  const avg = Math.max(1, (r + g + b) / 3);
+  // Keep some of the original face ratios (top vs side) instead of pure gray→tint.
+  const keep = 0.42;
+  const nr = tr * contrast * ((1 - keep) + keep * (r / avg));
+  const ng = tg * contrast * ((1 - keep) + keep * (g / avg));
+  const nb = tb * contrast * ((1 - keep) + keep * (b / avg));
+  return [clampByte(nr), clampByte(ng), clampByte(nb)];
 }
 
 export function bakeRecolorIntoPixels(data: Uint8ClampedArray, targetHex: string): void {

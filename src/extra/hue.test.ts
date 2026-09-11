@@ -191,14 +191,15 @@ describe("block hue bake", () => {
     ]);
   });
 
-  it("recolors rust toward a full RGB swatch (desaturate then tint)", () => {
+  it("recolors rust toward a full RGB swatch (contrast-preserving tint)", () => {
     expect(parseHexRgb("#00ff80")).toEqual([0, 255, 128]);
-    // Mid rust luminance ≈ base → output ≈ target green.
+    // Mid rust luminance ≈ base → output tracks the target green while keeping face ratios.
     const [r, g, b] = recolorRgb(196, 104, 32, 0, 255, 128);
     expect(r).toBeLessThan(40);
     expect(g).toBeGreaterThan(200);
-    expect(b).toBeGreaterThan(100);
-    // Pure gray source ignores rust chroma and follows the swatch.
+    expect(b).toBeGreaterThan(60);
+    expect(b).toBeLessThan(g);
+    // Pure gray source still goes blue-ish toward the swatch.
     const [gr, gg, gb] = recolorRgb(128, 128, 128, 0, 0, 255);
     expect(gr).toBe(0);
     expect(gg).toBe(0);

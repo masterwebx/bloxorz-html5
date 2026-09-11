@@ -13,11 +13,11 @@
 	object-fit: cover;
 }
 
-/* Desaturate backdrop media before color tint so the swatch matches the pick. */
+/* Partial desaturate before tint — keeps backdrop contrast, still tracks the swatch. */
 body.has-bg-tint #theme-media img,
 body.has-bg-tint #theme-media video,
 body.has-bg-tint #theme-webcam {
-	filter: grayscale(1);
+	filter: grayscale(0.55);
 }
 
 
@@ -144,9 +144,9 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #play-chrome.has-speedrun #play-pass,
 #play-chrome.has-speedrun #play-moves,
 #play-chrome.has-speedrun #play-time {
-	/* Clear the speedrun side panel so time never overlaps it. */
-	left: 52%;
-	width: 34%;
+	/* Sit closer to the speedrun panel — previous 52% left a wide empty gap. */
+	left: 58%;
+	width: 28%;
 }
 
 #play-pass,
@@ -522,7 +522,8 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 }
 
 #hud-bg-color,
-#hud-block-color {
+#hud-block-color,
+#hud-color-slots input {
 	position: absolute;
 	z-index: 30;
 	left: 28%;
@@ -539,14 +540,46 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 }
 
 #hud-bg-color::-webkit-color-swatch-wrapper,
-#hud-block-color::-webkit-color-swatch-wrapper {
+#hud-block-color::-webkit-color-swatch-wrapper,
+#hud-color-slots input::-webkit-color-swatch-wrapper {
 	padding: 0;
 }
 
 #hud-bg-color::-webkit-color-swatch,
-#hud-block-color::-webkit-color-swatch {
+#hud-block-color::-webkit-color-swatch,
+#hud-color-slots input::-webkit-color-swatch {
 	border: none;
 	border-radius: 0;
+}
+
+#hud-color-slots {
+	position: absolute;
+	inset: 0;
+	z-index: 30;
+	pointer-events: none;
+}
+
+#hud-color-slots input {
+	pointer-events: auto;
+	left: 36.4%;
+	width: 4.2%;
+	height: 4.4%;
+}
+
+/* Match drawCustomizeColors rowY0=44, rowStep=22 on a 300px canvas. */
+body.is-settings-colors #hud-color-slots input[data-slot="bg"] { top: 14.7%; }
+body.is-settings-colors #hud-color-slots input[data-slot="block"] { top: 22%; }
+body.is-settings-colors #hud-color-slots input[data-slot="stone"] { top: 29.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="exit"] { top: 36.7%; }
+body.is-settings-colors #hud-color-slots input[data-slot="soft"] { top: 44%; }
+body.is-settings-colors #hud-color-slots input[data-slot="heavy"] { top: 51.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="fragile"] { top: 58.7%; }
+body.is-settings-colors #hud-color-slots input[data-slot="split"] { top: 66%; }
+body.is-settings-colors #hud-color-slots input[data-slot="bridgeL"] { top: 73.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="bridgeR"] { top: 80.7%; }
+
+body:not(.is-settings-colors) #hud-color-slots {
+	display: none;
 }
 
 #hud-theme-manage {
@@ -609,6 +642,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #hud-theme-manage[hidden],
 #hud-bg-color[hidden],
 #hud-block-color[hidden],
+#hud-color-slots[hidden],
 #play-chrome[hidden],
 #play-pass[hidden],
 #play-stage-name[hidden],

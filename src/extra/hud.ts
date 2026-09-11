@@ -11,8 +11,15 @@ import {
   pickBoardCell,
   type ClipName,
 } from "./coolmathBoard";
+import {
+  COLOR_PREVIEW_SPAWN,
+  COLOR_PREVIEW_STAGE,
+  COLOR_SLOT_META,
+  resolveTileFace,
+  type ColorCustom,
+} from "./colorCustom";
 import { EDITOR_TOOLS } from "./editor";
-import { TILE_FACE, TOOL_CH, isoPt, type IsoMetrics } from "./isoBoard";
+import { TOOL_CH, isoPt, type IsoMetrics } from "./isoBoard";
 import { rustFaces, rustFacesFromHex } from "./hue";
 import { t } from "./i18n";
 import { currentTheme } from "./settings";
@@ -571,6 +578,7 @@ export class ExtraHud {
     sfx: number;
     bgTint: number;
     bgHue: number;
+    bgColorOn: boolean;
     blockHue: number;
     blockColor?: string;
   }): void {
@@ -605,11 +613,81 @@ export class ExtraHud {
       this.add(this.act("tab-crop", `${this.focusId === "tab-crop" ? "> " : "  "}${t("settings.tabCrop")}`, 300, 210, 11, false, 180));
     }
     this.add(text(t("settings.tint"), 40, 234, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
-    // HTML color swatches for tint + block (see placeSettingsChrome); no CreateJS sliders.
-    this.add(text(t("settings.blockHue"), 40, 254, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
+    this.add(
+      this.act(
+        "toggle-bg-color",
+        `${this.focusId === "toggle-bg-color" ? "> " : "  "}${opts.bgColorOn ? t("settings.colorOn") : t("settings.colorOff")}`,
+        250,
+        234,
+        11,
+        false,
+        90,
+      ),
+    );
+    // HTML tint swatch via placeSettingsChrome; block picker lives under Customize colors.
+    this.add(this.act("settings-colors", t("settings.customizeColors"), 40, 254, 12, false, 200));
     this.placePreview(392, 214, opts.blockHue, opts.blockColor);
     this.add(this.act("remap", t("settings.remap"), 40, 276, 12, false, 160));
     this.add(this.act("settings-save", t("settings.manageSave"), 220, 276, 12, false, 220));
+  }
+
+  drawCustomizeColors(opts: { colors: ColorCustom }): void {
+    this.clear();
+    this.hideMascot();
+    const theme = paint();
+    this.add(this.act("settings", t("common.back"), 24, 6, 12, false, 80));
+    this.add(text(t("settings.customizeColors"), 275, 6, 16, theme.ink, "center"));
+    this.add(text(t("settings.customizeColorsHint"), 40, 26, 10, theme.muted));
+    const rowY0 = 44;
+    const rowStep = 22;
+    COLOR_SLOT_META.forEach((slot, i) => {
+      const y = rowY0 + i * rowStep;
+      const row = opts.colors[slot.id];
+      const pickId = "color-pick:" + slot.id;
+      const toggleId = "color-toggle:" + slot.id;
+      this.add(text(t(slot.labelKey), 24, y, 11, this.focusId === pickId ? theme.hot : theme.ink));
+      this.add(
+        this.act(
+          toggleId,
+          `${this.focusId === toggleId ? "> " : "  "}${row.on ? t("settings.colorOn") : t("settings.colorOff")}`,
+          118,
+          y,
+          11,
+          false,
+          56,
+        ),
+      );
+      // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
+      this.add(this.act(pickId, " ", 198, y, 11, false, 28));
+    });
+    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 270, 12, false, 140));
+
+    const tiles = colorPreviewTiles();
+    const wrap = new createjs.Container();
+    wrap.x = 300;
+    wrap.y = 36;
+    wrap.scaleX = 0.78;
+    wrap.scaleY = 0.78;
+    wrap.mouseEnabled = false;
+    wrap.mouseChildren = false;
+    const board = new createjs.Container();
+    // boardScreen coords are absolute to BOARD_VIEW — shift so the view origin sits at wrap (0,0).
+    board.x = -BOARD_VIEW.x;
+    board.y = -BOARD_VIEW.y;
+    wrap.addChild(board);
+    try {
+      this.board = board;
+      this.refreshCreatorBoard({
+        tiles,
+        spawn: COLOR_PREVIEW_SPAWN,
+        marks: [],
+        colors: opts.colors,
+        forceShapes: true,
+      });
+    } catch {
+      /* preview is optional */
+    }
+    this.add(wrap);
   }
 
   drawSaveData(deleteStep = 0): void {
@@ -903,6 +981,7 @@ export class ExtraHud {
     canRedo: boolean;
     marks: { x: number; y: number; label: string }[];
     cursor?: { x: number; y: number };
+    colorCustom?: ColorCustom | null;
   }): void {
     this.clear();
     this.hideMascot();
@@ -921,6 +1000,7 @@ export class ExtraHud {
         marks: opts.marks,
         cursor: opts.cursor,
         spawnTool: opts.tool === "spawn",
+        colors: opts.colorCustom,
       });
     } catch {
       /* keep the rest of the editor even if a clip fails */
@@ -1001,24 +1081,27 @@ export class ExtraHud {
     marks: { x: number; y: number; label: string }[];
     cursor?: { x: number; y: number };
     spawnTool?: boolean;
+    colors?: ColorCustom | null;
+    forceShapes?: boolean;
   }): void {
     if (!this.board) return;
     this.board.removeAllChildren();
     const mesh = new createjs.Shape();
     mesh.mouseEnabled = false;
+    const colors = opts.colors ?? null;
     for (let y = 0; y < 10; y++) {
       for (let x = 0; x < 15; x++) {
         if ((opts.tiles[y]?.[x] ?? " ") !== " ") continue;
-        drawBoardCell(mesh, x, y, " ");
+        drawBoardCell(mesh, x, y, " ", colors);
       }
     }
     this.board.addChild(mesh);
     const cells = occupiedCells(opts.tiles);
     cells.sort((a, b) => a.y - a.x - (b.y - b.x));
     for (const cell of cells) {
-      const clip = this.placeBoardClip(cell.ch, cell.x, cell.y);
+      const clip = opts.forceShapes ? null : this.placeBoardClip(cell.ch, cell.x, cell.y);
       if (clip) this.board.addChild(clip);
-      else drawBoardCell(mesh, cell.x, cell.y, cell.ch);
+      else drawBoardCell(mesh, cell.x, cell.y, cell.ch, colors);
     }
     // Spawn = the Block alone (no yellow circle/keyhole overlay). Stub roll so frame_0 cannot wipe the board.
     try {
@@ -1142,8 +1225,8 @@ export class ExtraHud {
 }
 
 /** Coolmath tile face: tip at (x,y) with the diamond toward y-1 (matches shadow mask). */
-function drawBoardCell(shape: HudShape, x: number, y: number, ch: string): void {
-  const face = TILE_FACE[ch] || TILE_FACE[" "];
+function drawBoardCell(shape: HudShape, x: number, y: number, ch: string, colors?: ColorCustom | null): void {
+  const face = resolveTileFace(ch, colors);
   const [a, b, c, d] = boardCellCorners(x, y);
   shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(ch === " " ? 0.6 : 1)
     .moveTo(a.x, a.y).lineTo(b.x, b.y).lineTo(c.x, c.y).lineTo(d.x, d.y).lineTo(a.x, a.y).endFill();
@@ -1180,8 +1263,8 @@ function spawnToolIcon(x: number, y: number): HudShape {
   return s;
 }
 
-function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMetrics): void {
-  const face = TILE_FACE[ch] || TILE_FACE[" "];
+function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMetrics, colors?: ColorCustom | null): void {
+  const face = resolveTileFace(ch, colors);
   const a = isoPt(x, y, m);
   const b = isoPt(x + 1, y, m);
   const c = isoPt(x + 1, y + 1, m);
@@ -1193,6 +1276,16 @@ function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMe
   }
   shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(0.8)
     .moveTo(a.x, a.y - h).lineTo(b.x, b.y - h).lineTo(c.x, c.y - h).lineTo(d.x, d.y - h).lineTo(a.x, a.y - h).endFill();
+}
+
+function colorPreviewTiles(): string[] {
+  const rows = Array.from({ length: 10 }, () => " ".repeat(15));
+  for (const cell of COLOR_PREVIEW_STAGE) {
+    const row = rows[cell.y];
+    if (!row || cell.x < 0 || cell.x >= 15) continue;
+    rows[cell.y] = row.slice(0, cell.x) + cell.ch + row.slice(cell.x + 1);
+  }
+  return rows;
 }
 
 function blockPreview(x: number, y: number, hue: number, colorHex?: string): HudShape {

@@ -44,6 +44,13 @@ import {
   type AtlasRect,
   type PackedBlockLayout,
 } from "./hue";
+import {
+  activeBg,
+  activeBlockHex,
+  COLOR_SLOT_META,
+  defaultColorCustom,
+  type ColorSlotId,
+} from "./colorCustom";
 import { displayMoveCount, focusedSelectIndex } from "./bridgeSync";
 import { applySaveBackup, buildSaveBackup, clearSaveData, parseSaveBackup } from "./saveBackup";
 import { armStageTitleClip, freezeStageTitleClip, pinStageTitleClip, stageTitleShouldArm, stageTitleShouldFreeze, type StageTitleClip } from "./stageTitle";
@@ -137,6 +144,7 @@ type Screen =
   | "home"
   | "settings"
   | "remap"
+  | "settings-colors"
   | "creator"
   | "creator-make"
   | "creator-play"
@@ -430,6 +438,7 @@ let localSaveWrapped = false;
 /** Native color picker open — skip HUD rebuilds that dismiss it. */
 let tintPicking = false;
 let blockPicking = false;
+let colorSlotPicking: ColorSlotId | null = null;
 
 function markHudDirty(): void {
   hudDirty = true;
@@ -563,12 +572,15 @@ function atlasSheet(): SpriteSheetLike | undefined {
   }
 }
 
-/** Full RGB swatch for block bake; null keeps pristine rust (default swatch / hue 0). */
+/** Full RGB swatch for block bake; null keeps pristine rust (slot off / default). */
 function liveBlockTint(): string | null {
   const s = loadSettings();
   const hex = normalizeHex(s.blockColor || hueToHex(s.blockHue));
-  if (s.blockHue === 0 && hex === normalizeHex("#b86a2e")) return null;
-  return hex;
+  return activeBlockHex(s.colorCustom, hex, s.blockHue);
+}
+
+function activeBackdrop(s: ReturnType<typeof loadSettings>): { hex: string; tint: number } | null {
+  return activeBg(s.colorCustom, s.bgColor || hueToHex(s.bgHue), s.bgTint);
 }
 
 function cachedBlockIndexes(lib: Record<string, unknown>): number[] {
@@ -756,10 +768,10 @@ function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string,
   const rgb = parseHexRgb(hex) ?? [184, 106, 46];
   const [r, g, b] = rgb;
   const wash = Math.min(1, amt);
-  // Desaturate fully first (equal RGB mults collapse chroma), then wash in the picked color.
-  const grayKeep = 1 - wash;
+  // Partial desaturate + softer wash so the sky keeps contrast (not a flat color fill).
+  const grayKeep = 1 - wash * 0.55;
   sprite.filters = [
-    new Filter(grayKeep, grayKeep, grayKeep, 1, r * wash, g * wash, b * wash, 0),
+    new Filter(grayKeep, grayKeep, grayKeep, 1, r * wash * 0.55, g * wash * 0.55, b * wash * 0.55, 0),
   ];
   const box = sprite.getBounds?.();
   sprite.cache?.(box?.x ?? 0, box?.y ?? 0, box?.width ?? 550, box?.height ?? 300);
@@ -784,15 +796,15 @@ function usingLiveBg(): boolean {
 function applyLooks(): void {
   const s = loadSettings();
   const live = s.webcamBg || s.tabCastBg;
-  const tintHex = s.bgColor || hueToHex(s.bgHue);
   document.body.classList.toggle("no-theme-bg", !s.themeBg && !live);
   document.body.classList.toggle("has-webcam-bg", live);
-  // Desaturate backdrop media first so the tint swatch reads as the true picked color.
-  document.body.classList.toggle("has-bg-tint", !live && s.bgTint > 0.01);
-  document.body.style.setProperty("--bg-tint", hexCss(tintHex, s.bgTint * 0.55));
+  // Tint media only when the backdrop slot is enabled (or legacy bgTint without colorCustom).
+  const bg = activeBackdrop(s);
+  document.body.classList.toggle("has-bg-tint", !live && !!bg);
+  document.body.style.setProperty("--bg-tint", bg ? hexCss(bg.hex, bg.tint * 0.4) : "transparent");
   document.body.style.setProperty(
     "--play-tint",
-    live ? "transparent" : s.bgTint > 0.01 ? hexCss(tintHex, Math.min(1, 0.28 + s.bgTint * 0.5)) : "#000",
+    live ? "transparent" : bg ? hexCss(bg.hex, Math.min(1, 0.18 + bg.tint * 0.35)) : "#000",
   );
   ensureTint();
   lastTintKey = "";
@@ -802,9 +814,9 @@ function applyLooks(): void {
   if (live && sky) sky.visible = false;
   if (tintLayer) {
     tintLayer.graphics.clear();
-    if (s.bgTint > 0.01 && !live) {
-      tintLayer.graphics.beginFill(hexCss(tintHex, 1)).drawRect(0, 0, 550, 300);
-      tintLayer.alpha = s.bgTint * 0.42;
+    if (bg && !live) {
+      tintLayer.graphics.beginFill(hexCss(bg.hex, 1)).drawRect(0, 0, 550, 300);
+      tintLayer.alpha = bg.tint * 0.28;
       tintLayer.visible = true;
     } else {
       tintLayer.visible = false;
@@ -1106,12 +1118,23 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const manage = $("hud-theme-manage");
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   const blockColor = $("hud-block-color") as HTMLInputElement | null;
-  const pickingTint = on && (tintPicking || (!!tintColor && document.activeElement === tintColor));
-  const pickingBlock = on && (blockPicking || (!!blockColor && document.activeElement === blockColor));
+  const colorSlots = $("hud-color-slots");
+  const slotInputs = colorSlots
+    ? (Array.from(colorSlots.querySelectorAll("input[data-slot]")) as HTMLInputElement[])
+    : [];
+  const colorsMode = on && extraView === "settings-colors";
+  const settingsMode = on && extraView === "settings";
+  const pickingTint = settingsMode && (tintPicking || (!!tintColor && document.activeElement === tintColor));
+  const pickingBlock = settingsMode && (blockPicking || (!!blockColor && document.activeElement === blockColor));
+  const pickingSlot =
+    colorsMode &&
+    !!colorSlotPicking &&
+    slotInputs.some((el) => el.dataset.slot === colorSlotPicking && document.activeElement === el);
   if (!on) {
     // Always tear down swatches when leaving Settings — never leave them on the main menu.
     tintPicking = false;
     blockPicking = false;
+    colorSlotPicking = null;
     if (tintColor) {
       tintColor.hidden = true;
       try {
@@ -1128,16 +1151,40 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
         /* ignore */
       }
     }
+    if (colorSlots) colorSlots.hidden = true;
+    for (const el of slotInputs) {
+      try {
+        el.blur();
+      } catch {
+        /* ignore */
+      }
+    }
   }
   for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn, tintColor, blockColor]) {
     if (!el) continue;
     // Toggling hidden / rewriting .value while the OS color UI is open dismisses it.
-    if (on && el === tintColor && pickingTint) continue;
-    if (on && el === blockColor && pickingBlock) continue;
-    el.hidden = !on;
+    if (settingsMode && el === tintColor && pickingTint) continue;
+    if (settingsMode && el === blockColor && pickingBlock) continue;
+    if (el === tintColor) {
+      el.hidden = !settingsMode;
+      continue;
+    }
+    if (el === blockColor) {
+      // Block swatch moved to Customize colors submenu.
+      el.hidden = true;
+      continue;
+    }
+    el.hidden = !settingsMode;
   }
   if (upload) upload.hidden = true;
   if (!on && manage) manage.hidden = true;
+  if (colorSlots) {
+    if (colorsMode && pickingSlot) {
+      /* keep open while native picker is active */
+    } else {
+      colorSlots.hidden = !colorsMode;
+    }
+  }
   if (!on) {
     // Flush any pending settle-bake when leaving Settings so in-game cubes match the preview.
     if (hueBakeTimer) {
@@ -1150,7 +1197,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   if (templateBtn) templateBtn.textContent = t("settings.template");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
   const s = loadSettings();
-  if (tintColor) {
+  if (tintColor && settingsMode) {
     // Full free color swatch next to Backdrop tint (not a hue-only slider).
     tintColor.style.left = "28%";
     tintColor.style.top = "78.4%";
@@ -1159,25 +1206,27 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
     if (!pickingTint) tintColor.value = normalizeHex(s.bgColor || hueToHex(s.bgHue));
     tintColor.title = t("settings.tint");
   }
-  if (blockColor) {
-    // Block swatch — true RGB bake from the picked hex (not hue-rotate collapse).
-    blockColor.style.left = "28%";
-    blockColor.style.top = "85.2%";
-    blockColor.style.width = "4.2%";
-    blockColor.style.height = "4.4%";
-    if (!pickingBlock) blockColor.value = normalizeHex(s.blockColor || hueToHex(s.blockHue));
-    blockColor.title = t("settings.blockHue");
+  if (colorsMode) {
+    for (const el of slotInputs) {
+      const id = el.dataset.slot as ColorSlotId | undefined;
+      if (!id || !s.colorCustom[id]) continue;
+      if (colorSlotPicking === id) continue;
+      el.value = normalizeHex(s.colorCustom[id].hex);
+      el.title = t(COLOR_SLOT_META.find((row) => row.id === id)?.labelKey ?? "settings.customizeColors");
+    }
   }
   if (!on) {
     closeSettingsDropdowns();
     return;
   }
-  fillSettingsDropdown(themeSel, themeSelectOpts(), currentThemeId(), forceTheme);
-  fillSettingsDropdown(
-    localeSel,
-    listLocales().map((loc) => ({ id: loc.id, name: loc.name })),
-    localeId(),
-  );
+  if (settingsMode) {
+    fillSettingsDropdown(themeSel, themeSelectOpts(), currentThemeId(), forceTheme);
+    fillSettingsDropdown(
+      localeSel,
+      listLocales().map((loc) => ({ id: loc.id, name: loc.name })),
+      localeId(),
+    );
+  }
 }
 
 function fillThemeManage(): void {
@@ -1247,6 +1296,7 @@ function bindSettingsChrome(): void {
   });
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   const blockColorEl = $("hud-block-color") as HTMLInputElement | null;
+  const colorSlotsEl = $("hud-color-slots");
   document.addEventListener(
     "pointerdown",
     (ev) => {
@@ -1257,7 +1307,8 @@ function bindSettingsChrome(): void {
         manageBtn?.contains(node) ||
         manage?.contains(node) ||
         tintColor?.contains(node) ||
-        blockColorEl?.contains(node)
+        blockColorEl?.contains(node) ||
+        colorSlotsEl?.contains(node)
       ) {
         return;
       }
@@ -1307,6 +1358,7 @@ function bindSettingsChrome(): void {
       s.bgColor = normalizeHex(tintColor.value);
       s.bgHue = hexToHue(s.bgColor);
       if (s.bgTint < 0.2) s.bgTint = 0.55;
+      s.colorCustom.bg = { hex: s.bgColor, on: true };
     });
     // Live backdrop only — paintHud/placeSettingsChrome would close the native picker.
     applyLooks();
@@ -1329,14 +1381,51 @@ function bindSettingsChrome(): void {
     updateSettings((s) => {
       s.blockColor = hex;
       s.blockHue = hexToHue(hex);
+      s.colorCustom.block = { hex, on: true };
     });
-    // Live preview via HUD cube; settle-bake atlas after picker closes / idle.
-    scheduleHudPaint();
+    // Do NOT scheduleHudPaint here — paintHud → placeSettingsChrome(false) closes the native picker.
     scheduleBlockHueBake(120);
   });
   blockColor?.addEventListener("change", endBlockPick);
   blockColor?.addEventListener("blur", endBlockPick);
   blockColor?.addEventListener("click", (ev) => ev.stopPropagation());
+  const slotInputs = colorSlotsEl
+    ? (Array.from(colorSlotsEl.querySelectorAll("input[data-slot]")) as HTMLInputElement[])
+    : [];
+  for (const el of slotInputs) {
+    const endSlotPick = () => {
+      if (!colorSlotPicking) return;
+      colorSlotPicking = null;
+      scheduleHudPaint();
+    };
+    el.addEventListener("focus", () => {
+      colorSlotPicking = (el.dataset.slot as ColorSlotId) || null;
+    });
+    el.addEventListener("input", () => {
+      const id = el.dataset.slot as ColorSlotId | undefined;
+      if (!id) return;
+      colorSlotPicking = id;
+      const hex = normalizeHex(el.value);
+      updateSettings((s) => {
+        s.colorCustom[id] = { hex, on: true };
+        if (id === "bg") {
+          s.bgColor = hex;
+          s.bgHue = hexToHue(hex);
+          if (s.bgTint < 0.2) s.bgTint = 0.55;
+        }
+        if (id === "block") {
+          s.blockColor = hex;
+          s.blockHue = hexToHue(hex);
+        }
+      });
+      // Do NOT scheduleHudPaint here — paintHud would close the native picker.
+      if (id === "block") scheduleBlockHueBake(120);
+      else if (id === "bg") applyLooks();
+    });
+    el.addEventListener("change", endSlotPick);
+    el.addEventListener("blur", endSlotPick);
+    el.addEventListener("click", (ev) => ev.stopPropagation());
+  }
   manage?.addEventListener("click", (ev) => {
     const id = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-id]")?.dataset.id;
     if (!id) return;
@@ -2288,10 +2377,27 @@ function navItems(): NavItem[] {
       { id: "toggle-tab-cast" },
       ...(s.tabCastBg ? [{ id: "tab-crop" }] : []),
       { id: "bgtint", adjust: () => ($("hud-bg-color") as HTMLInputElement | null)?.click() },
-      { id: "blockhue", adjust: () => ($("hud-block-color") as HTMLInputElement | null)?.click() },
+      { id: "toggle-bg-color" },
+      { id: "settings-colors" },
       { id: "remap" },
       { id: "settings-save" },
     ];
+  }
+  if (extraView === "settings-colors") {
+    const rows: NavItem[] = [{ id: "settings" }];
+    for (const slot of COLOR_SLOT_META) {
+      rows.push({ id: "color-toggle:" + slot.id });
+      rows.push({
+        id: "color-pick:" + slot.id,
+        adjust: () => {
+          const root = $("hud-color-slots");
+          const el = root?.querySelector<HTMLInputElement>(`input[data-slot="${slot.id}"]`);
+          el?.click();
+        },
+      });
+    }
+    rows.push({ id: "colors-reset" });
+    return rows;
   }
   if (extraView === "settings-save") {
     if (deleteSaveStep > 0) {
@@ -2501,6 +2607,7 @@ function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
     marks: editorMarks(draft),
     cursor: editCursor,
     spawnTool: paint.tool === "spawn",
+    colors: loadSettings().colorCustom,
   });
 }
 
@@ -2523,6 +2630,7 @@ function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "ba
         marks: editorMarks(draft),
         cursor: editCursor,
         spawnTool: paint.tool === "spawn",
+        colors: loadSettings().colorCustom,
       });
     }
     return;
@@ -2624,6 +2732,7 @@ function hudKey(): string {
     String(s.bgColor || ""),
     String(s.blockHue),
     String(s.blockColor || ""),
+    JSON.stringify(s.colorCustom),
     String(s.music),
     String(s.sfx),
     currentThemeId(),
@@ -2668,6 +2777,7 @@ function raiseHud(): void {
 
 function paintHud(): void {
   document.body.classList.toggle("is-creator-edit", extraView === "creator-edit");
+  document.body.classList.toggle("is-settings-colors", extraView === "settings-colors");
   touchChrome?.sync();
   if (!hud) return;
   if (!hudDirty) return;
@@ -2702,6 +2812,7 @@ function paintHud(): void {
       placeHudInput(true, "7.3%", "38%", "29%", "000000", "", 6);
     }
   } else if (extraView === "settings") {
+    const blockOn = s.colorCustom.block.on;
     hud.drawSettings({
       rumble: s.rumble,
       showTimer: s.showTimer,
@@ -2716,10 +2827,14 @@ function paintHud(): void {
       sfx: s.sfx,
       bgTint: s.bgTint,
       bgHue: s.bgHue,
+      bgColorOn: s.colorCustom.bg.on,
       blockHue: s.blockHue,
-      blockColor: s.blockColor,
+      blockColor: blockOn ? s.colorCustom.block.hex || s.blockColor : undefined,
     });
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
+    placeSettingsChrome(true);
+  } else if (extraView === "settings-colors") {
+    hud.drawCustomizeColors({ colors: s.colorCustom });
     placeSettingsChrome(true);
   } else if (extraView === "settings-save") {
     hud.drawSaveData(deleteSaveStep);
@@ -2872,6 +2987,7 @@ function paintHud(): void {
       canRedo: redoStack.length > 0,
       marks: editorMarks(draft),
       cursor: editCursor,
+      colorCustom: s.colorCustom,
     });
     placeHudInput(true, "21.5%", "2.1%", "18%", t("creator.placeholder"), draftName, 24);
   }
@@ -3053,6 +3169,10 @@ function goBack(): void {
     return;
   }
   if (extraView === "remap") {
+    openPanel("settings");
+    return;
+  }
+  if (extraView === "settings-colors") {
     openPanel("settings");
     return;
   }
@@ -3263,6 +3383,7 @@ function handleHudAction(act: string): void {
   else if (act === "credits") openPanel("credits");
   else if (act === "settings") openPanel("settings");
   else if (act === "remap") openPanel("remap");
+  else if (act === "settings-colors") openPanel("settings-colors");
   else if (act === "back") goBack();
   else if (act === "creator") openPanel("creator");
   else if (act === "creator-make") openPanel("creator-make");
@@ -3399,6 +3520,53 @@ function handleHudAction(act: string): void {
     void copyGameShot();
     noteScreenshot();
     markHudDirty();
+  } else if (act === "toggle-bg-color") {
+    updateSettings((s) => {
+      const next = !s.colorCustom.bg.on;
+      s.colorCustom.bg = { hex: s.colorCustom.bg.hex || s.bgColor || hueToHex(s.bgHue), on: next };
+      if (next && s.bgTint < 0.2) s.bgTint = 0.55;
+    });
+    applyLooks();
+    markHudDirty();
+    paintHud();
+  } else if (act.startsWith("color-toggle:")) {
+    const id = act.slice("color-toggle:".length) as ColorSlotId;
+    if (!COLOR_SLOT_META.some((row) => row.id === id)) return;
+    updateSettings((s) => {
+      const row = s.colorCustom[id];
+      const next = !row.on;
+      s.colorCustom[id] = { hex: row.hex, on: next };
+      if (id === "bg" && next && s.bgTint < 0.2) s.bgTint = 0.55;
+      if (id === "bg") {
+        s.bgColor = row.hex;
+        s.bgHue = hexToHue(row.hex);
+      }
+      if (id === "block") {
+        s.blockColor = row.hex;
+        s.blockHue = hexToHue(row.hex);
+      }
+    });
+    if (id === "bg") applyLooks();
+    if (id === "block") scheduleBlockHueBake(80);
+    markHudDirty();
+    paintHud();
+  } else if (act.startsWith("color-pick:")) {
+    const id = act.slice("color-pick:".length);
+    const root = $("hud-color-slots");
+    root?.querySelector<HTMLInputElement>(`input[data-slot="${id}"]`)?.click();
+  } else if (act === "colors-reset") {
+    updateSettings((s) => {
+      s.colorCustom = defaultColorCustom();
+      s.bgTint = 0;
+      s.blockHue = 0;
+      s.blockColor = "#b86a2e";
+      s.bgColor = "#b86a2e";
+      s.bgHue = 28;
+    });
+    applyLooks();
+    scheduleBlockHueBake(80);
+    markHudDirty();
+    paintHud();
   } else if (act.startsWith("music:")) {
     const s = loadSettings();
     s.music = Number(act.slice(6));
@@ -4280,13 +4448,14 @@ function applyPlayTint(): void {
   const cjs = window.createjs as { Shape?: new () => TintShape } | undefined;
   const s = loadSettings();
   const cam = usingLiveBg();
+  const bg = activeBackdrop(s);
   const skySpr = world?.background?.instance_2;
   if (skySpr) skySpr.visible = s.themeBg && !cam;
   if (sky) sky.visible = !cam && sky.visible;
-  applySkySpriteTint(cam ? null : skySpr, s.bgColor || hueToHex(s.bgHue), s.bgTint);
-  applySkySpriteTint(cam ? null : sky, s.bgColor || hueToHex(s.bgHue), s.bgTint);
+  applySkySpriteTint(cam ? null : skySpr, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0);
+  applySkySpriteTint(cam ? null : sky, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0);
   if (!gc?.addChildAt || !cjs?.Shape) return;
-  const key = `${s.bgTint}|${s.bgColor || s.bgHue}|${s.themeBg}|${cam}`;
+  const key = `${bg?.tint ?? 0}|${bg?.hex || ""}|${s.themeBg}|${cam}`;
   let overlay = gc.__bloxTint;
   const listed = !!(overlay && gc.children?.includes(overlay));
   if (!listed) {
@@ -4297,8 +4466,8 @@ function applyPlayTint(): void {
     lastTintKey = "";
   }
   if (overlay && gc.setChildIndex && gc.getChildIndex) {
-    const bg = world?.background;
-    const bgIdx = bg ? gc.getChildIndex(bg) : -1;
+    const bgClip = world?.background;
+    const bgIdx = bgClip ? gc.getChildIndex(bgClip) : -1;
     const want = bgIdx >= 0 ? bgIdx + 1 : 1;
     const idx = gc.getChildIndex(overlay);
     if (idx !== want) gc.setChildIndex(overlay, Math.min(want, Math.max(0, (gc.numChildren ?? 1) - 1)));
@@ -4307,9 +4476,9 @@ function applyPlayTint(): void {
   if (key === lastTintKey && listed) return;
   lastTintKey = key;
   overlay.graphics.clear();
-  if (s.themeBg && s.bgTint > 0.01 && !cam) {
-    overlay.graphics.beginFill(hexCss(s.bgColor || hueToHex(s.bgHue), 1)).drawRect(-40, -40, 630, 380);
-    overlay.alpha = Math.min(0.55, 0.12 + s.bgTint * 0.4);
+  if (s.themeBg && bg && !cam) {
+    overlay.graphics.beginFill(hexCss(bg.hex, 1)).drawRect(-40, -40, 630, 380);
+    overlay.alpha = Math.min(0.55, 0.12 + bg.tint * 0.4);
     overlay.visible = true;
   } else {
     overlay.visible = false;
@@ -5190,7 +5359,7 @@ function syncOverlay(): void {
   syncStageCard(false);
   syncPauseStats(false);
   syncSelectPrompt(false);
-  placeSettingsChrome(extraView === "settings");
+  placeSettingsChrome(extraView === "settings" || extraView === "settings-colors");
   touchChrome?.sync(false);
 
   bindMenuPad();

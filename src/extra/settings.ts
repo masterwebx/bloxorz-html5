@@ -1,3 +1,5 @@
+import { defaultColorCustom, normalizeColorCustom, type ColorCustom } from "./colorCustom";
+
 export type Action =
   | "up"
   | "down"
@@ -46,6 +48,8 @@ export interface Settings {
   blockHue: number;
   /** Last block swatch hex (picker UX); bake still uses blockHue rotation. */
   blockColor: string;
+  /** Per-asset recolors; each slot has its own on/off (defaults off = vanilla). */
+  colorCustom: ColorCustom;
   unlimitedEndless: boolean;
   playerName: string;
   locale: string;
@@ -74,6 +78,7 @@ const DEFAULTS: Settings = {
   bgColor: "#b86a2e",
   blockHue: 0,
   blockColor: "#b86a2e",
+  colorCustom: defaultColorCustom(),
   unlimitedEndless: false,
   playerName: "",
   locale: "",
@@ -140,6 +145,7 @@ export function loadSettings(): Settings {
           : hueToHex(clampHue(parsed.blockHue ?? DEFAULTS.blockHue)),
         DEFAULTS.blockColor,
       ),
+      colorCustom: migrateColorCustom(parsed),
       unlimitedEndless: parsed.unlimitedEndless === true,
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       locale: typeof parsed.locale === "string" ? parsed.locale : "",
@@ -198,6 +204,28 @@ export function setRotateScreen(on: boolean): Settings {
 
 export function invalidateSettingsCache(): void {
   settingsCache = null;
+}
+
+function migrateColorCustom(parsed: Partial<Settings>): ColorCustom {
+  const colors = normalizeColorCustom(parsed.colorCustom);
+  // First time after upgrade: seed on-state from legacy tint/block so existing picks stay active.
+  if (parsed.colorCustom == null) {
+    const bgTint = clamp01(parsed.bgTint ?? 0);
+    const bgColor = normalizeHex(
+      typeof parsed.bgColor === "string" ? parsed.bgColor : hueToHex(clampHue(parsed.bgHue ?? DEFAULTS.bgHue)),
+      DEFAULTS.bgColor,
+    );
+    const blockHue = clampHue(parsed.blockHue ?? 0);
+    const blockColor = normalizeHex(
+      typeof parsed.blockColor === "string" ? parsed.blockColor : hueToHex(blockHue),
+      DEFAULTS.blockColor,
+    );
+    if (bgTint > 0.01) colors.bg = { hex: bgColor, on: true };
+    if (!(blockHue === 0 && blockColor === normalizeHex(DEFAULTS.blockColor))) {
+      colors.block = { hex: blockColor, on: true };
+    }
+  }
+  return colors;
 }
 
 function clamp01(n: number): number {
