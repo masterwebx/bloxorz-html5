@@ -14,6 +14,11 @@ export function createFeeder(cmds: WalkCmd[]): SolveFeeder {
   return { pending: cmds.slice(), queue: [], held: null };
 }
 
+/** Skip destroy/restart when the stage is still at zero moves. */
+export function shouldRestartBeforeSolve(moves: number): boolean {
+  return (moves ?? 0) !== 0;
+}
+
 export interface FeedView {
   idle: boolean;
   hasBlock: boolean;

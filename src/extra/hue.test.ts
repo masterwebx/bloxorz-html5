@@ -4,12 +4,15 @@ import {
   bakeFrameBackup,
   bakeHueIntoPixels,
   blitHueRects,
+  blitPackedHue,
   collectBlockFrameIndexes,
+  extractPackedBlockSource,
   hueDelta,
   hueRotateRgb,
   isBlockSpriteName,
   makeImageData,
   needsBlockHueBake,
+  packBlockLayout,
   rustFaces,
   shiftingHue,
   clipHueAction,
@@ -103,5 +106,82 @@ describe("block hue bake", () => {
       metal_v2: "function () { this.gotoAndStop(400); }",
     });
     expect(frames).toEqual([38, 158, 159]);
+  });
+
+  it("packs block rects into a tight sheet smaller than a 4096 atlas", () => {
+    const rects = Array.from({ length: 4 }, (_, i) => ({ x: i * 200, y: 0, width: 200, height: 150 }));
+    const layout = packBlockLayout(rects);
+    expect(layout.slots).toHaveLength(4);
+    expect(layout.width * layout.height).toBeLessThan(4096 * 4096);
+    expect(layout.width).toBe(400);
+    expect(layout.height).toBe(300);
+    expect(layout.slots[0]?.dest).toEqual(rects[0]);
+    expect(layout.slots[0]?.src).toEqual({ x: 0, y: 0, width: 200, height: 150 });
+    expect(layout.slots[3]?.src).toEqual({ x: 200, y: 150, width: 200, height: 150 });
+  });
+
+  it("extracts packed pristine pixels from live atlas rects only", () => {
+    const liveCalls: unknown[] = [];
+    const live = {} as CanvasImageSource;
+    const layout = packBlockLayout([
+      { x: 10, y: 20, width: 8, height: 6 },
+      { x: 30, y: 40, width: 8, height: 6 },
+    ]);
+    const canvas = { width: 0, height: 0 } as HTMLCanvasElement;
+    const ctx = {
+      drawImage(...args: unknown[]) {
+        liveCalls.push(args);
+      },
+    };
+    const packed = extractPackedBlockSource(
+      (w, h) => {
+        canvas.width = w;
+        canvas.height = h;
+        return { canvas, ctx };
+      },
+      live,
+      layout,
+    );
+    expect(packed).toBe(canvas);
+    expect(canvas.width).toBe(layout.width);
+    expect(canvas.height).toBe(layout.height);
+    expect(liveCalls).toEqual([
+      [live, 10, 20, 8, 6, 0, 0, 8, 6],
+      [live, 30, 40, 8, 6, 8, 0, 8, 6],
+    ]);
+  });
+
+  it("bakes hue with one filtered packed draw then unfiltered live copies", () => {
+    const scratchCalls: unknown[] = [];
+    const destCalls: unknown[] = [];
+    const packed = {} as CanvasImageSource;
+    const scratchCanvas = { width: 16, height: 6 } as HTMLCanvasElement;
+    const scratch = {
+      canvas: scratchCanvas,
+      ctx: {
+        filter: "none",
+        drawImage(...args: unknown[]) {
+          scratchCalls.push([this.filter, ...args]);
+        },
+      },
+    };
+    const dest = {
+      filter: "hue-rotate(99deg)",
+      drawImage(...args: unknown[]) {
+        destCalls.push([this.filter, ...args]);
+      },
+    };
+    const slots = packBlockLayout([
+      { x: 2, y: 4, width: 8, height: 6 },
+      { x: 12, y: 4, width: 8, height: 6 },
+    ]).slots;
+    blitPackedHue(dest, packed, scratch, slots, 40);
+    expect(scratchCalls).toEqual([["hue-rotate(40deg)", packed, 0, 0, 16, 6, 0, 0, 16, 6]]);
+    expect(scratch.ctx.filter).toBe("none");
+    expect(dest.filter).toBe("none");
+    expect(destCalls).toEqual([
+      ["none", scratchCanvas, 0, 0, 8, 6, 2, 4, 8, 6],
+      ["none", scratchCanvas, 8, 0, 8, 6, 12, 4, 8, 6],
+    ]);
   });
 });

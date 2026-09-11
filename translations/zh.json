@@ -299,5 +299,7 @@
   "creator.packName": "Pack ({n})",
   "creator.packSaved": "Stage pack saved",
   "creator.kindSingle": "Single",
-  "creator.kindPack": "Pack"
+  "creator.kindPack": "Pack",
+  "creator.packPlaceholder": "关卡包名称",
+  "dev.unlimitedEndless": "Unlimited endless"
 }

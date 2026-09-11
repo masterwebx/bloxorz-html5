@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { occupiedCells, boardScreen, clipForTile, pickBoardCell } from "./coolmathBoard";
+import { occupiedCells, boardCellCenter, boardCellCorners, boardScreen, clipForTile, pickBoardCell } from "./coolmathBoard";
 import { emptyDraft, encodeLevel, decodeLevel, encodePack, encodeSeed, decodePack, decodeSeed, isPack, isPlayable, occupiedTileCount, parseShare, parseShareDefs, setTile, shareFromLocation, stageId } from "./customLevels";
 import type { LevelDef } from "./types";
 import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
@@ -212,5 +212,17 @@ describe("stage creator board assets", () => {
     expect(pickBoardCell(origin.x, origin.y)).toEqual({ x: 0, y: 0 });
     const mid = boardScreen(4, 4);
     expect(pickBoardCell(mid.x, mid.y)).toEqual({ x: 4, y: 4 });
+  });
+
+  it("aligns empty grid diamonds with Coolmath tile faces (toward y-1)", () => {
+    const tip = boardScreen(5, 5);
+    const [a, b, c, d] = boardCellCorners(5, 5);
+    expect(a).toEqual(tip);
+    expect(b).toEqual(boardScreen(5, 4));
+    expect(c).toEqual(boardScreen(6, 4));
+    expect(d).toEqual(boardScreen(6, 5));
+    const center = boardCellCenter(5, 5);
+    expect(center.x).toBeCloseTo((a.x + b.x + c.x + d.x) / 4, 5);
+    expect(center.y).toBeLessThan(tip.y);
   });
 });

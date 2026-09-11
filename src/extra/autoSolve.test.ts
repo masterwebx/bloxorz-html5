@@ -3,6 +3,7 @@ import {
   applyFeederToKeys,
   consumeCoolmathTick,
   createFeeder,
+  shouldRestartBeforeSolve,
   simulateCoolmathAutoSolve,
   tickFeeder,
 } from "./autoSolve";
@@ -13,6 +14,12 @@ import { applyCmd, solveLevel } from "./solve";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough } from "./walkthrough";
 
 describe("Coolmath auto-solve feeder", () => {
+  it("does not restart a fresh stage before solving", () => {
+    expect(shouldRestartBeforeSolve(0)).toBe(false);
+    expect(shouldRestartBeforeSolve(1)).toBe(true);
+    expect(shouldRestartBeforeSolve(12)).toBe(true);
+  });
+
   it("does not press until a block is idle", () => {
     const f = createFeeder(["right", "right"]);
     expect(tickFeeder(f, { idle: false, hasBlock: false })).toEqual({});

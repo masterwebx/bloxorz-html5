@@ -139,6 +139,95 @@ export function blitHueRects(
   ctx.filter = "none";
 }
 
+export type PackedBlockSlot = {
+  /** Rect inside the packed block-only sheet. */
+  src: AtlasRect;
+  /** Matching rect on the live CreateJS atlas. */
+  dest: AtlasRect;
+};
+
+export type PackedBlockLayout = {
+  width: number;
+  height: number;
+  slots: PackedBlockSlot[];
+};
+
+/** Pack live atlas block rects into a tight sheet (no full 4096² source). */
+export function packBlockLayout(rects: AtlasRect[]): PackedBlockLayout {
+  if (!rects.length) return { width: 0, height: 0, slots: [] };
+  const cellW = Math.max(1, ...rects.map((r) => r.width));
+  const cellH = Math.max(1, ...rects.map((r) => r.height));
+  const cols = Math.max(1, Math.ceil(Math.sqrt(rects.length)));
+  const rows = Math.max(1, Math.ceil(rects.length / cols));
+  const slots: PackedBlockSlot[] = rects.map((dest, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    return {
+      src: { x: col * cellW, y: row * cellH, width: dest.width, height: dest.height },
+      dest: { x: dest.x, y: dest.y, width: dest.width, height: dest.height },
+    };
+  });
+  return { width: cols * cellW, height: rows * cellH, slots };
+}
+
+type PackExtractCtx = {
+  drawImage: (
+    image: CanvasImageSource,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ) => void;
+};
+
+/** One-time extract: copy pristine block pixels from the live atlas into a packed sheet. */
+export function extractPackedBlockSource(
+  makeCanvas: (w: number, h: number) => { canvas: HTMLCanvasElement; ctx: PackExtractCtx } | null,
+  live: CanvasImageSource,
+  layout: PackedBlockLayout,
+): HTMLCanvasElement | null {
+  if (!layout.slots.length || layout.width <= 0 || layout.height <= 0) return null;
+  const made = makeCanvas(layout.width, layout.height);
+  if (!made) return null;
+  for (const slot of layout.slots) {
+    const { src, dest } = slot;
+    made.ctx.drawImage(live, dest.x, dest.y, dest.width, dest.height, src.x, src.y, src.width, src.height);
+  }
+  return made.canvas;
+}
+
+type PackBlitScratch = {
+  canvas: HTMLCanvasElement;
+  ctx: HueBlitCtx & PackExtractCtx;
+};
+
+/**
+ * Fast re-tint: one filtered draw of the packed pristine sheet, then unfiltered
+ * copies into the live atlas at original frame rects. No ColorMatrix on clips.
+ */
+export function blitPackedHue(
+  destCtx: HueBlitCtx & PackExtractCtx,
+  packedSource: CanvasImageSource,
+  scratch: PackBlitScratch,
+  slots: PackedBlockSlot[],
+  hue: number,
+): void {
+  const sw = scratch.canvas.width;
+  const sh = scratch.canvas.height;
+  scratch.ctx.filter = atlasHueFilter(hue);
+  scratch.ctx.drawImage(packedSource, 0, 0, sw, sh, 0, 0, sw, sh);
+  scratch.ctx.filter = "none";
+  destCtx.filter = "none";
+  for (const slot of slots) {
+    const { src, dest } = slot;
+    destCtx.drawImage(scratch.canvas, src.x, src.y, src.width, src.height, dest.x, dest.y, dest.width, dest.height);
+  }
+}
+
 /** Animate sprite names that are the rust block itself — not shadows or UI. */
 export const BLOCK_SPRITE_RE = /^blocka(fall|land|shrink|small)?\d+$/;
 

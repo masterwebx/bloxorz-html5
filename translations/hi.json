@@ -299,5 +299,7 @@
   "creator.packName": "Pack ({n})",
   "creator.packSaved": "Stage pack saved",
   "creator.kindSingle": "Single",
-  "creator.kindPack": "Pack"
+  "creator.kindPack": "Pack",
+  "creator.packPlaceholder": "पैक का नाम",
+  "dev.unlimitedEndless": "Unlimited endless"
 }

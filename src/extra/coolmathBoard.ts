@@ -34,6 +34,22 @@ export function boardScreen(x: number, y: number): { x: number; y: number } {
   return { x: BOARD_OX + gx * BOARD_SCALE, y: BOARD_OY + gy * BOARD_SCALE };
 }
 
+/**
+ * Coolmath tile face diamond: tip at (x,y), extending toward y-1
+ * (same corners as bloxorz.js shadow mask).
+ */
+export function boardCellCorners(
+  x: number,
+  y: number,
+): [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] {
+  return [boardScreen(x, y), boardScreen(x, y - 1), boardScreen(x + 1, y - 1), boardScreen(x + 1, y)];
+}
+
+export function boardCellCenter(x: number, y: number): { x: number; y: number } {
+  const [a, b, c, d] = boardCellCorners(x, y);
+  return { x: (a.x + b.x + c.x + d.x) / 4, y: (a.y + b.y + c.y + d.y) / 4 };
+}
+
 export const TILE_LABEL: Record<string, string> = {
   b: "normalblock",
   s: "softswitch",

@@ -3,6 +3,8 @@ import {
   BOARD_SCALE,
   BOARD_VIEW,
   CLIP_OFFSET,
+  boardCellCenter,
+  boardCellCorners,
   boardScreen,
   clipForTile,
   occupiedCells,
@@ -595,18 +597,18 @@ export class ExtraHud {
     this.add(text(t("settings.language"), 40, 170, 12, this.focusId === "locale-cycle" ? theme.hot : theme.ink));
     this.add(this.act("toggle-theme-bg", `${this.focusId === "toggle-theme-bg" ? "> " : "  "}${t("settings.themeBg")}  ${onOff(opts.themeBg)}`, 40, 192, 11, false, 200));
     this.add(this.act("toggle-webcam", `${this.focusId === "toggle-webcam" ? "> " : "  "}${t("settings.webcam")}  ${onOff(opts.webcamBg)}`, 250, 192, 11, false, 200));
-    this.add(this.act("toggle-tab-cast", `${this.focusId === "toggle-tab-cast" ? "> " : "  "}${t("settings.tabCast")}  ${onOff(opts.tabCastBg)}`, 40, 210, 11, false, 240));
+    this.add(this.act("toggle-tab-cast", `${this.focusId === "toggle-tab-cast" ? "> " : "  "}${t("settings.tabCast")}  ${onOff(opts.tabCastBg)}`, 40, 210, 11, false, 200));
     if (opts.tabCastBg) {
       this.add(this.act("tab-crop", `${this.focusId === "tab-crop" ? "> " : "  "}${t("settings.tabCrop")}`, 300, 210, 11, false, 180));
     }
-    this.add(text(t("settings.tint"), 40, 230, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
+    this.add(text(t("settings.tint"), 40, 234, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
     // One clickable HTML color swatch only (no slider / no CreateJS duplicate).
-    this.add(text(t("settings.blockHue"), 40, 250, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
-    this.add(slider(150, 250, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
-    this.add(swatch(330, 252, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
-    this.placePreview(392, 210, opts.blockHue);
-    this.add(this.act("remap", t("settings.remap"), 40, 272, 12, false, 160));
-    this.add(this.act("settings-save", t("settings.manageSave"), 220, 272, 12, false, 220));
+    this.add(text(t("settings.blockHue"), 40, 254, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
+    this.add(slider(150, 254, 120, opts.blockHue / 360, (v) => this.onAction("blockhue:" + Math.round(v * 360))));
+    this.add(swatch(330, 256, opts.blockHue, opts.blockHue > 0 ? 1 : 0.35));
+    this.placePreview(392, 214, opts.blockHue);
+    this.add(this.act("remap", t("settings.remap"), 40, 276, 12, false, 160));
+    this.add(this.act("settings-save", t("settings.manageSave"), 220, 276, 12, false, 220));
   }
 
   drawSaveData(deleteStep = 0): void {
@@ -619,7 +621,6 @@ export class ExtraHud {
     this.add(this.act("import-save", t("settings.import"), 40, 118, 14, false, 220));
     if (deleteStep <= 0) {
       this.add(this.act("delete-save", t("settings.delete"), 40, 156, 14, false, 220));
-      this.add(text(t("settings.deleteHint"), 40, 210, 11, theme.muted));
     } else {
       const prompts = [t("settings.deleteSure1"), t("settings.deleteSure2"), t("settings.deleteSure3")];
       this.add(text(prompts[Math.min(2, deleteStep - 1)]!, 40, 156, 13, theme.hot));
@@ -860,22 +861,24 @@ export class ExtraHud {
     const theme = paint();
     this.add(this.act("creator-manage", t("common.back"), 24, 16, 12, false, 80));
     this.add(text(t("creator.createPack"), 275, 18, 18, theme.ink, "center"));
-    this.add(text(t("creator.packHint", { n: opts.selected }), 40, 42, 11, theme.muted));
+    this.add(text(t("creator.name"), 40, 42, 12, theme.ink));
+    this.add(fieldBox(100, 40, 200));
+    this.add(text(t("creator.packHint", { n: opts.selected }), 40, 68, 11, theme.muted));
     if (!opts.rows.length) {
-      this.add(text(t("creator.empty"), 40, 90, 12, theme.muted));
+      this.add(text(t("creator.empty"), 40, 110, 12, theme.muted));
       return;
     }
     opts.rows.forEach((row, i) => {
-      const y = 68 + i * 36;
+      const y = 90 + i * 34;
       const mark = row.ord > 0 ? `${row.ord}. ` : "  ";
       this.add(this.act(row.toggleId, mark + (row.title || "Untitled"), 40, y, 13, false, 360));
       this.add(text(row.meta, 40, y + 16, 10, theme.muted));
     });
-    this.add(this.act("pack-save", t("common.save"), 40, 250, 14, opts.selected < 2, 140));
+    this.add(this.act("pack-save", t("common.save"), 40, 255, 14, opts.selected < 2, 140));
     if (opts.total > opts.pageSize) {
-      const trackH = 160;
+      const trackH = 140;
       const trackX = 528;
-      const trackY = 68;
+      const trackY = 90;
       const bar = new createjs.Shape();
       bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
       const thumbH = Math.max(18, trackH * (opts.pageSize / opts.total));
@@ -911,7 +914,13 @@ export class ExtraHud {
 
     this.board = new createjs.Container();
     try {
-      this.refreshCreatorBoard(opts);
+      this.refreshCreatorBoard({
+        tiles: opts.tiles,
+        spawn: opts.spawn,
+        marks: opts.marks,
+        cursor: opts.cursor,
+        spawnTool: opts.tool === "spawn",
+      });
     } catch {
       /* keep the rest of the editor even if a clip fails */
     }
@@ -990,6 +999,7 @@ export class ExtraHud {
     spawn: [number, number];
     marks: { x: number; y: number; label: string }[];
     cursor?: { x: number; y: number };
+    spawnTool?: boolean;
   }): void {
     if (!this.board) return;
     this.board.removeAllChildren();
@@ -1009,24 +1019,28 @@ export class ExtraHud {
       if (clip) this.board.addChild(clip);
       else drawBoardCell(mesh, cell.x, cell.y, cell.ch);
     }
-    const spawn = boardScreen(opts.spawn[0], opts.spawn[1]);
-    // Always show an obvious spawn marker; the Block clip alone blends into stone.
+    // Spawn sits on the diamond face (Coolmath shadow mask), not only the tip tip.
+    const spawnFace = boardCellCenter(opts.spawn[0], opts.spawn[1]);
     const block = this.placeBoardClip("Block", opts.spawn[0], opts.spawn[1]);
     if (block) this.board.addChild(block);
-    this.board.addChild(spawnMarker(spawn.x, spawn.y));
+    this.board.addChild(spawnMarker(spawnFace.x, spawnFace.y));
+    if (opts.spawnTool && opts.cursor && (opts.cursor.x !== opts.spawn[0] || opts.cursor.y !== opts.spawn[1])) {
+      const ghost = boardCellCenter(opts.cursor.x, opts.cursor.y);
+      this.board.addChild(spawnMarker(ghost.x, ghost.y, 0.55));
+    }
     for (const mark of opts.marks) {
-      const p = boardScreen(mark.x, mark.y);
+      const p = boardCellCenter(mark.x, mark.y);
       this.board.addChild(text(mark.label, p.x - 3, p.y - 6, 9, "#fff"));
     }
     if (opts.cursor) {
-      const p = boardScreen(opts.cursor.x, opts.cursor.y);
+      const p = boardCellCenter(opts.cursor.x, opts.cursor.y);
       const ring = new createjs.Shape();
       ring.graphics
         .beginStroke("#ffe082")
         .setStrokeStyle(4)
         .beginFill("rgba(255,200,60,0.35)")
-        .drawCircle(p.x, p.y - 4, 14);
-      ring.graphics.beginStroke("#fff").setStrokeStyle(1.5).drawCircle(p.x, p.y - 4, 7);
+        .drawCircle(p.x, p.y, 14);
+      ring.graphics.beginStroke("#fff").setStrokeStyle(1.5).drawCircle(p.x, p.y, 7);
       ring.mouseEnabled = false;
       this.board.addChild(ring);
     }
@@ -1100,32 +1114,42 @@ export class ExtraHud {
     return wrap;
   }
 
-  drawInGameDev(banner = "", autoSolve = false): void {
+  drawInGameDev(banner = "", autoSolve = false, unlimitedEndless = false): void {
     this.clear();
     this.hideMascot();
     this.add(hitRow(autoSolve ? "Stop auto-solve" : "Beat stage for me", 12, 32, 11, () => this.onAction("dev-beat"), false, 180));
-    this.add(hitRow("Dev menu", 12, 52, 11, () => this.onAction("dev-menu"), false, 120));
+    this.add(
+      hitRow(
+        `Unlimited endless  ${unlimitedEndless ? "ON" : "OFF"}`,
+        12,
+        52,
+        11,
+        () => this.onAction("toggle-unlimited-endless"),
+        false,
+        200,
+      ),
+    );
     if (banner) this.add(text(banner, 12, 74, 11, paint().green));
   }
 }
 
-function boardCellPts(x: number, y: number): [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] {
-  return [boardScreen(x, y), boardScreen(x + 1, y), boardScreen(x + 1, y + 1), boardScreen(x, y + 1)];
-}
-
+/** Coolmath tile face: tip at (x,y) with the diamond toward y-1 (matches shadow mask). */
 function drawBoardCell(shape: HudShape, x: number, y: number, ch: string): void {
   const face = TILE_FACE[ch] || TILE_FACE[" "];
-  const [a, b, c, d] = boardCellPts(x, y);
+  const [a, b, c, d] = boardCellCorners(x, y);
   shape.graphics.beginFill(face.top).beginStroke(face.stroke).setStrokeStyle(ch === " " ? 0.6 : 1)
     .moveTo(a.x, a.y).lineTo(b.x, b.y).lineTo(c.x, c.y).lineTo(d.x, d.y).lineTo(a.x, a.y).endFill();
 }
 
-function spawnMarker(x: number, y: number): HudShape {
+function spawnMarker(x: number, y: number, alpha = 1): HudShape {
   const block = new createjs.Shape();
-  block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(1.5).drawRect(-6, -16, 12, 18);
-  block.graphics.beginFill("#ffe082").drawRect(-3, -22, 6, 6);
+  block.graphics.beginFill("rgba(0,0,0,0.45)").drawEllipse(-11, 4, 22, 10);
+  block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(2).drawRect(-7, -20, 14, 22);
+  block.graphics.beginFill("#ffe082").drawRect(-4, -28, 8, 8);
+  block.graphics.beginStroke("#ffef9a").setStrokeStyle(1.5).drawCircle(0, -10, 16);
   block.x = x;
   block.y = y;
+  block.alpha = alpha;
   block.mouseEnabled = false;
   return block;
 }

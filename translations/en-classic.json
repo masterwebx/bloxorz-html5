@@ -302,5 +302,7 @@
   "creator.packName": "Pack ({n})",
   "creator.packSaved": "Stage pack saved",
   "creator.kindSingle": "Single",
-  "creator.kindPack": "Pack"
+  "creator.kindPack": "Pack",
+  "creator.packPlaceholder": "PACK NAME",
+  "dev.unlimitedEndless": "Unlimited endless"
 }

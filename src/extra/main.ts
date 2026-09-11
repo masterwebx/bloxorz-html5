@@ -1,4 +1,4 @@
-import { cmdToCode, createFeeder, tickFeeder, type SolveFeeder } from "./autoSolve";
+import { cmdToCode, createFeeder, shouldRestartBeforeSolve, tickFeeder, type SolveFeeder } from "./autoSolve";
 import { checkBeatable, EDITOR_TOOLS, editorMarks, newPaintState, paintEditorCell, type EditorToolId } from "./editor";
 import {
   decodeSeed,
@@ -34,7 +34,16 @@ import {
 } from "./generate";
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
-import { blitHueRects, collectBlockFrameIndexes, needsBlockHueBake, wrapHue, type AtlasRect } from "./hue";
+import {
+  blitPackedHue,
+  collectBlockFrameIndexes,
+  extractPackedBlockSource,
+  needsBlockHueBake,
+  packBlockLayout,
+  wrapHue,
+  type AtlasRect,
+  type PackedBlockLayout,
+} from "./hue";
 import { displayMoveCount, focusedSelectIndex } from "./bridgeSync";
 import { applySaveBackup, buildSaveBackup, clearSaveData, parseSaveBackup } from "./saveBackup";
 import { armStageTitleClip, freezeStageTitleClip, pinStageTitleClip, stageTitleShouldArm, stageTitleShouldFreeze, type StageTitleClip } from "./stageTitle";
@@ -383,13 +392,22 @@ let tabCastStream: MediaStream | null = null;
 let tabCastPrompt: Promise<void> | null = null;
 let atlasRects: AtlasRect[] | null = null;
 let atlasCanvas: HTMLCanvasElement | null = null;
-let atlasOriginal: HTMLCanvasElement | null = null;
+/** Packed pristine block-only sheet (not the full 4096² atlas). */
+let blockHueSource: HTMLCanvasElement | null = null;
+let blockHueLayout: PackedBlockLayout | null = null;
+let blockHueTinted: HTMLCanvasElement | null = null;
+let blockFrameIndexes: number[] | null = null;
 let bakedHue = -1;
 let hueBlitPending = false;
+let hueBakeTimer = 0;
+let lastHueBakeMs = 0;
+let lastHueExtractMs = 0;
 let deleteSaveStep = 0;
 let packOrder: string[] = [];
+let packName = "Untitled Pack";
 let beatBanner = "";
 let autoSolve = false;
+let unlimitedLevelArmed = -1;
 let solveTape: TapeCmd[] = [];
 let solveRetries = 0;
 let modalKind: "code-play" | "code-edit" | null = null;
@@ -514,12 +532,18 @@ function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): HT
   for (const frame of sheet._frames ?? []) frame.image = canvas;
   // Invalidate hue bake only when the sheet is rebuilt from a fresh bitmap.
   if (source instanceof HTMLImageElement) {
-    atlasRects = null;
-    atlasCanvas = null;
-    atlasOriginal = null;
-    bakedHue = -1;
+    invalidateBlockHueCache();
   }
   return canvas;
+}
+
+function invalidateBlockHueCache(): void {
+  atlasRects = null;
+  atlasCanvas = null;
+  blockHueSource = null;
+  blockHueLayout = null;
+  blockHueTinted = null;
+  bakedHue = -1;
 }
 
 function atlasSheet(): SpriteSheetLike | undefined {
@@ -538,40 +562,53 @@ function liveBlockHue(): number {
   return wrapHue(loadSettings().blockHue);
 }
 
-function snapshotAtlas(src: HTMLCanvasElement): HTMLCanvasElement | null {
-  const copy = document.createElement("canvas");
-  copy.width = src.width;
-  copy.height = src.height;
-  const ctx = copy.getContext("2d");
-  if (!ctx) return null;
-  ctx.drawImage(src, 0, 0);
-  return copy;
+function cachedBlockIndexes(lib: Record<string, unknown>): number[] {
+  if (!blockFrameIndexes) blockFrameIndexes = collectBlockFrameIndexes(lib);
+  return blockFrameIndexes;
 }
 
-function collectBlockAtlas(): { live: HTMLCanvasElement; original: HTMLCanvasElement; rects: AtlasRect[] } | null {
+function makeHueCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  return { canvas, ctx };
+}
+
+/** Build / reuse packed block-only pristine source. Destination remains the live atlas. */
+function collectBlockAtlas(): { live: HTMLCanvasElement; source: HTMLCanvasElement; layout: PackedBlockLayout; rects: AtlasRect[] } | null {
   const sheet = atlasSheet();
   const lib = adobeLib() as unknown as Record<string, unknown>;
   if (!sheet?.getFrame || !lib) return null;
-  const indexes = collectBlockFrameIndexes(lib);
+  const indexes = cachedBlockIndexes(lib);
   if (!indexes.length) return null;
-  let source: CanvasImageSource | null = null;
+  let sourceImg: CanvasImageSource | null = null;
   const rects: AtlasRect[] = [];
   for (const i of indexes) {
     const frame = sheet.getFrame(i);
     if (!frame?.rect || !frame.image) continue;
-    source = frame.image;
+    sourceImg = frame.image;
     rects.push(frame.rect);
   }
-  if (!source || !rects.length) return null;
-  const live = adoptAtlasCanvas(sheet, source);
+  if (!sourceImg || !rects.length) return null;
+  const live = adoptAtlasCanvas(sheet, sourceImg);
   if (!live) return null;
-  // Reuse an existing pristine snapshot when the live canvas already holds one.
-  if (atlasOriginal && atlasOriginal.width === live.width && atlasOriginal.height === live.height && atlasRects) {
-    return { live, original: atlasOriginal, rects };
+  if (blockHueSource && blockHueLayout && atlasRects && atlasCanvas === live) {
+    return { live, source: blockHueSource, layout: blockHueLayout, rects: atlasRects };
   }
-  const original = snapshotAtlas(live);
-  if (!original) return null;
-  return { live, original, rects };
+  const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const layout = packBlockLayout(rects);
+  const packed = extractPackedBlockSource(makeHueCanvas, live, layout);
+  if (!packed) return null;
+  lastHueExtractMs = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
+  blockHueSource = packed;
+  blockHueLayout = layout;
+  if (!blockHueTinted || blockHueTinted.width !== layout.width || blockHueTinted.height !== layout.height) {
+    const tinted = makeHueCanvas(layout.width, layout.height);
+    blockHueTinted = tinted?.canvas ?? null;
+  }
+  return { live, source: packed, layout, rects };
 }
 
 function clearPlayBlockHueFilters(): void {
@@ -585,12 +622,21 @@ function clearPlayBlockHueFilters(): void {
   }
 }
 
+/** Settle-time bake: preview updates immediately; atlas blit waits for idle/pointer settle. */
+function scheduleBlockHueBake(delayMs = 100): void {
+  if (hueBakeTimer) window.clearTimeout(hueBakeTimer);
+  hueBakeTimer = window.setTimeout(() => {
+    hueBakeTimer = 0;
+    applyBlockHue(true);
+  }, delayMs);
+}
+
 function applyBlockHue(force = false): void {
   const hue = liveBlockHue();
-  const hasAtlas = !!(atlasRects && atlasOriginal && atlasCanvas);
+  const hasAtlas = !!(atlasRects && blockHueSource && atlasCanvas && blockHueLayout);
   if (!force && !needsBlockHueBake(hue, bakedHue, hasAtlas)) return;
-  if (!atlasRects || !atlasCanvas || !atlasOriginal) {
-    // Defer the expensive first atlas collect off the critical path unless forced.
+  if (!atlasRects || !atlasCanvas || !blockHueSource || !blockHueLayout) {
+    // Defer the first packed extract off the critical path unless forced.
     if (!force && typeof requestAnimationFrame === "function") {
       if (hueBlitPending) return;
       hueBlitPending = true;
@@ -604,19 +650,28 @@ function applyBlockHue(force = false): void {
     if (!atlas) return;
     atlasRects = atlas.rects;
     atlasCanvas = atlas.live;
-    atlasOriginal = atlas.original;
+    blockHueSource = atlas.source;
+    blockHueLayout = atlas.layout;
   }
-  // Coalesce rapid slider steps onto one rAF blit; run() re-reads the latest hue.
   if (!force && hueBlitPending) return;
   hueBlitPending = true;
   const run = () => {
     hueBlitPending = false;
-    if (!atlasCanvas || !atlasOriginal || !atlasRects) return;
+    if (!atlasCanvas || !blockHueSource || !blockHueLayout) return;
     const next = liveBlockHue();
     if (bakedHue >= 0 && next === bakedHue) return;
     const ctx = atlasCanvas.getContext("2d");
     if (!ctx) return;
-    blitHueRects(ctx, atlasOriginal, atlasRects, next);
+    if (!blockHueTinted || blockHueTinted.width !== blockHueLayout.width || blockHueTinted.height !== blockHueLayout.height) {
+      const tinted = makeHueCanvas(blockHueLayout.width, blockHueLayout.height);
+      if (!tinted) return;
+      blockHueTinted = tinted.canvas;
+    }
+    const scratchCtx = blockHueTinted.getContext("2d");
+    if (!scratchCtx) return;
+    const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+    blitPackedHue(ctx, blockHueSource, { canvas: blockHueTinted, ctx: scratchCtx }, blockHueLayout.slots, next);
+    lastHueBakeMs = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
     bakedHue = next;
     clearPlayBlockHueFilters();
   };
@@ -1034,13 +1089,21 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   }
   if (upload) upload.hidden = true;
   if (!on && manage) manage.hidden = true;
+  if (!on) {
+    // Flush any pending settle-bake when leaving Settings so in-game cubes match the preview.
+    if (hueBakeTimer) {
+      window.clearTimeout(hueBakeTimer);
+      hueBakeTimer = 0;
+      applyBlockHue(true);
+    }
+  }
   if (uploadBtn) uploadBtn.textContent = themeUploadMsg || t("settings.upload");
   if (templateBtn) templateBtn.textContent = t("settings.template");
   if (manageBtn) manageBtn.textContent = t("settings.manage");
   if (tintColor) {
     // Single swatch next to the Backdrop tint label (no slider duplicate).
     tintColor.style.left = "28%";
-    tintColor.style.top = "76.2%";
+    tintColor.style.top = "78.4%";
     tintColor.style.width = "4.2%";
     tintColor.style.height = "4.4%";
     tintColor.value = hueToHex(loadSettings().bgHue);
@@ -1423,9 +1486,9 @@ function placePauseStats(el: HTMLElement | null, node: OverlayNode | undefined, 
   const localY = b?.y ?? 0;
   const { sx, sy } = stageScale();
   const p = node.localToGlobal(localX, localY);
-  // Nudge HD pause stats down/right inside the black panel.
-  el.style.left = (p.x / sx / 550) * 100 + 1.4 + "%";
-  el.style.top = (p.y / sy / 300) * 100 + 1.8 + "%";
+  // Nudge HD pause stats down a bit and left a little inside the black panel.
+  el.style.left = (p.x / sx / 550) * 100 + 0.4 + "%";
+  el.style.top = (p.y / sy / 300) * 100 + 3.4 + "%";
   el.style.transform = "none";
 }
 
@@ -2281,7 +2344,13 @@ function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
   editCursor = { x, y };
   paintEditorCell(draft, x, y, paint);
   beaten = false;
-  hud?.refreshCreatorBoard({ tiles: draft.tiles, spawn: draft.spawn, marks: editorMarks(draft), cursor: editCursor });
+  hud?.refreshCreatorBoard({
+    tiles: draft.tiles,
+    spawn: draft.spawn,
+    marks: editorMarks(draft),
+    cursor: editCursor,
+    spawnTool: paint.tool === "spawn",
+  });
 }
 
 function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
@@ -2297,7 +2366,13 @@ function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "ba
     const held = editorPaintHeld || heldPadButtons().has(loadSettings().pads.confirm);
     if (held) paintEditorAt(editCursor.x, editCursor.y, "drag");
     else {
-      hud?.refreshCreatorBoard({ tiles: draft.tiles, spawn: draft.spawn, marks: editorMarks(draft), cursor: editCursor });
+      hud?.refreshCreatorBoard({
+        tiles: draft.tiles,
+        spawn: draft.spawn,
+        marks: editorMarks(draft),
+        cursor: editCursor,
+        spawnTool: paint.tool === "spawn",
+      });
     }
     return;
   }
@@ -2628,6 +2703,7 @@ function paintHud(): void {
       pageSize: LIST_PAGE,
       selected: packOrder.length,
     });
+    placeHudInput(true, "18%", "14.5%", "36%", t("creator.packPlaceholder"), packName, 24);
   } else if (extraView === "creator-edit") {
     const issue = isPlayable(draft);
     hud.drawCreator({
@@ -2654,7 +2730,10 @@ function openPanel(name: Screen): void {
   if (name === "home") animateHome = true;
   if (name === "load") loadError = "";
   if (name === "creator-manage" || name === "creator-saved" || name === "creator-pack" || name === "history" || name === "achievements" || name === "records") listScroll = 0;
-  if (name === "creator-pack") packOrder = [];
+  if (name === "creator-pack") {
+    packOrder = [];
+    packName = "Untitled Pack";
+  }
   if (name === "settings-save") deleteSaveStep = 0;
   if (name === "creator-edit") {
     editCursor = { x: draft.spawn[0], y: draft.spawn[1] };
@@ -3197,8 +3276,9 @@ function handleHudAction(act: string): void {
     updateSettings((s) => {
       s.blockHue = Number(act.slice(9));
     }, 160);
-    applyBlockHue();
+    // Instant Shape preview via HUD paint; settle-bake the atlas after drag/pad idle.
     scheduleHudPaint();
+    scheduleBlockHueBake(100);
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
@@ -3275,8 +3355,14 @@ function handleHudAction(act: string): void {
     }
   } else if (act === "gauntlet-go") playGauntlet(hudInput()?.value.trim() || gauntletSeed, puzzleDiff, gauntletCount);
   else if (act === "dev-beat") beatCurrentStage();
-  else if (act === "dev-menu") {
-    leavePlayTo("load");
+  else if (act === "toggle-unlimited-endless") {
+    updateSettings((s) => {
+      s.unlimitedEndless = !s.unlimitedEndless;
+    });
+    unlimitedLevelArmed = -1;
+    lastHudPaint = "";
+    markHudDirty();
+    paintHud();
   } else if (act.startsWith("manage:")) {
     const row = listSaved()[Number(act.slice(7))];
     if (!row) return;
@@ -3305,6 +3391,7 @@ function handleHudAction(act: string): void {
     showCopyToast(t("creator.copied"));
   } else if (act === "creator-pack") {
     packOrder = [];
+    packName = "Untitled Pack";
     openPanel("creator-pack");
   } else if (act.startsWith("pack-toggle:")) {
     const singles = listSaved().filter((row) => !isPack(row));
@@ -3323,8 +3410,11 @@ function handleHudAction(act: string): void {
       .map((d) => structuredClone(d));
     if (defs.length < 2) return;
     const code = encodePack(defs);
+    const name =
+      (hudInput()?.value.trim() || packName).trim() || t("creator.packName", { n: defs.length });
+    packName = name;
     const pack: SavedStage = {
-      name: t("creator.packName", { n: defs.length }),
+      name,
       author: getName() || "BLOX",
       code,
       seed: code,
@@ -3717,6 +3807,7 @@ function leavePlayTo(view: Screen): void {
   flags.setStageLoaded?.(0);
   flags.setSplit?.(0);
   playSession = null;
+  unlimitedLevelArmed = -1;
   lastTintKey = "";
   syncPlayChrome(false);
   syncHowto(false);
@@ -3943,22 +4034,26 @@ function tickSolve(): void {
 function beatCurrentStage(): void {
   if (autoSolve) {
     stopAutoSolve("");
-    hud?.drawInGameDev("", false);
+    hud?.drawInGameDev("", false, loadSettings().unlimitedEndless);
     return;
   }
   const cmds = solveCmdsForCurrent();
   if (!cmds?.length) {
     beatBanner = "No solution found";
-    hud?.drawInGameDev(beatBanner, false);
+    hud?.drawInGameDev(beatBanner, false, loadSettings().unlimitedEndless);
     return;
   }
   autoSolve = true;
   beatBanner = "Auto-solve";
-  hud?.drawInGameDev(beatBanner, true);
+  hud?.drawInGameDev(beatBanner, true, loadSettings().unlimitedEndless);
   solveFeeder = createFeeder(cmds);
   solveCode = "";
-  window.stage?.bloxWorld?.destroy?.();
-  window.exportRoot?.gotoAndPlay?.("restart");
+  const moves = window.stage?.bloxWorld?.moves ?? 0;
+  // Fresh stage (0 moves): arm the feeder without a destroy/restart.
+  if (shouldRestartBeforeSolve(moves)) {
+    window.stage?.bloxWorld?.destroy?.();
+    window.exportRoot?.gotoAndPlay?.("restart");
+  }
 }
 
 function syncHelpText(): void {
@@ -4377,6 +4472,10 @@ function bind(): void {
       draftName = input.value;
       return;
     }
+    if (extraView === "creator-pack") {
+      packName = input.value;
+      return;
+    }
     if (extraView === "puzzles-seeded") {
       puzzleSeed = input.value;
       return;
@@ -4791,9 +4890,23 @@ function syncOverlay(): void {
           hud?.setVisible(true);
           raiseHud();
         }
-        if (lastHudPaint !== "ingame:" + beatBanner + String(autoSolve)) {
-          lastHudPaint = "ingame:" + beatBanner + String(autoSolve);
-          hud?.drawInGameDev(beatBanner, autoSolve);
+        const unlimited = loadSettings().unlimitedEndless;
+        const levelNo = stage?.levelNumber ?? 0;
+        if (
+          unlimited &&
+          !autoSolve &&
+          label === "game" &&
+          levelNo > 0 &&
+          levelNo !== unlimitedLevelArmed &&
+          blocksIdle()
+        ) {
+          unlimitedLevelArmed = levelNo;
+          beatCurrentStage();
+        }
+        const paintKey = "ingame:" + beatBanner + String(autoSolve) + String(unlimited);
+        if (lastHudPaint !== paintKey) {
+          lastHudPaint = paintKey;
+          hud?.drawInGameDev(beatBanner, autoSolve, unlimited);
         }
       } else if (hud?.root.visible) {
         hud?.setVisible(false);

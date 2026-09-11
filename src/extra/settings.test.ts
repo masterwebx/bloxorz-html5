@@ -87,4 +87,11 @@ describe("mobile settings", () => {
     const blue = hueRgb(240);
     expect(blue[2]).toBeGreaterThan(blue[0]);
   });
+
+  it("defaults unlimited endless off and keeps an explicit on", () => {
+    expect(loadSettings().unlimitedEndless).toBe(false);
+    localStorage.setItem("bloxorz-settings-v1", JSON.stringify({ unlimitedEndless: true }));
+    invalidateSettingsCache();
+    expect(loadSettings().unlimitedEndless).toBe(true);
+  });
 });

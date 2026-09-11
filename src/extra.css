@@ -253,8 +253,8 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 #pause-stats {
 	position: absolute;
 	/* Fallback before the first sync; JS retargets left/top to the sliding stats clip. */
-	left: 69%;
-	top: 46%;
+	left: 67.5%;
+	top: 48%;
 	transform: none;
 	z-index: 14;
 	pointer-events: none;
@@ -263,7 +263,7 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	text-shadow: 0 0 0.4cqh #c45a18;
 	min-width: 11em;
 	text-align: left;
-	padding: 0.55em 0.35em 0.35em 0.7em;
+	padding: 0.7em 0.35em 0.35em 0.55em;
 	box-sizing: border-box;
 }
 
@@ -516,13 +516,14 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	position: absolute;
 	z-index: 30;
 	left: 28%;
-	top: 76.2%;
+	top: 78.4%;
 	width: 4.2%;
 	height: 4.4%;
 	padding: 0;
 	border: 1px solid #c45a18;
 	background: transparent;
 	cursor: pointer;
+	pointer-events: auto;
 	-webkit-appearance: none;
 	appearance: none;
 }

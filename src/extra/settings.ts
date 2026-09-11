@@ -42,6 +42,7 @@ export interface Settings {
   bgTint: number;
   bgHue: number;
   blockHue: number;
+  unlimitedEndless: boolean;
   playerName: string;
   locale: string;
   keys: Record<Action, string>;
@@ -67,6 +68,7 @@ const DEFAULTS: Settings = {
   bgTint: 0,
   bgHue: 28,
   blockHue: 0,
+  unlimitedEndless: false,
   playerName: "",
   locale: "",
   keys: {
@@ -122,6 +124,7 @@ export function loadSettings(): Settings {
       bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
       blockHue: clampHue(parsed.blockHue ?? DEFAULTS.blockHue),
+      unlimitedEndless: parsed.unlimitedEndless === true,
       playerName: typeof parsed.playerName === "string" ? parsed.playerName.slice(0, NAME_MAX) : "",
       locale: typeof parsed.locale === "string" ? parsed.locale : "",
       keys: { ...DEFAULTS.keys, ...parsed.keys },
