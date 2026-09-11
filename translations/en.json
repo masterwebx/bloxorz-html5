@@ -295,7 +295,7 @@
   "gauntlet.difficulty": "Difficulty",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue",
+  "settings.blockHue": "Block color",
   "creator.share": "Share",
   "creator.copied": "Copied to clipboard",
   "creator.createPack": "Create stage pack",
@@ -305,5 +305,16 @@
   "creator.kindSingle": "Single",
   "creator.kindPack": "Pack",
   "creator.packPlaceholder": "PACK NAME",
-  "dev.unlimitedEndless": "Unlimited endless"
+  "dev.unlimitedEndless": "Unlimited endless",
+  "creator.needExit": "Place an exit hole.",
+  "creator.oneExit": "Only one exit is allowed.",
+  "creator.needTiles": "Paint some tiles.",
+  "creator.spawnSolid": "Spawn must sit on a solid tile.",
+  "creator.cleared": "Cleared.",
+  "creator.copiedSeed": "Copied reverse seed {seed}",
+  "creator.loadedSeed": "Loaded {n} tiles from reverse seed.",
+  "creator.savedSeed": "Saved. Reverse seed: {code}",
+  "creator.untitled": "Untitled",
+  "creator.untitledPack": "Untitled Pack",
+  "creator.unknownAuthor": "Unknown"
 }

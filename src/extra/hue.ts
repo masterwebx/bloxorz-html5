@@ -208,6 +208,7 @@ type PackBlitScratch = {
 /**
  * Fast re-tint: one filtered draw of the packed pristine sheet, then unfiltered
  * copies into the live atlas at original frame rects. No ColorMatrix on clips.
+ * @deprecated Prefer blitPackedRecolor for true RGB swatches (hue-rotate collapses sat/value).
  */
 export function blitPackedHue(
   destCtx: HueBlitCtx & PackExtractCtx,
@@ -221,6 +222,99 @@ export function blitPackedHue(
   scratch.ctx.filter = atlasHueFilter(hue);
   scratch.ctx.drawImage(packedSource, 0, 0, sw, sh, 0, 0, sw, sh);
   scratch.ctx.filter = "none";
+  destCtx.filter = "none";
+  for (const slot of slots) {
+    const { src, dest } = slot;
+    destCtx.drawImage(scratch.canvas, src.x, src.y, src.width, src.height, dest.x, dest.y, dest.width, dest.height);
+  }
+}
+
+export function parseHexRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1]!, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Scale a rust-base pixel toward an arbitrary target RGB, keeping shading ratios. */
+export function recolorRgb(
+  r: number,
+  g: number,
+  b: number,
+  tr: number,
+  tg: number,
+  tb: number,
+  base: [number, number, number] = RUST_TOP,
+): [number, number, number] {
+  const br = Math.max(1, base[0]);
+  const bg = Math.max(1, base[1]);
+  const bb = Math.max(1, base[2]);
+  return [clampByte((r * tr) / br), clampByte((g * tg) / bg), clampByte((b * tb) / bb)];
+}
+
+export function bakeRecolorIntoPixels(data: Uint8ClampedArray, targetHex: string): void {
+  const rgb = parseHexRgb(targetHex);
+  if (!rgb) return;
+  const [tr, tg, tb] = rgb;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const [nr, ng, nb] = recolorRgb(data[i]!, data[i + 1]!, data[i + 2]!, tr, tg, tb);
+    data[i] = nr;
+    data[i + 1] = ng;
+    data[i + 2] = nb;
+  }
+}
+
+export function rustFacesFromHex(hex: string): { top: string; left: string; right: string; edge: string } {
+  const rgb = parseHexRgb(hex) ?? RUST_TOP;
+  const face = (base: [number, number, number]) => {
+    const [r, g, b] = recolorRgb(base[0], base[1], base[2], rgb[0], rgb[1], rgb[2]);
+    return `rgb(${r},${g},${b})`;
+  };
+  return {
+    top: face(RUST_TOP),
+    left: face(RUST_LEFT),
+    right: face(RUST_RIGHT),
+    edge: face([240, 180, 120]),
+  };
+}
+
+/** Skip atlas work when still on the pristine default and nothing has been baked. */
+export function needsBlockColorBake(color: string | null, baked: string | null, hasAtlas: boolean): boolean {
+  if (color === baked) {
+    if (color === null && !hasAtlas) return false;
+    if (hasAtlas) return false;
+  }
+  return true;
+}
+
+/**
+ * True RGB re-tint of the packed block sheet (full swatch, not hue-rotate), then
+ * unfiltered copies into the live atlas. `targetHex === null` restores pristine rust.
+ */
+export function blitPackedRecolor(
+  destCtx: HueBlitCtx & PackExtractCtx,
+  packedSource: CanvasImageSource,
+  scratch: PackBlitScratch,
+  slots: PackedBlockSlot[],
+  targetHex: string | null,
+): void {
+  const sw = scratch.canvas.width;
+  const sh = scratch.canvas.height;
+  const scratchCtx = scratch.ctx as HueBlitCtx &
+    PackExtractCtx & {
+      clearRect?: (x: number, y: number, w: number, h: number) => void;
+      getImageData?: (x: number, y: number, w: number, h: number) => ImageData;
+      putImageData?: (img: ImageData, x: number, y: number) => void;
+    };
+  scratchCtx.filter = "none";
+  scratchCtx.clearRect?.(0, 0, sw, sh);
+  scratchCtx.drawImage(packedSource, 0, 0, sw, sh, 0, 0, sw, sh);
+  if (targetHex && scratchCtx.getImageData && scratchCtx.putImageData) {
+    const img = scratchCtx.getImageData(0, 0, sw, sh);
+    bakeRecolorIntoPixels(img.data, targetHex);
+    scratchCtx.putImageData(img, 0, 0);
+  }
   destCtx.filter = "none";
   for (const slot of slots) {
     const { src, dest } = slot;

@@ -5,7 +5,13 @@ import {
   bakeHueIntoPixels,
   blitHueRects,
   blitPackedHue,
+  blitPackedRecolor,
+  bakeRecolorIntoPixels,
   collectBlockFrameIndexes,
+  needsBlockColorBake,
+  parseHexRgb,
+  recolorRgb,
+  rustFacesFromHex,
   extractPackedBlockSource,
   hueDelta,
   hueRotateRgb,
@@ -183,5 +189,55 @@ describe("block hue bake", () => {
       ["none", scratchCanvas, 0, 0, 8, 6, 2, 4, 8, 6],
       ["none", scratchCanvas, 8, 0, 8, 6, 12, 4, 8, 6],
     ]);
+  });
+
+  it("recolors rust toward a full RGB swatch (not hue-only)", () => {
+    expect(parseHexRgb("#00ff80")).toEqual([0, 255, 128]);
+    const [r, g] = recolorRgb(196, 104, 32, 0, 255, 128);
+    expect(r).toBeLessThan(40);
+    expect(g).toBeGreaterThan(200);
+    const data = new Uint8ClampedArray([196, 104, 32, 255, 0, 0, 0, 0]);
+    bakeRecolorIntoPixels(data, "#00ff80");
+    expect(data[1]).toBeGreaterThan(200);
+    expect(data[4]).toBe(0);
+    const faces = rustFacesFromHex("#3366ff");
+    expect(faces.top).toMatch(/^rgb\(/);
+    expect(needsBlockColorBake(null, null, false)).toBe(false);
+    expect(needsBlockColorBake("#3366ff", null, false)).toBe(true);
+    expect(needsBlockColorBake("#3366ff", "#3366ff", true)).toBe(false);
+  });
+
+  it("restores pristine pixels when recolor target is null", () => {
+    const packed = {} as CanvasImageSource;
+    const scratchCanvas = { width: 8, height: 6 };
+    let cleared = false;
+    const img = { data: new Uint8ClampedArray([196, 104, 32, 255]), width: 8, height: 6 };
+    const scratch = {
+      canvas: scratchCanvas,
+      ctx: {
+        filter: "hue-rotate(9deg)",
+        clearRect() {
+          cleared = true;
+        },
+        drawImage() {},
+        getImageData() {
+          return img;
+        },
+        putImageData() {},
+      },
+    };
+    const destCalls: unknown[] = [];
+    const dest = {
+      filter: "x",
+      drawImage(...args: unknown[]) {
+        destCalls.push(args);
+      },
+    };
+    const slots = packBlockLayout([{ x: 1, y: 2, width: 8, height: 6 }]).slots;
+    blitPackedRecolor(dest, packed, scratch as never, slots, null);
+    expect(cleared).toBe(true);
+    expect(scratch.ctx.filter).toBe("none");
+    expect(dest.filter).toBe("none");
+    expect(destCalls).toHaveLength(1);
   });
 });

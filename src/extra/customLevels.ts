@@ -1,4 +1,5 @@
 import type { LevelDef, SwitchMode } from "./types";
+import { t } from "./i18n";
 
 const STORE = "bloxorz-custom-stages-v1";
 const DOWNLOADED = "bloxorz-downloaded-stages-v1";
@@ -448,11 +449,11 @@ export function deleteStage(code: string): void {
 export function isPlayable(def: LevelDef): string | null {
   const exits = def.tiles.reduce((n, r) => n + [...r].filter((c) => c === "e").length, 0);
   const hasStone = def.tiles.some((r) => /[bshfvlrkq]/.test(r));
-  if (exits === 0) return "Place an exit hole.";
-  if (exits > 1) return "Only one exit is allowed.";
-  if (!hasStone) return "Paint some tiles.";
+  if (exits === 0) return t("creator.needExit");
+  if (exits > 1) return t("creator.oneExit");
+  if (!hasStone) return t("creator.needTiles");
   const [sx, sy] = def.spawn;
   const ch = tileChar(def, sx, sy);
-  if (ch === " " || ch === "e") return "Spawn must sit on a solid tile.";
+  if (ch === " " || ch === "e") return t("creator.spawnSolid");
   return null;
 }

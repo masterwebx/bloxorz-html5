@@ -35,12 +35,12 @@ import {
 import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
 import {
-  blitPackedHue,
+  blitPackedRecolor,
   collectBlockFrameIndexes,
   extractPackedBlockSource,
-  needsBlockHueBake,
+  needsBlockColorBake,
   packBlockLayout,
-  wrapHue,
+  parseHexRgb,
   type AtlasRect,
   type PackedBlockLayout,
 } from "./hue";
@@ -64,8 +64,6 @@ import {
   currentTheme,
   hexCss,
   hexToHue,
-  hueCss,
-  hueRgb,
   hueToHex,
   isDevName,
   loadSettings,
@@ -360,7 +358,7 @@ let rebindAction: Action | null = null;
 let overlayMode: "run" | "menu" | "" = "";
 let playLaunching = false;
 let pauseFocus = 0;
-let draftName = "Untitled";
+let draftName = t("creator.untitled");
 let listScroll = 0;
 let puzzleSeed = "";
 let gauntletSeed = "";
@@ -400,14 +398,15 @@ let blockHueSource: HTMLCanvasElement | null = null;
 let blockHueLayout: PackedBlockLayout | null = null;
 let blockHueTinted: HTMLCanvasElement | null = null;
 let blockFrameIndexes: number[] | null = null;
-let bakedHue = -1;
+/** Last baked block swatch hex; null = pristine rust on atlas (or never baked). */
+let bakedBlockColor: string | null = null;
 let hueBlitPending = false;
 let hueBakeTimer = 0;
-let lastHueBakeMs = 0;
+let lastHueBakeMs = 0; // eslint/tsc: read by debug tooling
 let lastHueExtractMs = 0;
 let deleteSaveStep = 0;
 let packOrder: string[] = [];
-let packName = "Untitled Pack";
+let packName = t("creator.untitledPack");
 let beatBanner = "";
 let autoSolve = false;
 let unlimitedLevelArmed = -1;
@@ -549,7 +548,7 @@ function invalidateBlockHueCache(): void {
   blockHueSource = null;
   blockHueLayout = null;
   blockHueTinted = null;
-  bakedHue = -1;
+  bakedBlockColor = null;
 }
 
 function atlasSheet(): SpriteSheetLike | undefined {
@@ -564,8 +563,12 @@ function atlasSheet(): SpriteSheetLike | undefined {
   }
 }
 
-function liveBlockHue(): number {
-  return wrapHue(loadSettings().blockHue);
+/** Full RGB swatch for block bake; null keeps pristine rust (default swatch / hue 0). */
+function liveBlockTint(): string | null {
+  const s = loadSettings();
+  const hex = normalizeHex(s.blockColor || hueToHex(s.blockHue));
+  if (s.blockHue === 0 && hex === normalizeHex("#b86a2e")) return null;
+  return hex;
 }
 
 function cachedBlockIndexes(lib: Record<string, unknown>): number[] {
@@ -608,6 +611,7 @@ function collectBlockAtlas(): { live: HTMLCanvasElement; source: HTMLCanvasEleme
   const packed = extractPackedBlockSource(makeHueCanvas, live, layout);
   if (!packed) return null;
   lastHueExtractMs = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
+  void lastHueExtractMs;
   blockHueSource = packed;
   blockHueLayout = layout;
   if (!blockHueTinted || blockHueTinted.width !== layout.width || blockHueTinted.height !== layout.height) {
@@ -638,9 +642,9 @@ function scheduleBlockHueBake(delayMs = 100): void {
 }
 
 function applyBlockHue(force = false): void {
-  const hue = liveBlockHue();
+  const color = liveBlockTint();
   const hasAtlas = !!(atlasRects && blockHueSource && atlasCanvas && blockHueLayout);
-  if (!force && !needsBlockHueBake(hue, bakedHue, hasAtlas)) return;
+  if (!force && !needsBlockColorBake(color, bakedBlockColor, hasAtlas)) return;
   if (!atlasRects || !atlasCanvas || !blockHueSource || !blockHueLayout) {
     // Defer the first packed extract off the critical path unless forced.
     if (!force && typeof requestAnimationFrame === "function") {
@@ -664,8 +668,9 @@ function applyBlockHue(force = false): void {
   const run = () => {
     hueBlitPending = false;
     if (!atlasCanvas || !blockHueSource || !blockHueLayout) return;
-    const next = liveBlockHue();
-    if (bakedHue >= 0 && next === bakedHue) return;
+    const next = liveBlockTint();
+    if (bakedBlockColor === next && next !== null) return;
+    if (bakedBlockColor === null && next === null) return;
     const ctx = atlasCanvas.getContext("2d");
     if (!ctx) return;
     if (!blockHueTinted || blockHueTinted.width !== blockHueLayout.width || blockHueTinted.height !== blockHueLayout.height) {
@@ -676,9 +681,10 @@ function applyBlockHue(force = false): void {
     const scratchCtx = blockHueTinted.getContext("2d");
     if (!scratchCtx) return;
     const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
-    blitPackedHue(ctx, blockHueSource, { canvas: blockHueTinted, ctx: scratchCtx }, blockHueLayout.slots, next);
+    blitPackedRecolor(ctx, blockHueSource, { canvas: blockHueTinted, ctx: scratchCtx }, blockHueLayout.slots, next);
     lastHueBakeMs = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
-    bakedHue = next;
+    void lastHueBakeMs;
+    bakedBlockColor = next;
     clearPlayBlockHueFilters();
   };
   if (force || typeof requestAnimationFrame !== "function") run();
@@ -729,11 +735,12 @@ function ensureTint(): void {
   tintLayer = layer;
 }
 
-function applySkySpriteTint(sprite: SkyClip | null | undefined, hue: number, amt: number): void {
+function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string, amt: number): void {
   const cjs = window.createjs as { ColorFilter?: new (...args: number[]) => unknown } | undefined;
   if (!sprite) return;
   const tagged = sprite as SkyClip & { __bloxTintKey?: string };
-  const key = !sThemeBg() || amt <= 0.01 || !cjs?.ColorFilter ? "off" : `${hue}|${amt.toFixed(3)}`;
+  const hex = normalizeHex(tintHex);
+  const key = !sThemeBg() || amt <= 0.01 || !cjs?.ColorFilter ? "off" : `${hex}|${amt.toFixed(3)}`;
   if (tagged.__bloxTintKey === key) return;
   tagged.__bloxTintKey = key;
   if (key === "off") {
@@ -746,7 +753,8 @@ function applySkySpriteTint(sprite: SkyClip | null | undefined, hue: number, amt
     tagged.__bloxTintKey = "off";
     return;
   }
-  const [r, g, b] = hueRgb(hue);
+  const rgb = parseHexRgb(hex) ?? [184, 106, 46];
+  const [r, g, b] = rgb;
   const wash = Math.min(1, amt);
   sprite.filters = [
     new Filter(1 - wash * 0.4, 1 - wash * 0.4, 1 - wash * 0.4, 1, r * wash * 0.7, g * wash * 0.7, b * wash * 0.7, 0),
@@ -1094,13 +1102,34 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const manage = $("hud-theme-manage");
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   const blockColor = $("hud-block-color") as HTMLInputElement | null;
-  const pickingTint = tintPicking || (!!tintColor && document.activeElement === tintColor);
-  const pickingBlock = blockPicking || (!!blockColor && document.activeElement === blockColor);
+  const pickingTint = on && (tintPicking || (!!tintColor && document.activeElement === tintColor));
+  const pickingBlock = on && (blockPicking || (!!blockColor && document.activeElement === blockColor));
+  if (!on) {
+    // Always tear down swatches when leaving Settings — never leave them on the main menu.
+    tintPicking = false;
+    blockPicking = false;
+    if (tintColor) {
+      tintColor.hidden = true;
+      try {
+        tintColor.blur();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (blockColor) {
+      blockColor.hidden = true;
+      try {
+        blockColor.blur();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
   for (const el of [themeSel, localeSel, uploadBtn, templateBtn, manageBtn, tintColor, blockColor]) {
     if (!el) continue;
     // Toggling hidden / rewriting .value while the OS color UI is open dismisses it.
-    if (el === tintColor && pickingTint) continue;
-    if (el === blockColor && pickingBlock) continue;
+    if (on && el === tintColor && pickingTint) continue;
+    if (on && el === blockColor && pickingBlock) continue;
     el.hidden = !on;
   }
   if (upload) upload.hidden = true;
@@ -1127,7 +1156,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
     tintColor.title = t("settings.tint");
   }
   if (blockColor) {
-    // Block swatch — same free picker UX as tint (bake maps hex → hue rotate).
+    // Block swatch — true RGB bake from the picked hex (not hue-rotate collapse).
     blockColor.style.left = "28%";
     blockColor.style.top = "85.2%";
     blockColor.style.width = "4.2%";
@@ -2684,6 +2713,7 @@ function paintHud(): void {
       bgTint: s.bgTint,
       bgHue: s.bgHue,
       blockHue: s.blockHue,
+      blockColor: s.blockColor,
     });
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
     placeSettingsChrome(true);
@@ -2852,7 +2882,7 @@ function openPanel(name: Screen): void {
   if (name === "creator-manage" || name === "creator-saved" || name === "creator-pack" || name === "history" || name === "achievements" || name === "records") listScroll = 0;
   if (name === "creator-pack") {
     packOrder = [];
-    packName = "Untitled Pack";
+    packName = t("creator.untitledPack");
   }
   if (name === "settings-save") deleteSaveStep = 0;
   if (name === "creator-edit") {
@@ -3235,7 +3265,7 @@ function handleHudAction(act: string): void {
   else if (act === "creator-play") openPanel("creator-play");
   else if (act === "creator-new-stage") {
     draft = emptyDraft();
-    draftName = "Untitled";
+    draftName = t("creator.untitled");
     beaten = false;
     paint = newPaintState();
     undoStack = [];
@@ -3416,7 +3446,7 @@ function handleHudAction(act: string): void {
   else if (act === "creator-new") {
     pushUndo();
     draft = emptyDraft();
-    draftName = "Untitled";
+    draftName = t("creator.untitled");
     beaten = false;
     paint = newPaintState();
     scheduleBeatCheck();
@@ -3430,7 +3460,7 @@ function handleHudAction(act: string): void {
     draft.splits = [];
     beaten = false;
     paint = newPaintState();
-    paint.hint = "Cleared.";
+    paint.hint = t("creator.cleared");
     scheduleBeatCheck();
     markHudDirty();
     paintHud();
@@ -3492,7 +3522,7 @@ function handleHudAction(act: string): void {
       return;
     }
     draft = structuredClone(row.def);
-    draftName = row.name || "Untitled";
+    draftName = row.name || t("creator.untitled");
     beaten = true;
     paint = newPaintState();
     scheduleBeatCheck();
@@ -3512,7 +3542,7 @@ function handleHudAction(act: string): void {
     showCopyToast(t("creator.copied"));
   } else if (act === "creator-pack") {
     packOrder = [];
-    packName = "Untitled Pack";
+    packName = t("creator.untitledPack");
     openPanel("creator-pack");
   } else if (act.startsWith("pack-toggle:")) {
     const singles = listSaved().filter((row) => !isPack(row));
@@ -3545,7 +3575,7 @@ function handleHudAction(act: string): void {
       source: "local",
     };
     saveStage(pack);
-    noteSaved();
+    noteSaved(defs[0]!);
     showCopyToast(t("creator.packSaved"));
     openPanel("creator-manage");
   } else if (act.startsWith("delete:")) {
@@ -3605,7 +3635,7 @@ function creatorRedo(): void {
 function copySeed(): void {
   const seed = encodeSeed(draft);
   void navigator.clipboard?.writeText(seed).catch(() => undefined);
-  paint.hint = "Copied reverse seed " + seed;
+  paint.hint = t("creator.copiedSeed", { seed });
   noteCopiedSeed();
   markHudDirty();
   paintHud();
@@ -3673,7 +3703,7 @@ function playShareDef(defs: LevelDef[], returnTo: Screen, code = ""): void {
     const pack = defs.length > 1;
     saveStage({
       name: pack ? t("creator.kindPack") : t("play.custom"),
-      author: getName() || "Unknown",
+      author: getName() || t("creator.unknownAuthor"),
       code: pasted || (pack ? encodePack(defs) : encodeSeed(first)),
       seed: pack ? encodePack(defs) : stageId(first),
       def: structuredClone(first),
@@ -3706,7 +3736,7 @@ function submitModal(): void {
     if (!defs?.length) {
       openPlayCodeModal();
       const titleEl = $("hud-modal-title");
-      if (titleEl) titleEl.textContent = "Could not read that code.";
+      if (titleEl) titleEl.textContent = t("error.badCode");
       return;
     }
     playShareDef(defs, "creator-play", value);
@@ -3715,7 +3745,7 @@ function submitModal(): void {
   if (kind === "code-edit") {
     const def = parseShare(value, listSaved());
     if (!def) {
-      paint.hint = "Could not read that reverse seed. Paste a BXS. code.";
+      paint.hint = t("error.badSeed");
       markHudDirty();
       paintHud();
       return;
@@ -3727,10 +3757,10 @@ function submitModal(): void {
 function loadShareIntoEditor(def: LevelDef): void {
   pushUndo();
   draft = def;
-  draftName = "Untitled";
+  draftName = t("creator.untitled");
   beaten = false;
   paint = newPaintState();
-  paint.hint = `Loaded ${occupiedTileCount(def)} tiles from reverse seed.`;
+  paint.hint = t("creator.loadedSeed", { n: occupiedTileCount(def) });
   scheduleBeatCheck();
   openPanel("creator-edit");
 }
@@ -4249,8 +4279,8 @@ function applyPlayTint(): void {
   const skySpr = world?.background?.instance_2;
   if (skySpr) skySpr.visible = s.themeBg && !cam;
   if (sky) sky.visible = !cam && sky.visible;
-  applySkySpriteTint(cam ? null : skySpr, s.bgHue, s.bgTint);
-  applySkySpriteTint(cam ? null : sky, s.bgHue, s.bgTint);
+  applySkySpriteTint(cam ? null : skySpr, s.bgColor || hueToHex(s.bgHue), s.bgTint);
+  applySkySpriteTint(cam ? null : sky, s.bgColor || hueToHex(s.bgHue), s.bgTint);
   if (!gc?.addChildAt || !cjs?.Shape) return;
   const key = `${s.bgTint}|${s.bgColor || s.bgHue}|${s.themeBg}|${cam}`;
   let overlay = gc.__bloxTint;
@@ -4333,11 +4363,11 @@ function saveDraft(): void {
   const issue = isPlayable(draft);
   if (issue) return;
   const raw = (hudInput()?.value.trim() || draftName).trim();
-  const name = /^(BXS[-.]|BX1\.)/i.test(raw) ? draftName || "Untitled" : raw || "Untitled";
+  const name = /^(BXS[-.]|BX1\.)/i.test(raw) ? draftName || t("creator.untitled") : raw || t("creator.untitled");
   draftName = name;
   const saved = {
     name,
-    author: getName() || "Unknown",
+    author: getName() || t("creator.unknownAuthor"),
     code: encodeSeed(draft),
     seed: stageId(draft),
     def: structuredClone(draft),
@@ -4345,7 +4375,7 @@ function saveDraft(): void {
   };
   saveStage(saved);
   noteSaved(draft);
-  paint.hint = "Saved. Reverse seed: " + saved.code;
+  paint.hint = t("creator.savedSeed", { code: saved.code });
   markHudDirty();
   paintHud();
 }
@@ -4608,7 +4638,7 @@ function bind(): void {
     } else if (extraView === "puzzles-seeded") handleHudAction("puzzle-seed-go");
     else if (extraView === "puzzles-gauntlet") handleHudAction("gauntlet-go");
     else if (extraView === "creator-edit") {
-      draftName = input.value.trim() || "Untitled";
+      draftName = input.value.trim() || t("creator.untitled");
     }
   });
   input?.addEventListener("keyup", (ev) => ev.stopPropagation());
@@ -5393,8 +5423,8 @@ export function startBloxorzShell(): void {
   parkCreateJsMenu();
   setMouseOverRate(5);
   applyLooks();
-  // Lazy block-hue bake: skip boot hitch when hue is still default.
-  if (liveBlockHue() !== 0) {
+  // Lazy block-color bake: skip boot hitch when swatch is still default.
+  if (liveBlockTint() !== null) {
     window.setTimeout(() => applyBlockHue(), 0);
   }
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));

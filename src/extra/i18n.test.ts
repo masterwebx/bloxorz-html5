@@ -34,7 +34,7 @@ describe("i18n", () => {
     expect(t("play.moves")).toBe("Moves");
     expect(t("settings.template")).toBe("Download Template");
     expect(t("settings.templateBusy")).toBe("Downloading template…");
-    expect(t("settings.blockHue")).toBe("Block hue");
+    expect(t("settings.blockHue")).toBe("Block color");
     expect(t("gauntlet.difficulty")).toBe("Difficulty");
     expect(t("touch.switch")).toBe("SWITCH");
     expect(t("creator.copied")).toBe("Copied to clipboard");

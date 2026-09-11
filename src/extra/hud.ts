@@ -13,7 +13,7 @@ import {
 } from "./coolmathBoard";
 import { EDITOR_TOOLS } from "./editor";
 import { TILE_FACE, TOOL_CH, isoPt, type IsoMetrics } from "./isoBoard";
-import { rustFaces } from "./hue";
+import { rustFaces, rustFacesFromHex } from "./hue";
 import { t } from "./i18n";
 import { currentTheme } from "./settings";
 import { themePaint } from "./themePack";
@@ -82,6 +82,7 @@ type HudShape = HudNode & {
     lineTo: (x: number, y: number) => HudShape["graphics"];
     endFill: () => HudShape["graphics"];
     drawRect: (x: number, y: number, w: number, h: number, r?: number) => HudShape["graphics"];
+    drawEllipse: (x: number, y: number, w: number, h: number) => HudShape["graphics"];
     drawCircle: (x: number, y: number, r: number) => HudShape["graphics"];
     clear: () => HudShape["graphics"];
   };
@@ -346,10 +347,11 @@ export class ExtraHud {
     if (!this.mascot) return;
     this.mascot.visible = true;
     this.mascot.mouseEnabled = false;
-    this.mascot.scaleX = 0.92;
-    this.mascot.scaleY = 0.92;
+    this.mascot.scaleX = 0.82;
+    this.mascot.scaleY = 0.82;
     this.mascot.x = brandX + brandWidth + 10;
-    this.mascot.y = brandY + 52;
+    // Sit below the billboard top edge so the spinning block isn't cropped.
+    this.mascot.y = brandY + 74;
     this.mascot.shadow = new createjs.Shadow("rgba(255,102,0,1)", 0, 0, 16);
     if (this.mascot.parent !== this.root) this.root.addChild(this.mascot);
   }
@@ -367,10 +369,10 @@ export class ExtraHud {
     return out;
   }
 
-  private placePreview(x: number, y: number, hue = 0): void {
+  private placePreview(x: number, y: number, hue = 0, colorHex?: string): void {
     if (!this.preview && this.makePreview) this.preview = this.makePreview();
     if (!this.preview) {
-      this.add(blockPreview(x, y, hue));
+      this.add(blockPreview(x, y, hue, colorHex));
       return;
     }
     this.preview.visible = true;
@@ -570,6 +572,7 @@ export class ExtraHud {
     bgTint: number;
     bgHue: number;
     blockHue: number;
+    blockColor?: string;
   }): void {
     this.clear();
     this.hideMascot();
@@ -604,7 +607,7 @@ export class ExtraHud {
     this.add(text(t("settings.tint"), 40, 234, 12, this.focusId === "bgtint" ? theme.hot : theme.ink));
     // HTML color swatches for tint + block (see placeSettingsChrome); no CreateJS sliders.
     this.add(text(t("settings.blockHue"), 40, 254, 12, this.focusId === "blockhue" ? theme.hot : theme.ink));
-    this.placePreview(392, 214, opts.blockHue);
+    this.placePreview(392, 214, opts.blockHue, opts.blockColor);
     this.add(this.act("remap", t("settings.remap"), 40, 276, 12, false, 160));
     this.add(this.act("settings-save", t("settings.manageSave"), 220, 276, 12, false, 220));
   }
@@ -950,14 +953,14 @@ export class ExtraHud {
     EDITOR_TOOLS.forEach((tool, i) => {
       const col = pad ? i % 2 : i < 6 ? 0 : 1;
       const row = pad ? Math.floor(i / 2) : i < 6 ? i : i - 6;
-      // Push columns left and widen the gap so Link Switch isn't clipped.
-      const x = pad ? 348 + col * 98 : 348 + col * 102;
+      // Wider columns + label gutter so the Spawn block icon sits left of its label (not in the mid gutter).
+      const x = pad ? 340 + col * 108 : 336 + col * 118;
       const y = pad ? 28 + row * 26 : 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
       const icon = this.toolClip(tool.id, x, y);
       this.add(icon);
       const label = t("editor." + tool.id);
-      this.add(this.act("tool:" + tool.id, mark + label, x + 16, y, pad ? 9 : 11, false, pad ? 90 : col === 0 ? 110 : 100));
+      this.add(this.act("tool:" + tool.id, mark + label, x + 22, y, pad ? 9 : 11, false, pad ? 90 : col === 0 ? 110 : 100));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, pad ? 214 : 236, 10, theme.muted));
@@ -1101,9 +1104,8 @@ export class ExtraHud {
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
     if (id === "spawn") {
-      const mark = spawnBlockOnly(8, 12);
-      mark.scaleX = 0.85;
-      mark.scaleY = 0.85;
+      // Compact block glyph sized like other tool icons — left of the Spawn label.
+      const mark = spawnToolIcon(10, 11);
       wrap.addChild(mark);
       return wrap;
     }
@@ -1164,6 +1166,18 @@ function spawnBlockOnly(x: number, y: number, alpha = 1): HudShape {
   return block;
 }
 
+/** Small palette icon: same block language as the grid spawn, fit to tool-row height. */
+function spawnToolIcon(x: number, y: number): HudShape {
+  const block = new createjs.Shape();
+  block.graphics.beginFill("rgba(0,0,0,0.45)").drawEllipse(-6, 3, 12, 5);
+  block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(1.2).drawRect(-4, -9, 8, 12);
+  block.graphics.beginFill("#ffe082").drawRect(-2.5, -13, 5, 4);
+  block.x = x;
+  block.y = y;
+  block.mouseEnabled = false;
+  return block;
+}
+
 function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMetrics): void {
   const face = TILE_FACE[ch] || TILE_FACE[" "];
   const a = isoPt(x, y, m);
@@ -1179,8 +1193,8 @@ function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMe
     .moveTo(a.x, a.y - h).lineTo(b.x, b.y - h).lineTo(c.x, c.y - h).lineTo(d.x, d.y - h).lineTo(a.x, a.y - h).endFill();
 }
 
-function blockPreview(x: number, y: number, hue: number): HudShape {
-  const face = rustFaces(hue);
+function blockPreview(x: number, y: number, hue: number, colorHex?: string): HudShape {
+  const face = colorHex ? rustFacesFromHex(colorHex) : rustFaces(hue);
   const s = new createjs.Shape();
   const ox = x + 18;
   const oy = y + 28;
@@ -1194,10 +1208,3 @@ function blockPreview(x: number, y: number, hue: number): HudShape {
   return s;
 }
 
-function swatch(x: number, y: number, hue: number, amt: number): HudShape {
-  const s = new createjs.Shape();
-  const a = Math.max(0.15, amt);
-  s.graphics.beginFill(`hsla(${Math.round(hue)}, 72%, 48%, ${a})`).drawRect(x, y, 16, 12);
-  s.mouseEnabled = false;
-  return s;
-}

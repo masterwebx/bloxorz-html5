@@ -285,7 +285,7 @@
   "settings.tabCropPrompt": "Crop as x%,y%,w%,h% of the cast (e.g. 10,10,80,80). Requires a browser that supports tab capture.",
   "gauntlet.stages": "Stages",
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
-  "settings.blockHue": "Block hue",
+  "settings.blockHue": "Block color",
   "seeded.endless": "Endless",
   "settings.manageSave": "Manage save data",
   "settings.delete": "Delete Data",
@@ -305,5 +305,16 @@
   "creator.kindSingle": "Single",
   "creator.kindPack": "Pack",
   "creator.packPlaceholder": "PACK NAME",
-  "dev.unlimitedEndless": "Unlimited endless"
+  "dev.unlimitedEndless": "Unlimited endless",
+  "creator.needExit": "Place an exit hole.",
+  "creator.oneExit": "Only one exit is allowed.",
+  "creator.needTiles": "Paint some tiles.",
+  "creator.spawnSolid": "Spawn must sit on a solid tile.",
+  "creator.cleared": "Cleared.",
+  "creator.copiedSeed": "Copied reverse seed {seed}",
+  "creator.loadedSeed": "Loaded {n} tiles from reverse seed.",
+  "creator.savedSeed": "Saved. Reverse seed: {code}",
+  "creator.untitled": "Untitled",
+  "creator.untitledPack": "Untitled Pack",
+  "creator.unknownAuthor": "Unknown"
 }
