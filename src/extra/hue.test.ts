@@ -49,10 +49,12 @@ describe("block hue bake", () => {
     expect(shiftingHue(350, true, 1000, 24)).toBe(14);
     expect(hueDelta(10, 14)).toBe(4);
     expect(hueDelta(350, 10)).toBe(20);
-    expect(clipHueAction(undefined, 0, true)).toBe("skip");
-    expect(clipHueAction(40, 0, true)).toBe("clear");
+    expect(clipHueAction(undefined, 0, false)).toBe("skip");
+    expect(clipHueAction(40, 0, false)).toBe("clear");
     expect(clipHueAction(10, 11, false)).toBe("apply");
-    expect(clipHueAction(11, 11, true)).toBe("update");
+    // Rolling must drop the cache even if the hue is unchanged
+    expect(clipHueAction(11, 11, true)).toBe("clear");
+    expect(clipHueAction(undefined, 40, true)).toBe("skip");
     expect(clipHueAction(11, 11, false)).toBe("skip");
   });
 

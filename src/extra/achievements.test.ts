@@ -3,8 +3,6 @@ import {
   ACH_COUNT,
   ACHIEVEMENTS,
   achievementRows,
-  achHint,
-  achName,
   hasAchievementMenu,
   hintTokens,
   loadAchievements,
@@ -36,13 +34,20 @@ function memoryStore() {
 }
 
 describe("achievements", () => {
-  it("ships 300 uniquely numbered achievements", () => {
+  it("ships a trimmed, uniquely numbered catalog without per-stage flood", () => {
+    expect(ACH_COUNT).toBeGreaterThan(80);
+    expect(ACH_COUNT).toBeLessThan(200);
     expect(ACHIEVEMENTS).toHaveLength(ACH_COUNT);
     const nums = ACHIEVEMENTS.map((row) => row.n);
     expect(new Set(nums).size).toBe(ACH_COUNT);
     expect(nums[0]).toBe(1);
     expect(nums[ACH_COUNT - 1]).toBe(ACH_COUNT);
     expect(padAch(7)).toBe("007");
+    expect(ACHIEVEMENTS.some((row) => /^Stage \d{2} Cleared$/.test(row.name))).toBe(false);
+    expect(ACHIEVEMENTS.some((row) => /^Stage \d{2} Untipped$/.test(row.name))).toBe(false);
+    expect(ACHIEVEMENTS.some((row) => /^Stage \d{2} Efficient$/.test(row.name))).toBe(false);
+    expect(ACHIEVEMENTS.some((row) => /^Stage \d{2} Par$/.test(row.name))).toBe(false);
+    expect(ACHIEVEMENTS.some((row) => /^Stage \d{2} One Piece$/.test(row.name))).toBe(false);
   });
 
   it("never hints about developer tools", () => {
@@ -51,6 +56,29 @@ describe("achievements", () => {
       expect(row.hint, `#${row.n} ${row.name}`).not.toMatch(banned);
       expect(row.name, `#${row.n}`).not.toMatch(banned);
     }
+  });
+
+  it("does not flood unlocks when a single campaign stage is cleared", () => {
+    setAchievementsStorage(memoryStore());
+    const fresh = noteWin({
+      kind: "campaign",
+      stageNo: 1,
+      uniqueKey: uniqueStageKey("campaign", 1),
+      moves: parMoves(1),
+      noFall: true,
+      cmds: ["right", "right", "down", "right"],
+      theme: "original",
+      timerOn: false,
+      classicRun: true,
+      day: "2026-09-09",
+    });
+    expect(fresh.length).toBeGreaterThan(0);
+    expect(fresh.length).toBeLessThan(8);
+    expect(fresh.map((n) => ACHIEVEMENTS[n - 1]!.name)).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^Stage 01 /),
+      ]),
+    );
   });
 
   it("hides the menu until something unlocks, then spends unique-stage hints", () => {
@@ -80,18 +108,14 @@ describe("achievements", () => {
     expect(spendHint(locked.n)).toBe("hinted");
     expect(spendHint(ACHIEVEMENTS.find((row) => !loadAchievements().unlocked[String(row.n)] && !loadAchievements().hinted.includes(row.n))!.n)).toBe("tokens");
 
-    const rows = achievementRows(0, 6);
-    expect(rows[0]?.unlocked).toBe(true);
-    expect(rows[0]?.label).toContain("#001");
+    const unlocked = achievementRows(0, ACH_COUNT).find((row) => row.unlocked);
+    expect(unlocked?.label).toMatch(/^#\d{3}/);
   });
 
-  it("translates stage achievements and hint copy", () => {
+  it("translates locked-row hint copy", () => {
     bootLocales(LOCALE_TABLE, "es");
     setLocale("es");
     setAchievementsStorage(memoryStore());
-    expect(achName(ACHIEVEMENTS[0]!)).toContain("Fase");
-    expect(achName(ACHIEVEMENTS[0]!)).not.toContain("Stage");
-    expect(achHint(ACHIEVEMENTS[0]!)).toContain("Fase");
     const rows = achievementRows(0, 1);
     expect(rows[0]?.meta).toBe("Completa una etapa unica nueva para ganar una pista.");
     setLocale("en");

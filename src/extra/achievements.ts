@@ -4,7 +4,6 @@ import type { HistoryKind, TapeCmd } from "./history";
 import { CAMPAIGN_WALKTHROUGH, expandWalkthrough } from "./walkthrough";
 import { t } from "./i18n";
 
-export const ACH_COUNT = 300;
 export const ACH_PAGE = 6;
 
 export type AchStorage = {
@@ -109,7 +108,7 @@ export type WinNote = {
   day?: string;
 };
 
-const KEY = "bloxorz-achievements-v1";
+const KEY = "bloxorz-achievements-v2";
 const EMPTY_BIT: CampaignBit = { cleared: false, noFall: false, bestMoves: 0, noSwap: false };
 
 let storageOverride: AchStorage | null = null;
@@ -619,53 +618,14 @@ export function achievementByNumber(n: number): AchievementDef | undefined {
   return ACHIEVEMENTS[n - 1];
 }
 
-function stageName(n: number): string {
-  return `Stage ${String(n).padStart(2, "0")}`;
-}
-
 function buildCatalog(): AchievementDef[] {
   const out: AchievementDef[] = [];
   const add = (name: string, hint: string, check: AchievementDef["check"]): void => {
     out.push({ n: out.length + 1, name, hint, check });
   };
 
-  for (let i = 1; i <= 33; i++) {
-    const stage = i;
-    add(`${stageName(stage)} Cleared`, `Finish campaign ${stageName(stage)}.`, (s) => bit(s, stage).cleared);
-  }
-  for (let i = 1; i <= 33; i++) {
-    const stage = i;
-    add(
-      `${stageName(stage)} Untipped`,
-      `Finish campaign ${stageName(stage)} without falling on that attempt.`,
-      (s) => bit(s, stage).noFall,
-    );
-  }
-  for (let i = 1; i <= 33; i++) {
-    const stage = i;
-    const cap = parMoves(stage) * 2;
-    add(
-      `${stageName(stage)} Efficient`,
-      `Finish campaign ${stageName(stage)} in ${cap} moves or fewer.`,
-      (s) => bit(s, stage).cleared && bit(s, stage).bestMoves > 0 && bit(s, stage).bestMoves <= cap,
-    );
-  }
-  for (let i = 1; i <= 33; i++) {
-    const stage = i;
-    const cap = parMoves(stage);
-    add(
-      `${stageName(stage)} Par`,
-      `Match or beat the published route on campaign ${stageName(stage)} (${cap} moves).`,
-      (s) => bit(s, stage).cleared && bit(s, stage).bestMoves > 0 && bit(s, stage).bestMoves <= cap,
-    );
-  }
-  for (const stage of noSwapStages()) {
-    add(
-      `${stageName(stage)} One Piece`,
-      `Finish campaign ${stageName(stage)} without swapping split cubes.`,
-      (s) => bit(s, stage).noSwap,
-    );
-  }
+  // Milestone / mode achievements only — per-stage Cleared/Untipped/Efficient/Par/One Piece
+  // grants were cut for stable release (beating one stage unlocked a flood).
 
   add("Five Islands", "Clear any 5 different campaign stages.", (s) => countCampaign(s, "cleared") >= 5);
   add("Ten Islands", "Clear any 10 different campaign stages.", (s) => countCampaign(s, "cleared") >= 10);
@@ -835,23 +795,11 @@ function buildCatalog(): AchievementDef[] {
   add("Timer on Thirty-Three", "Finish Stage 33 with the speedrun timer on.", (s) => s.timerStage33);
   add("Swapless Island", "Finish every no-swap campaign stage without swapping.", (s) => noSwapStages().every((n) => bit(s, n).noSwap));
 
-  if (out.length > ACH_COUNT) out.length = ACH_COUNT;
-  let pad = 1;
-  while (out.length < ACH_COUNT) {
-    const need = out.length + 1;
-    const target = 100 + pad * 4;
-    add(`${target} Uniques`, `Finish ${target} unique stages of any kind.`, (s) => s.unique.length >= target);
-    pad += 1;
-    if (pad > 40) break;
-    void need;
-  }
-  if (out.length !== ACH_COUNT) {
-    throw new Error(`achievement catalog is ${out.length}, expected ${ACH_COUNT}`);
-  }
   return out;
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = buildCatalog();
+export const ACH_COUNT = ACHIEVEMENTS.length;
 
 export type AchRow = {
   n: number;
