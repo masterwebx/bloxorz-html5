@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { billboardSupports, canBillboard, foldBillboard } from "./hud";
+import { billboardSupports, canBillboard, customizePreviewForceShapes, foldBillboard } from "./hud";
 
 describe("home billboard", () => {
   it("can draw the plus on ORZ+", () => {
@@ -12,5 +12,12 @@ describe("home billboard", () => {
     expect(canBillboard("STAGE 01")).toBe(true);
     expect(canBillboard("LEVEL 02")).toBe(true);
     expect(canBillboard("ステージ 01")).toBe(false);
+  });
+});
+
+describe("customize colors preview", () => {
+  it("mirrors Stage Creator tiles after bake (no forceShapes flats)", () => {
+    expect(customizePreviewForceShapes(true)).toBe(false);
+    expect(customizePreviewForceShapes(false)).toBe(true);
   });
 });

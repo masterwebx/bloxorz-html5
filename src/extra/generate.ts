@@ -1248,6 +1248,79 @@ export function generateSeeded(seed: string): Puzzle {
   return generateQualityPuzzle(clean, SEEDED_OPTS, "insane");
 }
 
+/** Attract showcase archetypes — rotate for visual variety (not fullBoard-biased quality). */
+export type AttractArchetype =
+  | "plain"
+  | "bridges"
+  | "split"
+  | "slots"
+  | "ribbon"
+  | "packed"
+  | "fullBoard"
+  | "campaignRemix";
+
+export const ATTRACT_ARCHETYPES: AttractArchetype[] = [
+  "plain",
+  "bridges",
+  "split",
+  "slots",
+  "ribbon",
+  "packed",
+  "fullBoard",
+  "campaignRemix",
+];
+
+/** Stable archetype pick from seed so consecutive attract runs cycle through looks. */
+export function attractArchetypeForSeed(seed: string): AttractArchetype {
+  const h = hashSeed(`attract-arch:${seed.trim() || "BLOX"}`);
+  return ATTRACT_ARCHETYPES[h % ATTRACT_ARCHETYPES.length]!;
+}
+
+function tryAttractArchetype(seed: string, arch: AttractArchetype, difficulty: Difficulty): Puzzle | null {
+  const rng = mulberry32(hashSeed(`attract:${seed}:${arch}`));
+  for (let i = 0; i < 12; i++) {
+    const trySeed = `${seed}:${arch}:${i}`;
+    let p: Puzzle | null = null;
+    if (arch === "plain") p = tryPlain(rng, trySeed, difficulty, rng() < 0.45);
+    else if (arch === "bridges") p = tryBridges(rng, trySeed, difficulty);
+    else if (arch === "split") p = trySplit(rng, trySeed, difficulty);
+    else if (arch === "slots") p = trySlots(rng, trySeed, difficulty, 3 + Math.floor(rng() * 3), difficulty !== "easy");
+    else if (arch === "ribbon") p = tryRibbon(rng, trySeed, difficulty);
+    else if (arch === "packed") p = tryPacked(rng, trySeed, difficulty);
+    else if (arch === "fullBoard") p = tryFullBoard(rng, trySeed, difficulty);
+    else p = remixCampaign(trySeed, rng() < 0.5 ? "mid" : rng() < 0.5 ? "late" : "end", difficulty);
+    if (!p) continue;
+    // Campaign remix always returns; require a real solvable tape for auto-solve.
+    const solved = solveLevel(p.def, 180_000);
+    if (solved.ok && solved.cmds.length) {
+      return {
+        ...p,
+        seed,
+        solutionLen: solved.cmds.length,
+        usedObstacles: usedObstacleCount(p.def, solved.cmds),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Attract-mode puzzle: rotate generator archetypes for unique looks each run.
+ * Still solvable + auto-solve friendly (falls back through the roster, then easy).
+ */
+export function generateAttract(seed: string): Puzzle {
+  const clean = seed.trim() || "BLOX";
+  const primary = attractArchetypeForSeed(clean);
+  const order = [primary, ...ATTRACT_ARCHETYPES.filter((a) => a !== primary)];
+  for (const difficulty of ["medium", "easy", "hard"] as Difficulty[]) {
+    for (const arch of order) {
+      const p = tryAttractArchetype(clean, arch, difficulty);
+      if (p) return { ...p, difficulty };
+    }
+  }
+  return generatePuzzle(clean, "easy");
+}
+
 export function generateRun(seed: string, difficulty: Difficulty, count: number): Puzzle[] {
   const n = Math.max(1, Math.min(33, count));
   const band: "mid" | "late" | "end" = difficulty === "easy" ? "mid" : difficulty === "medium" ? "late" : "end";

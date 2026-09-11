@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ATTRACT_IDLE_DEV_MS,
   ATTRACT_IDLE_MS,
+  ATTRACT_TITLE_Y,
   attractIdleMs,
   attractTitleLabel,
   bumpAttractIdle,
@@ -75,5 +76,6 @@ describe("title attract idle gate", () => {
     expect(bumpAttractIdle(42)).toBe(42);
     expect(attractTitleLabel("DEVORZ+")).toBe("DEVORZ+");
     expect(attractTitleLabel("  ")).toBe("BLOXORZ+");
+    expect(ATTRACT_TITLE_Y).toBe(268);
   });
 });

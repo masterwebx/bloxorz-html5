@@ -25,6 +25,7 @@ import { createJsToDef, defToCreateJs } from "./convert";
 import {
   GAUNTLET_COUNTS,
   GAUNTLET_LEN,
+  generateAttract,
   generateDaily,
   generateRun,
   generateSeeded,
@@ -568,7 +569,7 @@ function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): HT
     canvas.height = source.naturalHeight || source.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    ctx.imageSmoothingEnabled = false;
+    // Keep default smoothing on whole-atlas adopt — NN here softens in-game tiles.
     ctx.drawImage(source, 0, 0);
   } else {
     return null;
@@ -633,8 +634,6 @@ function makeHueCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: 
   canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  // Nearest-neighbor — smoothed copies softens tile edges when baking into the atlas.
-  ctx.imageSmoothingEnabled = false;
   return { canvas, ctx };
 }
 
@@ -796,10 +795,46 @@ function collectTileAtlas(): boolean {
   return TILE_COLOR_SLOTS.some((id) => !!tileHueSource[id]);
 }
 
+/** Reload Coolmath/theme sheet so tile slots off do not leave a pack→blit rewrite. */
+function restorePristineTileSheet(): void {
+  const theme = currentThemeId();
+  void composeThemeAtlas(theme)
+    .then((img) => {
+      const sheet = atlasSheet();
+      if (sheet) adoptAtlasCanvas(sheet, img);
+      const images = adobeComp()?.getImages?.();
+      if (images) images.bloxorz_atlas_ = img;
+      invalidateBlockHueCache();
+      atlasCanvas = img;
+      bakedTileColors = {};
+      tileAtlasReady = true;
+      if (liveBlockTint()) applyBlockHue(true);
+      refreshPlayTilesAfterTheme();
+    })
+    .catch(() => {
+      bakedTileColors = {};
+      tileAtlasReady = true;
+    });
+}
+
 /** One-shot tile atlas bake on Customize Colors exit / boot (lagless while dragging). */
 function applyTileColors(force = false): void {
   const wanted = liveTileTints();
+  const anyOn = TILE_COLOR_SLOTS.some((id) => wanted[id] != null);
+  const anyBaked = TILE_COLOR_SLOTS.some((id) => (bakedTileColors[id] ?? null) != null);
   const hasAtlas = TILE_COLOR_SLOTS.some((id) => !!tileHueSource[id] && !!tileHueLayout[id]);
+
+  // No tile colors on and never baked → leave the pristine theme sheet alone.
+  if (!anyOn && !anyBaked) {
+    tileAtlasReady = true;
+    return;
+  }
+  // All slots off after a prior bake → restore pristine sheet (no pack→blit rewrite).
+  if (!anyOn && anyBaked) {
+    restorePristineTileSheet();
+    return;
+  }
+
   if (!force && !needsTileColorBake(wanted, bakedTileColors, hasAtlas)) {
     if (hasAtlas) tileAtlasReady = true;
     return;
@@ -840,8 +875,12 @@ function applyTileColors(force = false): void {
     for (const id of TILE_COLOR_SLOTS) {
       const source = tileHueSource[id];
       const layout = tileHueLayout[id];
+      const hex = next[id] ?? null;
+      const prev = bakedTileColors[id] ?? null;
+      // Only bake dirty slots — skip unchanged frames.
+      if (hex === prev) continue;
       if (!source || !layout?.slots.length) {
-        bakedTileColors[id] = next[id] ?? null;
+        bakedTileColors[id] = hex;
         continue;
       }
       let tinted = tileHueTinted[id];
@@ -853,8 +892,8 @@ function applyTileColors(force = false): void {
       }
       const scratchCtx = tinted.getContext("2d");
       if (!scratchCtx) continue;
-      blitPackedRecolor(ctx, source, { canvas: tinted, ctx: scratchCtx }, layout.slots, next[id] ?? null);
-      bakedTileColors[id] = next[id] ?? null;
+      blitPackedRecolor(ctx, source, { canvas: tinted, ctx: scratchCtx }, layout.slots, hex);
+      bakedTileColors[id] = hex;
     }
     tileAtlasReady = true;
   };
@@ -1598,7 +1637,7 @@ function bindSettingsChrome(): void {
       else if (id === "bg") applyLooks();
       // Live tile board preview while the native swatch is open.
       if (extraView === "settings-colors") {
-        hud?.refreshColorPreview(loadSettings().colorCustom);
+        hud?.refreshColorPreview(loadSettings().colorCustom, tileAtlasReady);
       }
     });
     el.addEventListener("change", endSlotPick);
@@ -4345,8 +4384,8 @@ function showAttractTitle(on: boolean): void {
 
 function startAttractRun(): void {
   const seed = freshSeed();
-  // Same stage quality as random seeded runs (not the degraded easy path).
-  const p = generateSeeded(seed);
+  // Rotate generator archetypes so each attract puzzle looks unique (solvable + auto-solve).
+  const p = generateAttract(seed);
   startCustom([p.def], "home", {
     card: "seeded",
     title: t("play.seeded"),
@@ -6028,6 +6067,9 @@ export function startBloxorzShell(): void {
   }
   if (anyTileTintOn()) {
     window.setTimeout(() => applyTileColors(true), 0);
+  } else {
+    // Pristine theme sheet — customize preview can use real Stage Creator clips immediately.
+    tileAtlasReady = true;
   }
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;

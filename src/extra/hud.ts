@@ -1,4 +1,5 @@
 import { playHomeWhoosh, playUiClick, playUiLatch } from "./audio";
+import { ATTRACT_TITLE_Y } from "./attract";
 import {
   BOARD_SCALE,
   BOARD_VIEW,
@@ -25,6 +26,11 @@ import { t } from "./i18n";
 import { currentTheme } from "./settings";
 import { themePaint } from "./themePack";
 import { wantsVirtualPad } from "./touchPad";
+
+/** Customize Colors preview: shapes only before bake; real Stage Creator clips after. */
+export function customizePreviewForceShapes(tileAtlasReady: boolean): boolean {
+  return !tileAtlasReady;
+}
 
 declare const createjs: {
   Container: new () => HudNode;
@@ -678,8 +684,8 @@ export class ExtraHud {
         spawn: COLOR_PREVIEW_SPAWN,
         marks: [],
         colors: opts.colors,
-        // Shapes while dragging / before bake; real atlas clips after bake-on-exit.
-        forceShapes: true, // shapes: live recolor + Bridge L/R stay correct
+        // Shapes while picking / before bake; real Stage Creator atlas clips after bake-on-exit.
+        forceShapes: customizePreviewForceShapes(!!opts.tileAtlasReady),
       });
     } catch {
       /* preview is optional */
@@ -687,24 +693,25 @@ export class ExtraHud {
     this.add(wrap);
   }
 
-  
-  /** Attract-mode brand as billboard glyphs inside the game screen. */
+  /** Attract-mode brand as billboard glyphs — bottom-center of the game screen. */
   drawAttractTitle(label: string): void {
     this.clear();
     this.hideMascot();
     const title = foldBillboard(label).slice(0, 18);
     if (!canBillboard(title)) {
       const theme = paint();
-      this.add(text(title || "BLOXORZ+", 275, 28, 18, theme.ink, "center"));
+      this.add(text(title || "BLOXORZ+", 275, ATTRACT_TITLE_Y, 18, theme.ink, "center"));
       return;
     }
     const pitch = Math.min(4.6, 500 / (Math.max(1, title.length) * 6));
     const width = title.length * 6 * pitch;
-    drawBillboard(this.layer, title, 275 - width / 2, 28, 500);
+    // Billboard draws from the glyph top; lift so the word sits near the bottom edge.
+    const y = ATTRACT_TITLE_Y - Math.round(7 * pitch);
+    drawBillboard(this.layer, title, 275 - width / 2, y, 500);
   }
 
   /** Live Customize Colors board refresh without rebuilding chrome (keeps native picker open). */
-  refreshColorPreview(colors: ColorCustom): void {
+  refreshColorPreview(colors: ColorCustom, tileAtlasReady = false): void {
     if (!this.board) return;
     try {
       this.refreshCreatorBoard({
@@ -712,7 +719,7 @@ export class ExtraHud {
         spawn: COLOR_PREVIEW_SPAWN,
         marks: [],
         colors,
-        forceShapes: true,
+        forceShapes: customizePreviewForceShapes(tileAtlasReady),
       });
     } catch {
       /* preview is optional */

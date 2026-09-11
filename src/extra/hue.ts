@@ -196,8 +196,6 @@ export function extractPackedBlockSource(
   const made = makeCanvas(layout.width, layout.height);
   if (!made) return null;
   const ctx = made.ctx as SmoothCtx;
-  // Nearest-neighbor — smoothed copies softens tile edges in the live atlas.
-  if ("imageSmoothingEnabled" in ctx) ctx.imageSmoothingEnabled = false;
   for (const slot of layout.slots) {
     const { src, dest } = slot;
     ctx.drawImage(live, dest.x, dest.y, dest.width, dest.height, src.x, src.y, src.width, src.height);
@@ -329,9 +327,6 @@ export function blitPackedRecolor(
       putImageData?: (img: ImageData, x: number, y: number) => void;
     };
   scratchCtx.filter = "none";
-  if ("imageSmoothingEnabled" in scratchCtx) {
-    (scratchCtx as { imageSmoothingEnabled?: boolean }).imageSmoothingEnabled = false;
-  }
   scratchCtx.clearRect?.(0, 0, sw, sh);
   scratchCtx.drawImage(packedSource, 0, 0, sw, sh, 0, 0, sw, sh);
   if (targetHex && scratchCtx.getImageData && scratchCtx.putImageData) {
@@ -340,9 +335,6 @@ export function blitPackedRecolor(
     scratchCtx.putImageData(img, 0, 0);
   }
   destCtx.filter = "none";
-  if ("imageSmoothingEnabled" in destCtx) {
-    (destCtx as { imageSmoothingEnabled?: boolean }).imageSmoothingEnabled = false;
-  }
   for (const slot of slots) {
     const { src, dest } = slot;
     destCtx.drawImage(scratch.canvas, src.x, src.y, src.width, src.height, dest.x, dest.y, dest.width, dest.height);

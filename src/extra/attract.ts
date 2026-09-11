@@ -3,6 +3,8 @@
 export const ATTRACT_IDLE_MS = 60_000;
 export const ATTRACT_IDLE_DEV_MS = 30_000;
 export const ATTRACT_FADE_MS = 700;
+/** Billboard / fallback title baseline — bottom-center of the 550×300 game HUD. */
+export const ATTRACT_TITLE_Y = 268;
 
 /** Idle duration: 30s while DEV is signed in, otherwise ~1 minute. */
 export function attractIdleMs(dev: boolean): number {
