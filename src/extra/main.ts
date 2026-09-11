@@ -508,9 +508,9 @@ type HueClip = {
   getBounds?: () => { x: number; y: number; width: number; height: number } | null;
 };
 
-function applyClipHue(clip: HueClip | null | undefined, hue: number, animating: boolean): void {
+function applyClipHue(clip: HueClip | null | undefined, hue: number, rolling: boolean): void {
   if (!clip) return;
-  const action = clipHueAction(clip.__bloxHue, hue, animating);
+  const action = clipHueAction(clip.__bloxHue, hue, rolling);
   if (action === "skip") return;
   if (action === "clear") {
     clip.filters = null;
@@ -518,32 +518,28 @@ function applyClipHue(clip: HueClip | null | undefined, hue: number, animating: 
     clip.__bloxHue = 0;
     return;
   }
-  if (action === "apply") {
-    const cjs = window.createjs as {
-      ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
-      ColorMatrixFilter?: new (m: unknown) => unknown;
-    };
-    const Matrix = cjs?.ColorMatrix;
-    const Filter = cjs?.ColorMatrixFilter;
-    if (!Matrix || !Filter) return;
-    const mtx = new Matrix();
-    mtx.adjustHue(hue);
-    clip.filters = [new Filter(mtx)];
-    if (clip.cacheID) clip.updateCache?.();
-    else {
-      const box = clip.getBounds?.();
-      clip.cache?.(box?.x ?? -120, box?.y ?? -140, Math.max(40, box?.width ?? 240), Math.max(40, box?.height ?? 220));
-    }
-    clip.__bloxHue = wrapHue(hue);
-    return;
-  }
-  clip.updateCache?.();
+  const cjs = window.createjs as {
+    ColorMatrix?: new () => { adjustHue: (n: number) => unknown };
+    ColorMatrixFilter?: new (m: unknown) => unknown;
+  };
+  const Matrix = cjs?.ColorMatrix;
+  const Filter = cjs?.ColorMatrixFilter;
+  if (!Matrix || !Filter) return;
+  const box = clip.getBounds?.();
+  // Avoid caching an empty/unlaid-out clip — that blanks the cube until something else clears it.
+  if (!box || box.width < 1 || box.height < 1) return;
+  clip.uncache?.();
+  const mtx = new Matrix();
+  mtx.adjustHue(hue);
+  clip.filters = [new Filter(mtx)];
+  clip.cache?.(box.x, box.y, Math.max(40, box.width), Math.max(40, box.height));
+  clip.__bloxHue = wrapHue(hue);
 }
 
 function applyBlockHue(): void {
   const hue = liveBlockHue();
   for (const clip of hud?.hueClips() ?? []) {
-    if (!hue || clip.visible !== false) applyClipHue(clip, hue, true);
+    if (!hue || clip.visible !== false) applyClipHue(clip, hue, false);
   }
   if (overlayMode === "run") {
     for (const block of playBlocks()) applyClipHue(block, hue, !block.roll?.idle);
@@ -1187,6 +1183,24 @@ function placeOverlay(el: HTMLElement | null, node: OverlayNode | undefined, liv
   el.style.transform = align === "left" ? "translate(0, -50%)" : align === "right" ? "translate(-100%, -50%)" : "translate(-50%, -50%)";
 }
 
+/** Keep the HTML pause-stats copy locked to the sliding CreateJS stats panel. */
+function placePauseStats(el: HTMLElement | null, node: OverlayNode | undefined, live: boolean): void {
+  if (!el) return;
+  el.hidden = !live;
+  if (!live || !node?.localToGlobal) {
+    el.style.transform = "";
+    return;
+  }
+  const b = node.getBounds?.() ?? node.nominalBounds;
+  const { sx, sy } = stageScale();
+  const localX = b?.x ?? 0;
+  const localY = b?.y ?? 0;
+  const p = node.localToGlobal(localX, localY);
+  el.style.left = (p.x / sx / 550) * 100 + "%";
+  el.style.top = (p.y / sy / 300) * 100 + "%";
+  el.style.transform = "none";
+}
+
 function clickOverlay(node: OverlayNode | undefined): void {
   node?.dispatchEvent?.({ type: "click" });
 }
@@ -1377,6 +1391,7 @@ function syncPauseStats(on: boolean): void {
   if (!show) {
     for (const mark of digitMarks) setMarkAlpha(mark, 1, false);
     for (const mark of btnMarks) setMarkAlpha(mark, 1, true);
+    placePauseStats(box, stats, false);
     return;
   }
   for (const mark of digitMarks) setMarkAlpha(mark, 0, false);
@@ -1410,6 +1425,7 @@ function syncPauseStats(on: boolean): void {
     quit.textContent = t("pause.quit");
     quit.classList.toggle("is-focus", pauseFocus === 2);
   }
+  placePauseStats(box, stats, true);
   placeOverlay(ret, buttons?.returnToGame, true, "left");
   placeOverlay(sound, buttons?.toggleSound, true, "left");
   placeOverlay(quit, buttons?.quitToMenu, true, "left");
