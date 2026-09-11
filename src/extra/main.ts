@@ -124,6 +124,8 @@ import {
   ATTRACT_FADE_MS,
   attractTitleLabel,
   bumpAttractIdle,
+  classicCongratsVisible,
+  classicInstructionBitmapsVisible,
   shouldStartAttract,
 } from "./attract";
 import {
@@ -2130,18 +2132,20 @@ function syncHowto(on: boolean): void {
   if (!copy || !page) return;
   const show = on && usesHdType();
   const inst = instructionClip();
+  const attracting = !!(playSession?.attract || attractMode);
   if (!show) {
     copy.hidden = true;
     page.hidden = true;
     if (nav) nav.hidden = true;
-    // Never re-show classic instruction bitmaps under HD text (avoids one-frame flashes).
-    if (usesHdType()) {
-      setInstructionBitmaps(false);
-      for (const btn of instructionGlyphs()) setGlyphVisible(btn, false);
-    } else {
-      setInstructionBitmaps(true);
-      for (const btn of instructionGlyphs()) setGlyphVisible(btn, true);
-    }
+    // Classic English: only the real instructions page may show “Use the arrow keys”.
+    // Attract / any other label must keep those bitmaps dead (syncHowto(false) used to re-show them).
+    const classicShow = classicInstructionBitmapsVisible({
+      hdType: usesHdType(),
+      attracting,
+      label: currentLabel(),
+    });
+    setInstructionBitmaps(classicShow);
+    for (const btn of instructionGlyphs()) setGlyphVisible(btn, classicShow);
     return;
   }
   setInstructionBitmaps(false);
@@ -2681,15 +2685,15 @@ function navItems(): NavItem[] {
       });
     }
     rows.push({ id: "colors-match-stone" });
-    rows.push({ id: "colors-reset" });
-    rows.push({ id: "colors-save-preset" });
-    rows.push({ id: "colors-manage-presets" });
     if (s.colorPresets.length) {
       rows.push({
         id: "color-preset",
         adjust: () => toggleSettingsDropdown($("hud-color-preset-select") as HTMLElement),
       });
     }
+    rows.push({ id: "colors-reset" });
+    rows.push({ id: "colors-save-preset" });
+    rows.push({ id: "colors-manage-presets" });
     return rows;
   }
   if (extraView === "settings-colors-preset-name") {
@@ -3121,7 +3125,6 @@ function paintHud(): void {
       placeHudInput(true, "7.3%", "38%", "29%", "000000", "", 6);
     }
   } else if (extraView === "settings") {
-    const blockOn = s.colorCustom.block.on;
     hud.drawSettings({
       rumble: s.rumble,
       showTimer: s.showTimer,
@@ -3137,8 +3140,6 @@ function paintHud(): void {
       bgTint: s.bgTint,
       bgHue: s.bgHue,
       bgColorOn: s.colorCustom.bg.on,
-      blockHue: s.blockHue,
-      blockColor: blockOn ? s.colorCustom.block.hex || s.blockColor : undefined,
     });
     placeHudInput(true, "18.2%", "8.6%", "40%", "", getName(), NAME_MAX);
     placeSettingsChrome(true);
@@ -5661,6 +5662,8 @@ function syncOverlay(): void {
       lastLabel = label;
       stopAutoSolve("");
       window.stage?.bloxWorld?.destroy?.();
+      setVanillaCongraVisible(false);
+      setInstructionBitmaps(false);
       // Chain another random seeded demo — no finish UI / title cards.
       startAttractRun();
       return;
@@ -5744,13 +5747,25 @@ function syncOverlay(): void {
   }
   if (label === "finish") {
     // Stay on finish: classic shows Congrats bitmap; HD keeps it suppressed every tick.
-    if (!usesHdType()) {
+    // Attract must never paint the English Classic win page (or any stage-complete pop).
+    const attracting = !!(playSession?.attract || attractMode);
+    const showCongrats = classicCongratsVisible({
+      hdType: usesHdType(),
+      attracting,
+      onFinish: true,
+    });
+    if (showCongrats) {
       setVanillaCongraVisible(true);
       hud?.setVisible(false);
       setExportRootMouse(true);
       return;
     }
+    setVanillaCongraVisible(false);
     suppressClassicBitmapsForHd("finish");
+    if (attracting) {
+      setInstructionBitmaps(false);
+      setBitmapPlayText(false);
+    }
   }
   lastLabel = label;
 
@@ -5798,6 +5813,9 @@ function syncOverlay(): void {
       syncSelectPrompt(false);
       // Hide classic menu/moves/passcode bitmaps (syncPlayChrome(false) would show them).
       setBitmapPlayText(false);
+      setVanillaCongraVisible(false);
+      setInstructionBitmaps(false);
+      setVanillaTitleVisible(false);
       showAttractTitle(true);
       tickSolve();
       syncHelpText();
@@ -6109,7 +6127,6 @@ export function startBloxorzShell(): void {
       return new Spin() as never;
     };
     hud.makeMascot = makeSpin;
-    hud.makePreview = makeSpin;
     hud.makeClip = (name: ClipName) => {
       try {
         const lib = adobeLib() as unknown as Record<string, new () => unknown>;

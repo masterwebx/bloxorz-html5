@@ -36,3 +36,23 @@ export function attractTitleLabel(brand: string): string {
   const trimmed = brand.trim();
   return trimmed || "BLOXORZ+";
 }
+
+/** English Classic instruction bitmaps (“Use the arrow keys”, etc.). */
+export function classicInstructionBitmapsVisible(opts: {
+  hdType: boolean;
+  attracting: boolean;
+  label: string;
+}): boolean {
+  if (opts.hdType || opts.attracting) return false;
+  return opts.label === "instructions";
+}
+
+/** English Classic stage-complete / congrats bitmap. */
+export function classicCongratsVisible(opts: {
+  hdType: boolean;
+  attracting: boolean;
+  onFinish: boolean;
+}): boolean {
+  if (opts.hdType || opts.attracting || !opts.onFinish) return false;
+  return true;
+}

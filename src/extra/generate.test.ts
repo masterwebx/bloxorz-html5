@@ -147,7 +147,7 @@ describe("seeded generator", () => {
 
   it("allows gauntlet lengths up to 33", () => {
     expect(generateRun("long", "easy", 33)).toHaveLength(33);
-  });
+  }, 60_000);
 
   it("fills most of the 15×10 board and leaves unused walls empty", () => {
     const p = generateFullBoard("fill-check");

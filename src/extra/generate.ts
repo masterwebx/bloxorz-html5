@@ -1282,6 +1282,13 @@ export function runArchetypeForSeed(seed: string, index: number): AttractArchety
   return ATTRACT_ARCHETYPES[h % ATTRACT_ARCHETYPES.length]!;
 }
 
+/** Donor band for gauntlet remix / campaignRemix archetype (matches pre-N insane→end). */
+export function gauntletRemixBand(difficulty: Difficulty): "mid" | "late" | "end" {
+  if (difficulty === "easy") return "mid";
+  if (difficulty === "medium") return "late";
+  return "end";
+}
+
 function buildArchetypeCandidate(
   seed: string,
   arch: AttractArchetype,
@@ -1297,13 +1304,18 @@ function buildArchetypeCandidate(
   if (arch === "ribbon") return tryRibbon(rng, trySeed, difficulty);
   if (arch === "packed") return tryPacked(rng, trySeed, difficulty);
   if (arch === "fullBoard") return tryFullBoard(rng, trySeed, difficulty);
-  return remixCampaign(trySeed, rng() < 0.5 ? "mid" : rng() < 0.5 ? "late" : "end", difficulty);
+  // Hard/insane campaign remix stays on late/end donors — never mid.
+  return remixCampaign(trySeed, gauntletRemixBand(difficulty), difficulty);
 }
 
+export type TryArchetypeOpts = {
+  /** When true with quality set: only isStrictHard accepts; never soft / best-of-weak. */
+  strictQuality?: boolean;
+};
+
 /**
- * Build one archetype puzzle. When `quality` is set (gauntlet / attract insane),
- * tighten and prefer floors that clear the quality bar; still return a solvable
- * tape when only softer candidates appear.
+ * Build one archetype puzzle. When `quality` is set, tighten and score against it.
+ * Attract may soft-accept; gauntlet passes `strictQuality: true` so only GAUNTLET_QUALITY clears.
  */
 export function tryArchetypePuzzle(
   seed: string,
@@ -1311,7 +1323,9 @@ export function tryArchetypePuzzle(
   difficulty: Difficulty,
   quality: QualityOpts | null = null,
   maxAttempts?: number,
+  opts: TryArchetypeOpts = {},
 ): Puzzle | null {
+  const strict = !!opts.strictQuality && !!quality;
   const attempts = maxAttempts ?? (quality ? Math.max(6, quality.attempts) : 12);
   const bfs = quality?.bfs ?? 180_000;
   let best: Puzzle | null = null;
@@ -1335,10 +1349,15 @@ export function tryArchetypePuzzle(
         best = p;
         bestScore = sc;
       }
-      if (isStrictHard(assess, quality) || meetsSwitchGate(assess, quality.minRequired)) {
+      if (isStrictHard(assess, quality) && p.usedObstacles >= quality.minUsed) {
         return p;
       }
-      // Soft accept: long enough + enough used obstacles for showcase / gauntlet feel.
+      if (strict) continue;
+      // Attract / soft path only: gated switch bar without move floor.
+      if (meetsSwitchGate(assess, quality.minRequired)) {
+        return p;
+      }
+      // Soft accept: long enough + enough used obstacles for showcase.
       if (p.solutionLen >= Math.min(quality.minMoves, BAND[difficulty].max) && p.usedObstacles >= Math.min(4, quality.minUsed)) {
         return p;
       }
@@ -1346,12 +1365,13 @@ export function tryArchetypePuzzle(
     }
     return p;
   }
-  return best;
+  // Gauntlet must not ship best-of-weak; attract may.
+  return strict ? null : best;
 }
 
 /**
  * Attract-mode puzzle: rotate generator archetypes at insane / GAUNTLET_QUALITY.
- * Still solvable + auto-solve friendly; stays on insane before any softer fallback.
+ * Soft roster fill remains attract-only — never reused by generateRun.
  */
 export function generateAttract(seed: string): Puzzle {
   const clean = seed.trim() || "BLOX";
@@ -1369,46 +1389,78 @@ export function generateAttract(seed: string): Puzzle {
   return generateQualityPuzzle(clean, q, "insane");
 }
 
+function meetsGauntletFloor(p: Puzzle, q: QualityOpts): boolean {
+  if (p.solutionLen < q.minMoves || p.usedObstacles < q.minUsed) return false;
+  const assess = assessPuzzle(p.def, Math.min(q.bfs, HARD_BFS));
+  return isStrictHard(assess, q);
+}
+
+/** Archetypes that can realistically clear GAUNTLET_QUALITY (skip soft ribbon/plain burns). */
+const GAUNTLET_ARCHETYPES: AttractArchetype[] = [
+  "campaignRemix",
+  "packed",
+  "fullBoard",
+  "slots",
+  "bridges",
+  "split",
+];
+
+/**
+ * Gauntlet / seeded run: archetype variety only when GAUNTLET_QUALITY is met.
+ * No soft accept, no quality=null fill — miss → band remixCampaign / quality builder.
+ */
 export function generateRun(seed: string, difficulty: Difficulty, count: number): Puzzle[] {
   const n = Math.max(1, Math.min(33, count));
   const q = GAUNTLET_QUALITY[difficulty];
-  const band: "mid" | "late" | "end" = difficulty === "easy" ? "mid" : difficulty === "medium" ? "late" : "end";
+  const band = gauntletRemixBand(difficulty);
   const used = new Set<string>();
   return Array.from({ length: n }, (_, i) => {
     const floorSeed = `${seed}#${i}`;
     const primary = runArchetypeForSeed(seed, i);
-    const order = [primary, ...ATTRACT_ARCHETYPES.filter((a) => a !== primary)];
+    const roster = [
+      primary,
+      ...GAUNTLET_ARCHETYPES.filter((a) => a !== primary),
+    ];
     let picked: Puzzle | null = null;
-    // Prefer GAUNTLET_QUALITY on the seeded primary archetype (tight budget).
-    for (let guard = 0; guard < 3 && !picked; guard++) {
-      const trySeed = guard === 0 ? floorSeed : `${floorSeed}:q${guard}`;
-      const cand = tryArchetypePuzzle(trySeed, primary, difficulty, q, 3);
+    // Strict quality: primary + a couple strong alts (keep long gauntlets affordable).
+    for (let ai = 0; ai < Math.min(3, roster.length) && !picked; ai++) {
+      const arch = roster[ai]!;
+      const attempts = ai === 0 ? Math.min(6, q.attempts) : 3;
+      const cand = tryArchetypePuzzle(`${floorSeed}:${arch}`, arch, difficulty, q, attempts, {
+        strictQuality: true,
+      });
       if (!cand) continue;
       const key = cand.def.tiles.join("");
       if (used.has(key)) continue;
       picked = { ...cand, difficulty };
     }
-    // Fill with any solvable archetype from the roster.
-    for (let guard = 0; guard < 5 && !picked; guard++) {
-      const trySeed = `${floorSeed}:s${guard}`;
-      for (const arch of order) {
-        const cand = tryArchetypePuzzle(trySeed, arch, difficulty, null, 4);
-        if (!cand) continue;
-        const key = cand.def.tiles.join("");
-        if (used.has(key)) continue;
-        picked = { ...cand, difficulty };
-        break;
+    // Band remix fallback (insane/hard → end).
+    for (let guard = 0; guard < 8 && !picked; guard++) {
+      const p = remixCampaign(guard === 0 ? floorSeed : `${floorSeed}:r${guard}`, band, difficulty);
+      const key = p.def.tiles.join("");
+      if (used.has(key)) continue;
+      if (!meetsGauntletFloor(p, q)) continue;
+      picked = p;
+    }
+    // Quality builder, then forced gates — still must clear the bar when possible.
+    if (!picked) {
+      const built = generateQualityPuzzle(`${floorSeed}:gq`, q, difficulty);
+      if (!used.has(built.def.tiles.join("")) && meetsGauntletFloor(built, q)) {
+        picked = { ...built, difficulty };
       }
     }
     if (!picked) {
-      let p = remixCampaign(floorSeed, band, difficulty);
-      for (let guard = 1; used.has(p.def.tiles.join("")) && guard < 10; guard++) {
-        p = remixCampaign(`${floorSeed}:${guard}`, band, difficulty);
+      for (let guard = 0; guard < 6; guard++) {
+        const p = remixCampaign(`${floorSeed}:z${guard}`, band, difficulty);
+        const key = p.def.tiles.join("");
+        if (used.has(key)) continue;
+        picked = p;
+        break;
       }
-      picked = p;
+      picked = picked ?? remixCampaign(floorSeed, band, difficulty);
     }
     used.add(picked.def.tiles.join(""));
-    return picked;
+    return { ...picked, difficulty };
   });
 }
 

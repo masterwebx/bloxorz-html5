@@ -13,15 +13,14 @@ import {
   type ClipName,
 } from "./coolmathBoard";
 import {
+  COLOR_PREVIEW_DEF,
   COLOR_PREVIEW_SPAWN,
-  COLOR_PREVIEW_STAGE,
   COLOR_SLOT_META,
   resolveTileFace,
   type ColorCustom,
 } from "./colorCustom";
 import { EDITOR_TOOLS } from "./editor";
 import { TOOL_CH, isoPt, type IsoMetrics } from "./isoBoard";
-import { rustFaces, rustFacesFromHex } from "./hue";
 import { t } from "./i18n";
 import { currentTheme } from "./settings";
 import { themePaint } from "./themePack";
@@ -312,10 +311,8 @@ export class ExtraHud {
   private layer: HudNode;
   private board: HudNode | null = null;
   private mascot: HudNode | null = null;
-  private preview: HudNode | null = null;
   onAction: (act: string) => void = () => undefined;
   makeMascot: (() => HudNode | null) | null = null;
-  makePreview: (() => HudNode | null) | null = null;
   makeClip: ((name: ClipName) => HudNode | null) | null = null;
   makeTile: ((ch: string) => HudNode | null) | null = null;
   focusId = "";
@@ -378,23 +375,7 @@ export class ExtraHud {
   hueClips(): HudNode[] {
     const out: HudNode[] = [];
     if (this.mascot?.parent) out.push(this.mascot);
-    if (this.preview?.parent) out.push(this.preview);
     return out;
-  }
-
-  private placePreview(x: number, y: number, hue = 0, colorHex?: string): void {
-    if (!this.preview && this.makePreview) this.preview = this.makePreview();
-    if (!this.preview) {
-      this.add(blockPreview(x, y, hue, colorHex));
-      return;
-    }
-    this.preview.visible = true;
-    this.preview.mouseEnabled = false;
-    this.preview.scaleX = 0.34;
-    this.preview.scaleY = 0.34;
-    this.preview.x = x;
-    this.preview.y = y + 36;
-    this.add(this.preview);
   }
 
   drawHome(title: string, items: MenuItem[], cursor: number, animate = false): void {
@@ -595,8 +576,6 @@ export class ExtraHud {
     bgTint: number;
     bgHue: number;
     bgColorOn: boolean;
-    blockHue: number;
-    blockColor?: string;
   }): void {
     this.clear();
     this.hideMascot();
@@ -628,9 +607,8 @@ export class ExtraHud {
     if (opts.tabCastBg) {
       this.add(this.act("tab-crop", `${this.focusId === "tab-crop" ? "> " : "  "}${t("settings.tabCrop")}`, 300, 210, 11, false, 180));
     }
-    // Backdrop tint lives only under Customize colors (not on the main Settings screen).
+    // Backdrop tint + block preview live under Customize colors.
     this.add(this.act("settings-colors", t("settings.customizeColors"), 40, 234, 12, false, 200));
-    this.placePreview(392, 214, opts.blockHue, opts.blockColor);
     this.add(this.act("remap", t("settings.remap"), 40, 258, 12, false, 160));
     this.add(this.act("settings-save", t("settings.manageSave"), 220, 258, 12, false, 220));
   }
@@ -669,12 +647,13 @@ export class ExtraHud {
       // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
       this.add(this.act(pickId, " ", 198, y, 11, false, 28));
     });
-    this.add(this.act("colors-match-stone", t("settings.matchStone"), 24, 248, 10, false, 168));
-    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 268, 11, false, 100));
-    this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 268, 11, false, 120));
-    this.add(this.act("colors-manage-presets", t("settings.managePresets"), 260, 268, 11, false, 120));
-    this.add(text(t("settings.loadPreset"), 260, 248, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
-    // HTML preset dropdown + manage panel sit near this chrome (placeSettingsChrome).
+    // Match-stone sits above the preset dropdown (was overlapping Load preset at y=248).
+    this.add(this.act("colors-match-stone", t("settings.matchStone"), 24, 246, 10, false, 200));
+    this.add(text(t("settings.loadPreset"), 24, 264, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
+    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 282, 11, false, 100));
+    this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 282, 11, false, 120));
+    this.add(this.act("colors-manage-presets", t("settings.managePresets"), 260, 282, 11, false, 120));
+    // HTML preset dropdown sits beside "Load preset" (placeSettingsChrome / CSS).
 
     const tiles = colorPreviewTiles();
     const wrap = new createjs.Container();
@@ -1326,27 +1305,6 @@ function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMe
 }
 
 function colorPreviewTiles(): string[] {
-  const rows = Array.from({ length: 10 }, () => " ".repeat(15));
-  for (const cell of COLOR_PREVIEW_STAGE) {
-    const row = rows[cell.y];
-    if (!row || cell.x < 0 || cell.x >= 15) continue;
-    rows[cell.y] = row.slice(0, cell.x) + cell.ch + row.slice(cell.x + 1);
-  }
-  return rows;
-}
-
-function blockPreview(x: number, y: number, hue: number, colorHex?: string): HudShape {
-  const face = colorHex ? rustFacesFromHex(colorHex) : rustFaces(hue);
-  const s = new createjs.Shape();
-  const ox = x + 18;
-  const oy = y + 28;
-  s.graphics.beginFill(face.top).beginStroke(face.edge).setStrokeStyle(1)
-    .moveTo(ox, oy - 22).lineTo(ox + 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox - 16, oy - 14).lineTo(ox, oy - 22).endFill();
-  s.graphics.beginFill(face.left)
-    .moveTo(ox - 16, oy - 14).lineTo(ox, oy - 6).lineTo(ox, oy + 12).lineTo(ox - 16, oy + 4).lineTo(ox - 16, oy - 14).endFill();
-  s.graphics.beginFill(face.right)
-    .moveTo(ox, oy - 6).lineTo(ox + 16, oy - 14).lineTo(ox + 16, oy + 4).lineTo(ox, oy + 12).lineTo(ox, oy - 6).endFill();
-  s.mouseEnabled = false;
-  return s;
+  return COLOR_PREVIEW_DEF.tiles.map((row) => row.padEnd(15, " ").slice(0, 15));
 }
 

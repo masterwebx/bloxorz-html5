@@ -2,6 +2,7 @@
 
 import { luminance, parseHexRgb, recolorRgb, rustFacesFromHex } from "./hue";
 import { TILE_FACE } from "./isoBoard";
+import type { LevelDef } from "./types";
 
 export type ColorSlotId =
   | "bg"
@@ -81,22 +82,50 @@ export function slotForTile(ch: string): ColorSlotId | null {
   return TILE_TO_SLOT[ch] ?? null;
 }
 
-/** Preview stage layout: one of each asset so the picker shows in-game look. */
-export const COLOR_PREVIEW_STAGE: { ch: string; x: number; y: number }[] = [
-  { ch: "b", x: 1, y: 2 },
-  { ch: "b", x: 2, y: 2 },
-  { ch: "b", x: 3, y: 2 },
-  { ch: "e", x: 5, y: 2 },
-  { ch: "s", x: 1, y: 4 },
-  { ch: "h", x: 3, y: 4 },
-  { ch: "f", x: 5, y: 4 },
-  { ch: "v", x: 1, y: 6 },
-  { ch: "l", x: 3, y: 6 },
-  { ch: "r", x: 4, y: 6 },
-  { ch: "b", x: 5, y: 6 },
-];
+/**
+ * Fixed handcrafted solvable Customize Colors preview.
+ * Includes stone, exit, soft/heavy, fragile, split, L/R bridges, and spawn.
+ */
+export const COLOR_PREVIEW_DEF: LevelDef = {
+  id: "color-preview",
+  code: "000000",
+  tiles: [
+    "               ",
+    "  bbbb bbbbe   ",
+    "  bbbblbbbb    ",
+    "  s  bbbbb     ",
+    "  bbbb         ",
+    "  bhfvrb       ",
+    "  bbbbbb       ",
+    "               ",
+    "               ",
+    "               ",
+  ],
+  spawn: [2, 1],
+  switches: [
+    { x: 2, y: 3, bridges: [{ x: 6, y: 2, mode: "on" }] },
+    { x: 3, y: 5, bridges: [{ x: 6, y: 5, mode: "off" }] },
+  ],
+  splits: [{ x: 4, y: 5, a: [2, 5], b: [5, 5] }],
+};
 
-export const COLOR_PREVIEW_SPAWN: [number, number] = [2, 2];
+/** @deprecated Prefer COLOR_PREVIEW_DEF — kept for callers that scatter cells. */
+export const COLOR_PREVIEW_STAGE: { ch: string; x: number; y: number }[] = (() => {
+  const out: { ch: string; x: number; y: number }[] = [];
+  for (let y = 0; y < COLOR_PREVIEW_DEF.tiles.length; y++) {
+    const row = COLOR_PREVIEW_DEF.tiles[y] ?? "";
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x] ?? " ";
+      if (ch !== " ") out.push({ ch, x, y });
+    }
+  }
+  return out;
+})();
+
+export const COLOR_PREVIEW_SPAWN: [number, number] = COLOR_PREVIEW_DEF.spawn;
+
+/** Every colorable board char the Customize Colors preview must show. */
+export const COLOR_PREVIEW_CHARS = ["b", "e", "s", "h", "f", "v", "l", "r"] as const;
 
 export function activeTileHex(colors: ColorCustom, ch: string): string | null {
   const id = slotForTile(ch);

@@ -585,10 +585,10 @@ body:not(.is-settings-colors) #hud-color-slots {
 #hud-color-preset-select {
 	position: absolute;
 	z-index: 32;
-	left: 47%;
-	/* Below the "Load preset" label (~y=248); was overlapping at 89%. */
-	top: 82.5%;
-	width: 22%;
+	/* Beside "Load preset" label (drawCustomizeColors y≈264); match-stone is above at y≈246. */
+	left: 24%;
+	top: 87.5%;
+	width: 28%;
 	pointer-events: auto;
 }
 
