@@ -572,17 +572,17 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	height: 4.4%;
 }
 
-/* Match drawCustomizeColors rowY0=44, rowStep=22 on a 300px canvas. */
-body.is-settings-colors #hud-color-slots input[data-slot="bg"] { top: 14.7%; }
-body.is-settings-colors #hud-color-slots input[data-slot="block"] { top: 22%; }
-body.is-settings-colors #hud-color-slots input[data-slot="stone"] { top: 29.3%; }
-body.is-settings-colors #hud-color-slots input[data-slot="exit"] { top: 36.7%; }
-body.is-settings-colors #hud-color-slots input[data-slot="soft"] { top: 44%; }
-body.is-settings-colors #hud-color-slots input[data-slot="heavy"] { top: 51.3%; }
-body.is-settings-colors #hud-color-slots input[data-slot="fragile"] { top: 58.7%; }
-body.is-settings-colors #hud-color-slots input[data-slot="split"] { top: 66%; }
-body.is-settings-colors #hud-color-slots input[data-slot="bridgeL"] { top: 73.3%; }
-body.is-settings-colors #hud-color-slots input[data-slot="bridgeR"] { top: 80.7%; }
+/* Match drawCustomizeColors rowY0=40, rowStep=18 on a 300px canvas. */
+body.is-settings-colors #hud-color-slots input[data-slot="bg"] { top: 13.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="block"] { top: 19.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="stone"] { top: 25.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="exit"] { top: 31.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="soft"] { top: 37.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="heavy"] { top: 43.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="fragile"] { top: 49.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="split"] { top: 55.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="bridgeL"] { top: 61.3%; }
+body.is-settings-colors #hud-color-slots input[data-slot="bridgeR"] { top: 67.3%; }
 
 body:not(.is-settings-colors) #hud-color-slots {
 	display: none;
@@ -591,9 +591,9 @@ body:not(.is-settings-colors) #hud-color-slots {
 #hud-color-preset-select {
 	position: absolute;
 	z-index: 32;
-	/* Beside "Load preset" label (drawCustomizeColors y≈246); match-stone stacks below at y≈268. */
+	/* Beside "Load preset" (drawCustomizeColors loadY≈218); match-stone is below at y≈238. */
 	left: 24%;
-	top: 81.5%;
+	top: 72.5%;
 	width: 28%;
 	pointer-events: auto;
 }

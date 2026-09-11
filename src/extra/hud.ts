@@ -625,8 +625,9 @@ export class ExtraHud {
     this.add(this.act("settings", t("common.back"), 24, 6, 12, false, 80));
     this.add(text(t("settings.customizeColors"), 275, 6, 16, theme.ink, "center"));
     this.add(text(t("settings.customizeColorsHint"), 40, 26, 10, theme.muted));
-    const rowY0 = 44;
-    const rowStep = 22;
+    // Keep color rows compact so Load preset / match-stone fit under Bridge R (not on top of it).
+    const rowY0 = 40;
+    const rowStep = 18;
     COLOR_SLOT_META.forEach((slot, i) => {
       const y = rowY0 + i * rowStep;
       const row = opts.colors[slot.id];
@@ -647,13 +648,16 @@ export class ExtraHud {
       // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
       this.add(this.act(pickId, " ", 198, y, 11, false, 28));
     });
-    // Vertical stack: Load preset + HTML dropdown on top, match-stone below. No side-by-side overlap.
-    this.add(text(t("settings.loadPreset"), 24, 246, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
-    this.add(this.act("colors-match-stone", t("settings.matchStone"), 24, 268, 10, false, 200));
-    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 286, 11, false, 100));
-    this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 286, 11, false, 120));
-    this.add(this.act("colors-manage-presets", t("settings.managePresets"), 260, 286, 11, false, 120));
-    // HTML preset dropdown sits beside "Load preset" (placeSettingsChrome / CSS).
+    // Last slot (Bridge R) ends at y≈202. Vertical stack below — never beside Bridge R or each other.
+    const loadY = 218;
+    const matchY = 238;
+    const footY = 258;
+    this.add(text(t("settings.loadPreset"), 24, loadY, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
+    this.add(this.act("colors-match-stone", t("settings.matchStone"), 24, matchY, 10, false, 220));
+    this.add(this.act("colors-reset", t("settings.resetColors"), 24, footY, 11, false, 100));
+    this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, footY, 11, false, 120));
+    this.add(this.act("colors-manage-presets", t("settings.managePresets"), 260, footY, 11, false, 120));
+    // HTML preset dropdown sits beside "Load preset" on loadY (placeSettingsChrome / CSS).
 
     const tiles = colorPreviewTiles();
     const wrap = new createjs.Container();

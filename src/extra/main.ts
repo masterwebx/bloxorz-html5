@@ -4310,6 +4310,7 @@ function openTabCropEditor(): void {
   if (!loadSettings().tabCastBg) return;
   ensureTabCropBound();
   const overlay = tabCropOverlay();
+  // Drag overlay only — never window.prompt / percent entry.
   if (!overlay) return;
   const s = loadSettings();
   tabCropBackup = normalizeTabCrop(s.tabCrop);
