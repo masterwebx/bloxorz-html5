@@ -336,5 +336,10 @@
   "settings.savePreset": "Guardar preset",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "Cargar preset",
-  "settings.loadPresetNone": "Ninguno"
+  "settings.loadPresetNone": "Ninguno",
+  "settings.matchStone": "Losas = color de piedra",
+  "settings.managePresets": "Gestionar presets",
+  "settings.deletePreset": "Borrar",
+  "settings.noColorPresets": "Aún no hay presets de color.",
+  "settings.deletePresetConfirm": "¿Borrar este preset de color?"
 }

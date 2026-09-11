@@ -220,3 +220,33 @@ export function findColorPreset(list: ColorPreset[], name: string): ColorPreset 
   if (!key) return null;
   return list.find((row) => row.name.toLowerCase() === key) ?? null;
 }
+
+/** Drop a preset by case-insensitive name. */
+export function removeColorPreset(list: ColorPreset[], name: string): ColorPreset[] {
+  const key = normalizePresetName(name).toLowerCase();
+  if (!key) return normalizeColorPresets(list);
+  return normalizeColorPresets(list.filter((row) => row.name.toLowerCase() !== key));
+}
+
+/** Tile slots that follow stone when “Tiles match stone color” is used. */
+export const STONE_MATCH_SLOTS: ColorSlotId[] = [
+  "exit",
+  "soft",
+  "heavy",
+  "fragile",
+  "split",
+  "bridgeL",
+  "bridgeR",
+];
+
+/** Copy stone hex (+ on) onto every gameplay tile slot; leave bg / block alone. */
+export function matchTilesToStone(colors: ColorCustom): ColorCustom {
+  const next = cloneColorCustom(colors);
+  const stone = next.stone;
+  const hex = stone?.hex ?? COLOR_SLOT_META.find((s) => s.id === "stone")!.defaultHex;
+  const on = true;
+  for (const id of STONE_MATCH_SLOTS) {
+    next[id] = { hex, on };
+  }
+  return next;
+}

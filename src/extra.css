@@ -585,15 +585,21 @@ body:not(.is-settings-colors) #hud-color-slots {
 #hud-color-preset-select {
 	position: absolute;
 	z-index: 32;
-	left: 58%;
+	left: 47%;
 	/* Below the "Load preset" label (~y=248); was overlapping at 89%. */
-	top: 91.5%;
+	top: 82.5%;
 	width: 22%;
 	pointer-events: auto;
 }
 
 body:not(.is-settings-colors) #hud-color-preset-select {
 	display: none;
+}
+
+body.is-settings-colors #hud-color-preset-manage {
+	left: 48%;
+	top: 42%;
+	width: 46%;
 }
 
 #attract-fade {
@@ -615,7 +621,8 @@ body:not(.is-settings-colors) #hud-color-preset-select {
 	display: none !important;
 }
 
-#hud-theme-manage {
+#hud-theme-manage,
+#hud-color-preset-manage {
 	position: absolute;
 	z-index: 40;
 	left: 36%;
@@ -650,13 +657,15 @@ body:not(.is-settings-colors) #hud-color-preset-select {
 	cursor: pointer;
 }
 
-#hud-theme-manage-empty {
+#hud-theme-manage-empty,
+#hud-color-preset-manage-empty {
 	margin: 4px 0;
 	color: rgba(255, 210, 160, 0.7);
 	font: 700 11px Orbitron, sans-serif;
 }
 
-#hud-theme-manage-back {
+#hud-theme-manage-back,
+#hud-color-preset-manage-back {
 	display: block;
 	margin-top: 8px;
 	padding: 4px 10px;
@@ -673,6 +682,7 @@ body:not(.is-settings-colors) #hud-color-preset-select {
 #hud-theme-template-btn[hidden],
 #hud-theme-manage-btn[hidden],
 #hud-theme-manage[hidden],
+#hud-color-preset-manage[hidden],
 #hud-bg-color[hidden],
 #hud-block-color[hidden],
 #hud-color-slots[hidden],

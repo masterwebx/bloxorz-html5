@@ -336,5 +336,10 @@
   "settings.savePreset": "Enregistrer le préréglage",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "Charger un préréglage",
-  "settings.loadPresetNone": "Aucun"
+  "settings.loadPresetNone": "Aucun",
+  "settings.matchStone": "Tuiles = couleur pierre",
+  "settings.managePresets": "Gérer les presets",
+  "settings.deletePreset": "Supprimer",
+  "settings.noColorPresets": "Pas encore de presets de couleur.",
+  "settings.deletePresetConfirm": "Supprimer ce preset de couleur ?"
 }

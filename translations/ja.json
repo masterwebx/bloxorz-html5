@@ -336,5 +336,10 @@
   "settings.savePreset": "プリセットを保存",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "プリセットを読込",
-  "settings.loadPresetNone": "なし"
+  "settings.loadPresetNone": "なし",
+  "settings.matchStone": "タイルを石の色に合わせる",
+  "settings.managePresets": "プリセット管理",
+  "settings.deletePreset": "削除",
+  "settings.noColorPresets": "カラープリセットはまだありません。",
+  "settings.deletePresetConfirm": "このカラープリセットを削除しますか？"
 }

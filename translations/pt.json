@@ -336,5 +336,10 @@
   "settings.savePreset": "Salvar preset",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "Carregar preset",
-  "settings.loadPresetNone": "Nenhum"
+  "settings.loadPresetNone": "Nenhum",
+  "settings.matchStone": "Tiles = cor da pedra",
+  "settings.managePresets": "Gerenciar presets",
+  "settings.deletePreset": "Excluir",
+  "settings.noColorPresets": "Ainda não há presets de cor.",
+  "settings.deletePresetConfirm": "Excluir este preset de cor?"
 }

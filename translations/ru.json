@@ -336,5 +336,10 @@
   "settings.savePreset": "Сохранить пресет",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "Загрузить пресет",
-  "settings.loadPresetNone": "Нет"
+  "settings.loadPresetNone": "Нет",
+  "settings.matchStone": "Плитки = цвет камня",
+  "settings.managePresets": "Управление пресетами",
+  "settings.deletePreset": "Удалить",
+  "settings.noColorPresets": "Пока нет цветовых пресетов.",
+  "settings.deletePresetConfirm": "Удалить этот цветовой пресет?"
 }

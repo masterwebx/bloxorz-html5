@@ -335,5 +335,10 @@
   "settings.savePreset": "Save as preset",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "Load preset",
-  "settings.loadPresetNone": "None"
+  "settings.loadPresetNone": "None",
+  "settings.matchStone": "Tiles match stone color",
+  "settings.managePresets": "Manage presets",
+  "settings.deletePreset": "Delete",
+  "settings.noColorPresets": "No color presets yet.",
+  "settings.deletePresetConfirm": "Delete this color preset?"
 }

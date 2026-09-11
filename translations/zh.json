@@ -336,5 +336,10 @@
   "settings.savePreset": "保存预设",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "加载预设",
-  "settings.loadPresetNone": "无"
+  "settings.loadPresetNone": "无",
+  "settings.matchStone": "砖块匹配石头颜色",
+  "settings.managePresets": "管理预设",
+  "settings.deletePreset": "删除",
+  "settings.noColorPresets": "还没有颜色预设。",
+  "settings.deletePresetConfirm": "删除这个颜色预设？"
 }

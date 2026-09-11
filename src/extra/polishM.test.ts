@@ -35,6 +35,7 @@ describe("attract archetype variety", () => {
 
   it("generateAttract returns a solvable tape for auto-solve", () => {
     const p = generateAttract("polish-m-attract-1");
+    expect(p.difficulty).toBe("insane");
     const solved = solveLevel(p.def, 180_000);
     expect(solved.ok).toBe(true);
     expect(solved.cmds.length).toBeGreaterThan(0);

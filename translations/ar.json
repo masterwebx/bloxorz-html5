@@ -336,5 +336,10 @@
   "settings.savePreset": "حفظ الإعداد المسبق",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "تحميل الإعداد المسبق",
-  "settings.loadPresetNone": "لا شيء"
+  "settings.loadPresetNone": "لا شيء",
+  "settings.matchStone": "البلاطات تطابق لون الحجر",
+  "settings.managePresets": "إدارة الإعدادات المسبقة",
+  "settings.deletePreset": "حذف",
+  "settings.noColorPresets": "لا توجد إعدادات لون مسبقة بعد.",
+  "settings.deletePresetConfirm": "حذف إعداد اللون المسبق هذا؟"
 }

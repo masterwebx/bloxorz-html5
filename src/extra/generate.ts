@@ -1276,62 +1276,139 @@ export function attractArchetypeForSeed(seed: string): AttractArchetype {
   return ATTRACT_ARCHETYPES[h % ATTRACT_ARCHETYPES.length]!;
 }
 
-function tryAttractArchetype(seed: string, arch: AttractArchetype, difficulty: Difficulty): Puzzle | null {
-  const rng = mulberry32(hashSeed(`attract:${seed}:${arch}`));
-  for (let i = 0; i < 12; i++) {
-    const trySeed = `${seed}:${arch}:${i}`;
-    let p: Puzzle | null = null;
-    if (arch === "plain") p = tryPlain(rng, trySeed, difficulty, rng() < 0.45);
-    else if (arch === "bridges") p = tryBridges(rng, trySeed, difficulty);
-    else if (arch === "split") p = trySplit(rng, trySeed, difficulty);
-    else if (arch === "slots") p = trySlots(rng, trySeed, difficulty, 3 + Math.floor(rng() * 3), difficulty !== "easy");
-    else if (arch === "ribbon") p = tryRibbon(rng, trySeed, difficulty);
-    else if (arch === "packed") p = tryPacked(rng, trySeed, difficulty);
-    else if (arch === "fullBoard") p = tryFullBoard(rng, trySeed, difficulty);
-    else p = remixCampaign(trySeed, rng() < 0.5 ? "mid" : rng() < 0.5 ? "late" : "end", difficulty);
-    if (!p) continue;
-    // Campaign remix always returns; require a real solvable tape for auto-solve.
-    const solved = solveLevel(p.def, 180_000);
-    if (solved.ok && solved.cmds.length) {
-      return {
-        ...p,
-        seed,
-        solutionLen: solved.cmds.length,
-        usedObstacles: usedObstacleCount(p.def, solved.cmds),
-      };
-    }
-  }
-  return null;
+/** Gauntlet / seeded-run floor archetype from seed + floor index. */
+export function runArchetypeForSeed(seed: string, index: number): AttractArchetype {
+  const h = hashSeed(`run-arch:${seed.trim() || "BLOX"}#${index}`);
+  return ATTRACT_ARCHETYPES[h % ATTRACT_ARCHETYPES.length]!;
+}
+
+function buildArchetypeCandidate(
+  seed: string,
+  arch: AttractArchetype,
+  difficulty: Difficulty,
+  attempt: number,
+): Puzzle | null {
+  const rng = mulberry32(hashSeed(`arch:${seed}:${arch}:${attempt}`));
+  const trySeed = `${seed}:${arch}:${attempt}`;
+  if (arch === "plain") return tryPlain(rng, trySeed, difficulty, rng() < 0.45);
+  if (arch === "bridges") return tryBridges(rng, trySeed, difficulty);
+  if (arch === "split") return trySplit(rng, trySeed, difficulty);
+  if (arch === "slots") return trySlots(rng, trySeed, difficulty, 3 + Math.floor(rng() * 3), difficulty !== "easy");
+  if (arch === "ribbon") return tryRibbon(rng, trySeed, difficulty);
+  if (arch === "packed") return tryPacked(rng, trySeed, difficulty);
+  if (arch === "fullBoard") return tryFullBoard(rng, trySeed, difficulty);
+  return remixCampaign(trySeed, rng() < 0.5 ? "mid" : rng() < 0.5 ? "late" : "end", difficulty);
 }
 
 /**
- * Attract-mode puzzle: rotate generator archetypes for unique looks each run.
- * Still solvable + auto-solve friendly (falls back through the roster, then easy).
+ * Build one archetype puzzle. When `quality` is set (gauntlet / attract insane),
+ * tighten and prefer floors that clear the quality bar; still return a solvable
+ * tape when only softer candidates appear.
+ */
+export function tryArchetypePuzzle(
+  seed: string,
+  arch: AttractArchetype,
+  difficulty: Difficulty,
+  quality: QualityOpts | null = null,
+  maxAttempts?: number,
+): Puzzle | null {
+  const attempts = maxAttempts ?? (quality ? Math.max(6, quality.attempts) : 12);
+  const bfs = quality?.bfs ?? 180_000;
+  let best: Puzzle | null = null;
+  let bestScore = -1;
+  for (let i = 0; i < attempts; i++) {
+    const raw = buildArchetypeCandidate(seed, arch, difficulty, i);
+    if (!raw) continue;
+    const solved = solveLevel(raw.def, bfs);
+    if (!solved.ok || !solved.cmds.length) continue;
+    let p: Puzzle = {
+      ...raw,
+      seed,
+      solutionLen: solved.cmds.length,
+      usedObstacles: usedObstacleCount(raw.def, solved.cmds),
+    };
+    if (quality) {
+      p = tightenPuzzle(p, bfs);
+      const assess = assessPuzzle(p.def, Math.min(bfs, HARD_BFS));
+      const sc = scorePuzzle(p.solutionLen, p.usedObstacles, quality, assess.requiredCount, assess.gated);
+      if (sc > bestScore) {
+        best = p;
+        bestScore = sc;
+      }
+      if (isStrictHard(assess, quality) || meetsSwitchGate(assess, quality.minRequired)) {
+        return p;
+      }
+      // Soft accept: long enough + enough used obstacles for showcase / gauntlet feel.
+      if (p.solutionLen >= Math.min(quality.minMoves, BAND[difficulty].max) && p.usedObstacles >= Math.min(4, quality.minUsed)) {
+        return p;
+      }
+      continue;
+    }
+    return p;
+  }
+  return best;
+}
+
+/**
+ * Attract-mode puzzle: rotate generator archetypes at insane / GAUNTLET_QUALITY.
+ * Still solvable + auto-solve friendly; stays on insane before any softer fallback.
  */
 export function generateAttract(seed: string): Puzzle {
   const clean = seed.trim() || "BLOX";
   const primary = attractArchetypeForSeed(clean);
   const order = [primary, ...ATTRACT_ARCHETYPES.filter((a) => a !== primary)];
-  for (const difficulty of ["medium", "easy", "hard"] as Difficulty[]) {
-    for (const arch of order) {
-      const p = tryAttractArchetype(clean, arch, difficulty);
-      if (p) return { ...p, difficulty };
-    }
+  const q = GAUNTLET_QUALITY.insane;
+  for (const arch of order) {
+    const p = tryArchetypePuzzle(clean, arch, "insane", q, 6);
+    if (p) return { ...p, difficulty: "insane" };
   }
-  return generatePuzzle(clean, "easy");
+  for (const arch of order) {
+    const p = tryArchetypePuzzle(clean, arch, "insane", null, 8);
+    if (p) return { ...p, difficulty: "insane" };
+  }
+  return generateQualityPuzzle(clean, q, "insane");
 }
 
 export function generateRun(seed: string, difficulty: Difficulty, count: number): Puzzle[] {
   const n = Math.max(1, Math.min(33, count));
+  const q = GAUNTLET_QUALITY[difficulty];
   const band: "mid" | "late" | "end" = difficulty === "easy" ? "mid" : difficulty === "medium" ? "late" : "end";
   const used = new Set<string>();
   return Array.from({ length: n }, (_, i) => {
-    let p = remixCampaign(`${seed}#${i}`, band, difficulty);
-    for (let guard = 1; used.has(p.def.tiles.join("")) && guard < 10; guard++) {
-      p = remixCampaign(`${seed}#${i}:${guard}`, band, difficulty);
+    const floorSeed = `${seed}#${i}`;
+    const primary = runArchetypeForSeed(seed, i);
+    const order = [primary, ...ATTRACT_ARCHETYPES.filter((a) => a !== primary)];
+    let picked: Puzzle | null = null;
+    // Prefer GAUNTLET_QUALITY on the seeded primary archetype (tight budget).
+    for (let guard = 0; guard < 3 && !picked; guard++) {
+      const trySeed = guard === 0 ? floorSeed : `${floorSeed}:q${guard}`;
+      const cand = tryArchetypePuzzle(trySeed, primary, difficulty, q, 3);
+      if (!cand) continue;
+      const key = cand.def.tiles.join("");
+      if (used.has(key)) continue;
+      picked = { ...cand, difficulty };
     }
-    used.add(p.def.tiles.join(""));
-    return p;
+    // Fill with any solvable archetype from the roster.
+    for (let guard = 0; guard < 5 && !picked; guard++) {
+      const trySeed = `${floorSeed}:s${guard}`;
+      for (const arch of order) {
+        const cand = tryArchetypePuzzle(trySeed, arch, difficulty, null, 4);
+        if (!cand) continue;
+        const key = cand.def.tiles.join("");
+        if (used.has(key)) continue;
+        picked = { ...cand, difficulty };
+        break;
+      }
+    }
+    if (!picked) {
+      let p = remixCampaign(floorSeed, band, difficulty);
+      for (let guard = 1; used.has(p.def.tiles.join("")) && guard < 10; guard++) {
+        p = remixCampaign(`${floorSeed}:${guard}`, band, difficulty);
+      }
+      picked = p;
+    }
+    used.add(picked.def.tiles.join(""));
+    return picked;
   });
 }
 

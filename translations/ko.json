@@ -336,5 +336,10 @@
   "settings.savePreset": "프리셋 저장",
   "settings.savePresetPrompt": "Name this color preset",
   "settings.loadPreset": "프리셋 불러오기",
-  "settings.loadPresetNone": "없음"
+  "settings.loadPresetNone": "없음",
+  "settings.matchStone": "타일을 돌 색에 맞추기",
+  "settings.managePresets": "프리셋 관리",
+  "settings.deletePreset": "삭제",
+  "settings.noColorPresets": "색상 프리셋이 아직 없습니다.",
+  "settings.deletePresetConfirm": "이 색상 프리셋을 삭제할까요?"
 }

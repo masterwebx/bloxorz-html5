@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { billboardSupports, canBillboard, customizePreviewForceShapes, foldBillboard } from "./hud";
+import { billboardSupports, canBillboard, customizePreviewForceShapes, foldBillboard, spawnPaletteUsesBlockClip } from "./hud";
+import { TOOL_CH } from "./isoBoard";
 
 describe("home billboard", () => {
   it("can draw the plus on ORZ+", () => {
@@ -19,5 +20,12 @@ describe("customize colors preview", () => {
   it("mirrors Stage Creator tiles after bake (no forceShapes flats)", () => {
     expect(customizePreviewForceShapes(true)).toBe(false);
     expect(customizePreviewForceShapes(false)).toBe(true);
+  });
+});
+
+describe("spawn tool palette", () => {
+  it("uses the Block clip path when the library is ready", () => {
+    expect(spawnPaletteUsesBlockClip(true)).toBe(true);
+    expect(TOOL_CH.spawn).toBeUndefined();
   });
 });

@@ -3,8 +3,10 @@ import {
   cloneColorCustom,
   defaultColorCustom,
   findColorPreset,
+  matchTilesToStone,
   normalizeColorPresets,
   normalizePresetName,
+  removeColorPreset,
   upsertColorPreset,
 } from "./colorCustom";
 import { CLIP_OFFSET, pickBoardCell, boardScreen, GRID_W, GRID_H } from "./coolmathBoard";
@@ -38,6 +40,17 @@ describe("color presets", () => {
     expect(row.name).toBe("Ok");
     expect(row.colors.stone.on).toBe(true);
     expect(row.colors.stone.hex).toBe("#d46820");
+  });
+
+  it("removes a preset and can match tiles to stone", () => {
+    const base = defaultColorCustom();
+    base.stone = { hex: "#445566", on: true };
+    let list = upsertColorPreset([], "A", base);
+    list = upsertColorPreset(list, "B", base);
+    expect(removeColorPreset(list, "A")).toHaveLength(1);
+    const matched = matchTilesToStone(base);
+    expect(matched.exit).toEqual({ hex: "#445566", on: true });
+    expect(matched.block.on).toBe(false);
   });
 });
 

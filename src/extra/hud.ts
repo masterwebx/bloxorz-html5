@@ -454,6 +454,16 @@ export class ExtraHud {
     this.add(this.act("skip-name", t("name.skip"), 160, 168, 13, false, 160));
   }
 
+  /** In-HUD color preset naming (replaces window.prompt). */
+  drawPresetName(): void {
+    this.clear();
+    this.hideMascot();
+    this.add(text(t("settings.savePresetPrompt"), 40, 70, 16));
+    this.add(fieldBox(40, 128, 240));
+    this.add(this.act("preset-name-save", t("name.continue"), 40, 168, 13, false, 120));
+    this.add(this.act("preset-name-cancel", t("common.back"), 160, 168, 13, false, 160));
+  }
+
   drawRecords(opts: {
     rows: { label: string; meta: string }[];
     scroll: number;
@@ -659,10 +669,12 @@ export class ExtraHud {
       // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
       this.add(this.act(pickId, " ", 198, y, 11, false, 28));
     });
+    this.add(this.act("colors-match-stone", t("settings.matchStone"), 24, 248, 10, false, 168));
     this.add(this.act("colors-reset", t("settings.resetColors"), 24, 268, 11, false, 100));
     this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 268, 11, false, 120));
+    this.add(this.act("colors-manage-presets", t("settings.managePresets"), 260, 268, 11, false, 120));
     this.add(text(t("settings.loadPreset"), 260, 248, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
-    // HTML preset dropdown sits below this label (placeSettingsChrome).
+    // HTML preset dropdown + manage panel sit near this chrome (placeSettingsChrome).
 
     const tiles = colorPreviewTiles();
     const wrap = new createjs.Container();
@@ -1223,9 +1235,17 @@ export class ExtraHud {
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
     if (id === "spawn") {
-      // Isometric block glyph, tucked left of the Spawn label.
-      const mark = spawnToolIcon(7, 11);
-      wrap.addChild(mark);
+      // Same Block clip as board spawn (not a hand-drawn cuboid).
+      const icon = this.placeBoardClip("Block", 0, 0);
+      if (icon) {
+        icon.x = 8;
+        icon.y = 12;
+        icon.scaleX = (icon.scaleX || 1) * 0.38;
+        icon.scaleY = (icon.scaleY || 1) * 0.38;
+        wrap.addChild(icon);
+        return wrap;
+      }
+      wrap.addChild(spawnBlockOnly(8, 4));
       return wrap;
     }
     const ch = TOOL_CH[id] ?? " ";
@@ -1285,22 +1305,9 @@ function spawnBlockOnly(x: number, y: number, alpha = 1): HudShape {
   return block;
 }
 
-/** Compact isometric standing block for the Spawn tool (not a pill/keyhole placeholder). */
-function spawnToolIcon(x: number, y: number): HudShape {
-  const s = new createjs.Shape();
-  const ox = x;
-  const oy = y;
-  // Shadow
-  s.graphics.beginFill("rgba(0,0,0,0.4)").drawEllipse(ox - 7, oy + 4, 14, 5);
-  // Left / right / top faces — same language as the settings block preview.
-  s.graphics.beginFill("#b45a1e")
-    .moveTo(ox - 7, oy - 6).lineTo(ox, oy - 2).lineTo(ox, oy + 8).lineTo(ox - 7, oy + 4).lineTo(ox - 7, oy - 6).endFill();
-  s.graphics.beginFill("#d47828")
-    .moveTo(ox, oy - 2).lineTo(ox + 7, oy - 6).lineTo(ox + 7, oy + 4).lineTo(ox, oy + 8).lineTo(ox, oy - 2).endFill();
-  s.graphics.beginFill("#f0a040").beginStroke("#ffe6a8").setStrokeStyle(0.8)
-    .moveTo(ox, oy - 14).lineTo(ox + 7, oy - 10).lineTo(ox, oy - 6).lineTo(ox - 7, oy - 10).lineTo(ox, oy - 14).endFill();
-  s.mouseEnabled = false;
-  return s;
+/** Spawn palette prefers the live Block clip when the library is ready. */
+export function spawnPaletteUsesBlockClip(hasBlockClip: boolean): boolean {
+  return hasBlockClip;
 }
 
 function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMetrics, colors?: ColorCustom | null): void {

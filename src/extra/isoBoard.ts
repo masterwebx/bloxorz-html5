@@ -25,7 +25,7 @@ export const TOOL_CH: Record<string, string> = {
   split: "v",
   bridgeL: "l",
   bridgeR: "r",
-  spawn: "b",
+  // spawn uses the live Block clip in hud.toolClip — not a tile char
   link: "s",
 };
 

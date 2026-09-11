@@ -52,10 +52,13 @@ import {
 import {
   activeBg,
   activeBlockHex,
+  COLOR_PRESET_NAME_MAX,
   COLOR_SLOT_META,
   defaultColorCustom,
   findColorPreset,
+  matchTilesToStone,
   normalizePresetName,
+  removeColorPreset,
   upsertColorPreset,
   type ColorSlotId,
 } from "./colorCustom";
@@ -160,6 +163,7 @@ type Screen =
   | "settings"
   | "remap"
   | "settings-colors"
+  | "settings-colors-preset-name"
   | "creator"
   | "creator-make"
   | "creator-play"
@@ -1317,6 +1321,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   const templateBtn = $("hud-theme-template-btn");
   const manageBtn = $("hud-theme-manage-btn");
   const manage = $("hud-theme-manage");
+  const presetManage = $("hud-color-preset-manage");
   const tintColor = $("hud-bg-color") as HTMLInputElement | null;
   const blockColor = $("hud-block-color") as HTMLInputElement | null;
   const colorSlots = $("hud-color-slots");
@@ -1353,6 +1358,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
     }
     if (colorSlots) colorSlots.hidden = true;
     if (presetSel) presetSel.hidden = true;
+    if (presetManage) presetManage.hidden = true;
     for (const el of slotInputs) {
       try {
         el.blur();
@@ -1372,6 +1378,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
   }
   if (upload) upload.hidden = true;
   if (!on && manage) manage.hidden = true;
+  if (!on && presetManage) presetManage.hidden = true;
   if (colorSlots) {
     if (colorsMode && pickingSlot) {
       /* keep open while native picker is active */
@@ -1380,6 +1387,7 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
     }
   }
   if (presetSel) presetSel.hidden = !colorsMode;
+  if (!colorsMode && presetManage) presetManage.hidden = true;
   if (!on) {
     // Flush pending settle-bakes when leaving Settings so in-game art matches the preview.
     if (hueBakeTimer) {
@@ -1449,11 +1457,50 @@ function fillThemeManage(): void {
   }
 }
 
+function fillColorPresetManage(): void {
+  const panel = $("hud-color-preset-manage");
+  const list = $("hud-color-preset-manage-list");
+  const empty = $("hud-color-preset-manage-empty");
+  if (!panel || !list || !empty) return;
+  const back = $("hud-color-preset-manage-back");
+  if (back) back.textContent = t("common.back");
+  const rows = loadSettings().colorPresets;
+  list.replaceChildren();
+  empty.hidden = rows.length > 0;
+  empty.textContent = t("settings.noColorPresets");
+  for (const preset of rows) {
+    const row = document.createElement("div");
+    row.className = "hud-theme-row";
+    const name = document.createElement("span");
+    name.textContent = preset.name;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = t("settings.deletePreset");
+    del.dataset.name = preset.name;
+    row.append(name, del);
+    list.append(row);
+  }
+}
+
 function toggleThemeManage(force?: boolean): void {
   const panel = $("hud-theme-manage");
   if (!panel) return;
   const on = force ?? panel.hidden;
-  if (on) fillThemeManage();
+  if (on) {
+    toggleColorPresetManage(false);
+    fillThemeManage();
+  }
+  panel.hidden = !on;
+}
+
+function toggleColorPresetManage(force?: boolean): void {
+  const panel = $("hud-color-preset-manage");
+  if (!panel) return;
+  const on = force ?? panel.hidden;
+  if (on) {
+    toggleThemeManage(false);
+    fillColorPresetManage();
+  }
   panel.hidden = !on;
 }
 
@@ -1467,6 +1514,7 @@ function bindSettingsChrome(): void {
   const templateBtn = $("hud-theme-template-btn");
   const manageBtn = $("hud-theme-manage-btn");
   const manage = $("hud-theme-manage");
+  const presetManage = $("hud-color-preset-manage");
   themeSel?.querySelector(".hud-dd-btn")?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     if (themeSel) toggleSettingsDropdown(themeSel);
@@ -1520,6 +1568,7 @@ function bindSettingsChrome(): void {
         presetSel?.contains(node) ||
         manageBtn?.contains(node) ||
         manage?.contains(node) ||
+        presetManage?.contains(node) ||
         tintColor?.contains(node) ||
         blockColorEl?.contains(node) ||
         colorSlotsEl?.contains(node)
@@ -1528,6 +1577,7 @@ function bindSettingsChrome(): void {
       }
       closeSettingsDropdowns();
       if (manage) manage.hidden = true;
+      if (presetManage) presetManage.hidden = true;
     },
     true,
   );
@@ -1557,6 +1607,10 @@ function bindSettingsChrome(): void {
   $("hud-theme-manage-back")?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     toggleThemeManage(false);
+  });
+  $("hud-color-preset-manage-back")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleColorPresetManage(false);
   });
   const endTintPick = () => {
     if (!tintPicking) return;
@@ -1657,6 +1711,20 @@ function bindSettingsChrome(): void {
       placeSettingsChrome(true, true);
       if (active === id) applyTheme("original", true);
     });
+  });
+  presetManage?.addEventListener("click", (ev) => {
+    const name = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-name]")?.dataset.name;
+    if (!name) return;
+    ev.stopPropagation();
+    if (!window.confirm(t("settings.deletePresetConfirm"))) return;
+    updateSettings((s) => {
+      s.colorPresets = removeColorPreset(s.colorPresets, name);
+    });
+    if (activeColorPreset.toLowerCase() === name.toLowerCase()) activeColorPreset = "";
+    fillColorPresetManage();
+    placeSettingsChrome(true, true);
+    markHudDirty();
+    paintHud();
   });
   const saveImport = $("hud-save-import") as HTMLInputElement | null;
   saveImport?.addEventListener("change", () => {
@@ -2612,8 +2680,10 @@ function navItems(): NavItem[] {
         },
       });
     }
+    rows.push({ id: "colors-match-stone" });
     rows.push({ id: "colors-reset" });
     rows.push({ id: "colors-save-preset" });
+    rows.push({ id: "colors-manage-presets" });
     if (s.colorPresets.length) {
       rows.push({
         id: "color-preset",
@@ -2621,6 +2691,9 @@ function navItems(): NavItem[] {
       });
     }
     return rows;
+  }
+  if (extraView === "settings-colors-preset-name") {
+    return [{ id: "preset-name-save" }, { id: "preset-name-cancel" }];
   }
   if (extraView === "settings-save") {
     if (deleteSaveStep > 0) {
@@ -3027,6 +3100,17 @@ function paintHud(): void {
   } else if (extraView === "name") {
     hud.drawName();
     placeHudInput(true, "7.3%", "42.5%", "43%", t("name.placeholder"), getName(), NAME_MAX);
+  } else if (extraView === "settings-colors-preset-name") {
+    hud.drawPresetName();
+    placeHudInput(
+      true,
+      "7.3%",
+      "42.5%",
+      "43%",
+      t("settings.savePresetPrompt"),
+      activeColorPreset || "",
+      COLOR_PRESET_NAME_MAX,
+    );
   } else if (extraView === "credits") hud.drawCredits();
   else if (extraView === "mobile-ask") hud.drawMobileAsk();
   else if (extraView === "load") {
@@ -3408,6 +3492,10 @@ function goBack(): void {
   }
   if (extraView === "settings-colors") {
     openPanel("settings");
+    return;
+  }
+  if (extraView === "settings-colors-preset-name") {
+    openPanel("settings-colors");
     return;
   }
   if (extraView === "settings-save") {
@@ -3802,17 +3890,29 @@ function handleHudAction(act: string): void {
     scheduleBlockHueBake(80);
     markHudDirty();
     paintHud();
+  } else if (act === "colors-match-stone") {
+    updateSettings((s) => {
+      s.colorCustom = matchTilesToStone(s.colorCustom);
+    });
+    activeColorPreset = "";
+    applyLooks();
+    applyTileColors(true);
+    markHudDirty();
+    paintHud();
   } else if (act === "colors-save-preset") {
-    const raw = window.prompt(t("settings.savePresetPrompt"), activeColorPreset || "");
-    if (raw == null) return;
-    const name = normalizePresetName(raw);
+    openPanel("settings-colors-preset-name");
+  } else if (act === "preset-name-save") {
+    const name = normalizePresetName(hudInput()?.value ?? "");
     if (!name) return;
     updateSettings((s) => {
       s.colorPresets = upsertColorPreset(s.colorPresets, name, s.colorCustom);
     });
     activeColorPreset = name;
-    markHudDirty();
-    paintHud();
+    openPanel("settings-colors");
+  } else if (act === "preset-name-cancel") {
+    openPanel("settings-colors");
+  } else if (act === "colors-manage-presets") {
+    toggleColorPresetManage();
   } else if (act.startsWith("color-preset:")) {
     applyColorPreset(act.slice("color-preset:".length));
   } else if (act.startsWith("music:")) {
@@ -5223,6 +5323,7 @@ function bind(): void {
     if (ev.key !== "Enter") return;
     ev.preventDefault();
     if (extraView === "name") handleHudAction("name-continue");
+    else if (extraView === "settings-colors-preset-name") handleHudAction("preset-name-save");
     else if (extraView === "load") handleHudAction("load-go");
     else if (extraView === "settings") {
       const next = input.value.trim();

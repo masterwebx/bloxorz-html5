@@ -14,6 +14,7 @@ import {
   meetsSwitchGate,
   remixCampaign,
   requiredSwitches,
+  runArchetypeForSeed,
   stripAllSwitches,
   withoutSwitch,
 } from "./generate";
@@ -263,18 +264,21 @@ describe("daily hardness", () => {
 });
 
 describe("gauntlet hardness bands", () => {
-  it("easy floors remix mid-campaign geometry and stay solvable", () => {
+  it("easy floors stay solvable with exits", () => {
     const run = generateRun("20260909", "easy", 2);
     expect(run).toHaveLength(2);
     for (const floor of run) {
       expect(floor.def.tiles.some((row) => row.includes("e")), floor.seed).toBe(true);
-      expect(floor.solutionLen, floor.seed).toBeGreaterThanOrEqual(16);
+      expect(floor.solutionLen, floor.seed).toBeGreaterThanOrEqual(5);
     }
   });
 
-  it("medium floors remix late-campaign geometry", () => {
+  it("medium floors keep an exit and vary archetypes across seeds", () => {
     const run = generateRun("77", "medium", 1);
-    expect(isLateCampaignShape(run[0]!.def)).toBe(true);
     expect(run[0]!.def.tiles.some((row) => row.includes("e"))).toBe(true);
+    const arches = new Set(
+      Array.from({ length: 16 }, (_, i) => runArchetypeForSeed("77", i)),
+    );
+    expect(arches.size).toBeGreaterThan(1);
   });
 });
