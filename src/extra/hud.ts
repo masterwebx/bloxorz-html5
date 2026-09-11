@@ -953,14 +953,14 @@ export class ExtraHud {
     EDITOR_TOOLS.forEach((tool, i) => {
       const col = pad ? i % 2 : i < 6 ? 0 : 1;
       const row = pad ? Math.floor(i / 2) : i < 6 ? i : i - 6;
-      // Wider columns + label gutter so the Spawn block icon sits left of its label (not in the mid gutter).
-      const x = pad ? 340 + col * 108 : 336 + col * 118;
+      // Right column starts further right so icon glyphs sit left of labels without crowding the mid gutter.
+      const x = pad ? 338 + col * 110 : 330 + col * 124;
       const y = pad ? 28 + row * 26 : 32 + row * 28;
       const mark = opts.tool === tool.id ? "> " : "  ";
       const icon = this.toolClip(tool.id, x, y);
       this.add(icon);
       const label = t("editor." + tool.id);
-      this.add(this.act("tool:" + tool.id, mark + label, x + 22, y, pad ? 9 : 11, false, pad ? 90 : col === 0 ? 110 : 100));
+      this.add(this.act("tool:" + tool.id, mark + label, x + 20, y, pad ? 9 : 11, false, pad ? 90 : col === 0 ? 110 : 100));
     });
 
     if (opts.hint) this.add(text(opts.hint, 10, pad ? 214 : 236, 10, theme.muted));
@@ -1039,13 +1039,9 @@ export class ExtraHud {
     }
     if (opts.cursor) {
       const p = boardCellCenter(opts.cursor.x, opts.cursor.y);
+      // Location cursor: white circle only (no yellow halo / double ring).
       const ring = new createjs.Shape();
-      ring.graphics
-        .beginStroke("#ffe082")
-        .setStrokeStyle(4)
-        .beginFill("rgba(255,200,60,0.35)")
-        .drawCircle(p.x, p.y, 14);
-      ring.graphics.beginStroke("#fff").setStrokeStyle(1.5).drawCircle(p.x, p.y, 7);
+      ring.graphics.beginStroke("#ffffff").setStrokeStyle(2).drawCircle(p.x, p.y, 7);
       ring.mouseEnabled = false;
       this.board.addChild(ring);
     }
@@ -1104,8 +1100,8 @@ export class ExtraHud {
     wrap.mouseEnabled = false;
     wrap.mouseChildren = false;
     if (id === "spawn") {
-      // Compact block glyph sized like other tool icons — left of the Spawn label.
-      const mark = spawnToolIcon(10, 11);
+      // Isometric block glyph, tucked left of the Spawn label.
+      const mark = spawnToolIcon(7, 11);
       wrap.addChild(mark);
       return wrap;
     }
@@ -1166,16 +1162,22 @@ function spawnBlockOnly(x: number, y: number, alpha = 1): HudShape {
   return block;
 }
 
-/** Small palette icon: same block language as the grid spawn, fit to tool-row height. */
+/** Compact isometric standing block for the Spawn tool (not a pill/keyhole placeholder). */
 function spawnToolIcon(x: number, y: number): HudShape {
-  const block = new createjs.Shape();
-  block.graphics.beginFill("rgba(0,0,0,0.45)").drawEllipse(-6, 3, 12, 5);
-  block.graphics.beginFill("#ff9a2a").beginStroke("#fff4c8").setStrokeStyle(1.2).drawRect(-4, -9, 8, 12);
-  block.graphics.beginFill("#ffe082").drawRect(-2.5, -13, 5, 4);
-  block.x = x;
-  block.y = y;
-  block.mouseEnabled = false;
-  return block;
+  const s = new createjs.Shape();
+  const ox = x;
+  const oy = y;
+  // Shadow
+  s.graphics.beginFill("rgba(0,0,0,0.4)").drawEllipse(ox - 7, oy + 4, 14, 5);
+  // Left / right / top faces — same language as the settings block preview.
+  s.graphics.beginFill("#b45a1e")
+    .moveTo(ox - 7, oy - 6).lineTo(ox, oy - 2).lineTo(ox, oy + 8).lineTo(ox - 7, oy + 4).lineTo(ox - 7, oy - 6).endFill();
+  s.graphics.beginFill("#d47828")
+    .moveTo(ox, oy - 2).lineTo(ox + 7, oy - 6).lineTo(ox + 7, oy + 4).lineTo(ox, oy + 8).lineTo(ox, oy - 2).endFill();
+  s.graphics.beginFill("#f0a040").beginStroke("#ffe6a8").setStrokeStyle(0.8)
+    .moveTo(ox, oy - 14).lineTo(ox + 7, oy - 10).lineTo(ox, oy - 6).lineTo(ox - 7, oy - 10).lineTo(ox, oy - 14).endFill();
+  s.mouseEnabled = false;
+  return s;
 }
 
 function drawIsoTile(shape: HudShape, x: number, y: number, ch: string, m: IsoMetrics): void {

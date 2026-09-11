@@ -756,8 +756,10 @@ function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string,
   const rgb = parseHexRgb(hex) ?? [184, 106, 46];
   const [r, g, b] = rgb;
   const wash = Math.min(1, amt);
+  // Desaturate fully first (equal RGB mults collapse chroma), then wash in the picked color.
+  const grayKeep = 1 - wash;
   sprite.filters = [
-    new Filter(1 - wash * 0.4, 1 - wash * 0.4, 1 - wash * 0.4, 1, r * wash * 0.7, g * wash * 0.7, b * wash * 0.7, 0),
+    new Filter(grayKeep, grayKeep, grayKeep, 1, r * wash, g * wash, b * wash, 0),
   ];
   const box = sprite.getBounds?.();
   sprite.cache?.(box?.x ?? 0, box?.y ?? 0, box?.width ?? 550, box?.height ?? 300);
@@ -785,6 +787,8 @@ function applyLooks(): void {
   const tintHex = s.bgColor || hueToHex(s.bgHue);
   document.body.classList.toggle("no-theme-bg", !s.themeBg && !live);
   document.body.classList.toggle("has-webcam-bg", live);
+  // Desaturate backdrop media first so the tint swatch reads as the true picked color.
+  document.body.classList.toggle("has-bg-tint", !live && s.bgTint > 0.01);
   document.body.style.setProperty("--bg-tint", hexCss(tintHex, s.bgTint * 0.55));
   document.body.style.setProperty(
     "--play-tint",

@@ -13,6 +13,14 @@
 	object-fit: cover;
 }
 
+/* Desaturate backdrop media before color tint so the swatch matches the pick. */
+body.has-bg-tint #theme-media img,
+body.has-bg-tint #theme-media video,
+body.has-bg-tint #theme-webcam {
+	filter: grayscale(1);
+}
+
+
 #theme-webcam[hidden] {
 	display: none !important;
 }

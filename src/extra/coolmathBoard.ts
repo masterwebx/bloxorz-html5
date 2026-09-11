@@ -15,7 +15,7 @@ export function unproject(px: number, py: number): { x: number; y: number } {
   return { x, y };
 }
 
-export const BOARD_VIEW = { x: 6, y: 28, w: 288, h: 228 };
+export const BOARD_VIEW = { x: 6, y: 42, w: 288, h: 228 };
 const SRC_MIN_X = 20;
 const SRC_MAX_X = 555;
 const SRC_MIN_Y = 50;

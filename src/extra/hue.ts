@@ -229,6 +229,10 @@ export function blitPackedHue(
   }
 }
 
+export function luminance(r: number, g: number, b: number): number {
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
 export function parseHexRgb(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return null;
@@ -236,7 +240,10 @@ export function parseHexRgb(hex: string): [number, number, number] | null {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** Scale a rust-base pixel toward an arbitrary target RGB, keeping shading ratios. */
+/**
+ * Fully desaturate the source pixel, then tint with the target RGB.
+ * Shading comes from luminance only — the swatch color is what you get.
+ */
 export function recolorRgb(
   r: number,
   g: number,
@@ -246,10 +253,10 @@ export function recolorRgb(
   tb: number,
   base: [number, number, number] = RUST_TOP,
 ): [number, number, number] {
-  const br = Math.max(1, base[0]);
-  const bg = Math.max(1, base[1]);
-  const bb = Math.max(1, base[2]);
-  return [clampByte((r * tr) / br), clampByte((g * tg) / bg), clampByte((b * tb) / bb)];
+  const lum = luminance(r, g, b);
+  const baseLum = Math.max(1, luminance(base[0], base[1], base[2]));
+  const scale = lum / baseLum;
+  return [clampByte(tr * scale), clampByte(tg * scale), clampByte(tb * scale)];
 }
 
 export function bakeRecolorIntoPixels(data: Uint8ClampedArray, targetHex: string): void {
