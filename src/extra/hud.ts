@@ -647,13 +647,13 @@ export class ExtraHud {
       // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
       this.add(this.act(pickId, " ", 198, y, 11, false, 28));
     });
-    // Same row: Load preset label + HTML dropdown (left), match-stone to the right. No overlap.
+    // Vertical stack: Load preset + HTML dropdown on top, match-stone below. No side-by-side overlap.
     this.add(text(t("settings.loadPreset"), 24, 246, 11, this.focusId === "color-preset" ? theme.hot : theme.ink));
-    this.add(this.act("colors-match-stone", t("settings.matchStone"), 290, 246, 10, false, 190));
-    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 270, 11, false, 100));
-    this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 270, 11, false, 120));
-    this.add(this.act("colors-manage-presets", t("settings.managePresets"), 260, 270, 11, false, 120));
-    // HTML preset dropdown sits after "Load preset" label (placeSettingsChrome / CSS).
+    this.add(this.act("colors-match-stone", t("settings.matchStone"), 24, 268, 10, false, 200));
+    this.add(this.act("colors-reset", t("settings.resetColors"), 24, 286, 11, false, 100));
+    this.add(this.act("colors-save-preset", t("settings.savePreset"), 130, 286, 11, false, 120));
+    this.add(this.act("colors-manage-presets", t("settings.managePresets"), 260, 286, 11, false, 120));
+    // HTML preset dropdown sits beside "Load preset" (placeSettingsChrome / CSS).
 
     const tiles = colorPreviewTiles();
     const wrap = new createjs.Container();
