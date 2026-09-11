@@ -2684,13 +2684,13 @@ function navItems(): NavItem[] {
         },
       });
     }
-    rows.push({ id: "colors-match-stone" });
     if (s.colorPresets.length) {
       rows.push({
         id: "color-preset",
         adjust: () => toggleSettingsDropdown($("hud-color-preset-select") as HTMLElement),
       });
     }
+    rows.push({ id: "colors-match-stone" });
     rows.push({ id: "colors-reset" });
     rows.push({ id: "colors-save-preset" });
     rows.push({ id: "colors-manage-presets" });
