@@ -1,5 +1,5 @@
 import { cmdToCode, createFeeder, shouldRestartBeforeSolve, tickFeeder, type SolveFeeder } from "./autoSolve";
-import { checkBeatable, EDITOR_TOOLS, editorMarks, newPaintState, paintEditorCell, type EditorToolId } from "./editor";
+import { checkBeatable, EDITOR_TOOLS, editorMarks, newPaintState, paintEditorCell, sharePlayBlockReason, type EditorToolId } from "./editor";
 import {
   decodeSeed,
   deleteStage,
@@ -4901,8 +4901,11 @@ function closeModal(): void {
   modalBox()?.classList.remove("is-open");
 }
 
-function playShareDef(defs: LevelDef[], returnTo: Screen, code = ""): void {
-  if (!defs.length) return;
+/** Launch a decoded share/pack code. Returns an error string if blocked (e.g. unbeatable). */
+function playShareDef(defs: LevelDef[], returnTo: Screen, code = ""): string | null {
+  if (!defs.length) return t("error.badCode");
+  const blocked = sharePlayBlockReason(defs);
+  if (blocked) return blocked;
   const first = defs[0]!;
   const pasted = code.trim();
   const saved = findBySeed(pasted || stageId(first), listSaved());
@@ -4933,6 +4936,15 @@ function playShareDef(defs: LevelDef[], returnTo: Screen, code = ""): void {
       seed: pasted || (defs.length > 1 ? encodePack(defs) : encodeSeed(first)),
     },
   );
+  return null;
+}
+
+function showCodePlayError(message: string, keepValue = ""): void {
+  openPlayCodeModal();
+  const titleEl = $("hud-modal-title");
+  if (titleEl) titleEl.textContent = message;
+  const input = modalInput();
+  if (input && keepValue) input.value = keepValue;
 }
 
 function submitModal(): void {
@@ -4942,12 +4954,11 @@ function submitModal(): void {
   if (kind === "code-play") {
     const defs = parseShareDefs(value, listSaved());
     if (!defs?.length) {
-      openPlayCodeModal();
-      const titleEl = $("hud-modal-title");
-      if (titleEl) titleEl.textContent = t("error.badCode");
+      showCodePlayError(t("error.badCode"), value);
       return;
     }
-    playShareDef(defs, "creator-play", value);
+    const err = playShareDef(defs, "creator-play", value);
+    if (err) showCodePlayError(err, value);
     return;
   }
   if (kind === "code-edit") {
@@ -4980,12 +4991,13 @@ function applyPendingShare(): boolean {
   if (!defs?.length) return false;
   splashDone = true;
   if (!getName()) setName("BLOX");
-  playShareDef(defs, "creator", raw);
   try {
     history.replaceState(null, "", `${location.pathname}${location.search.replace(/[?&](code|seed)=[^&]*/g, "").replace(/^&/, "?")}`);
   } catch {
     /* ignore */
   }
+  const err = playShareDef(defs, "creator", raw);
+  if (err) showCodePlayError(err, raw);
   return true;
 }
 

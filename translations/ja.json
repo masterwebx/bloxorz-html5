@@ -205,6 +205,7 @@
   "error.unknownPass": "そのパスコードはキャンペーンにない。",
   "error.badCode": "そのコードは読めない。",
   "error.badSeed": "そのシードは読めない。BXS. コードを貼って。",
+  "error.unbeatable": "クリアできないステージです。",
   "beat.ok": "クリア可能",
   "beat.no": "不可能",
   "beat.check": "確認中…",

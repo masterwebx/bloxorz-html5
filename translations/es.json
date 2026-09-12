@@ -205,6 +205,7 @@
   "error.unknownPass": "Ese código no es una fase de la campaña.",
   "error.badCode": "No se pudo leer ese código.",
   "error.badSeed": "No se pudo leer esa semilla. Pega un código BXS.",
+  "error.unbeatable": "Nivel imbatible.",
   "beat.ok": "SE PUEDE",
   "beat.no": "IMPOSIBLE",
   "beat.check": "Comprobando…",

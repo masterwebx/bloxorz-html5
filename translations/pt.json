@@ -205,6 +205,7 @@
   "error.unknownPass": "Essa senha não é uma fase oficial.",
   "error.badCode": "Código inválido.",
   "error.badSeed": "Semente inversa inválida. Cole um código BXS.",
+  "error.unbeatable": "Fase imbatível.",
   "beat.ok": "DÁ PRA PASSAR",
   "beat.no": "IMPOSSÍVEL",
   "beat.check": "Checando…",

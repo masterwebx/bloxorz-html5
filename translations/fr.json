@@ -205,6 +205,7 @@
   "error.unknownPass": "Ce code n’est pas une étape officielle.",
   "error.badCode": "Code illisible.",
   "error.badSeed": "Graine inverse illisible. Collez un code BXS.",
+  "error.unbeatable": "Niveau imbattable.",
   "beat.ok": "FAISABLE",
   "beat.no": "IMPOSSIBLE",
   "beat.check": "Vérification…",

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { occupiedCells, boardCellCenter, boardCellCorners, boardScreen, clipForTile, pickBoardCell } from "./coolmathBoard";
 import { emptyDraft, encodeLevel, decodeLevel, encodePack, encodeSeed, decodePack, decodeSeed, findBySeed, isPack, isPlayable, occupiedTileCount, parseShare, parseShareDefs, setTile, shareFromLocation, stageId } from "./customLevels";
 import type { LevelDef } from "./types";
-import { beatBadge, checkBeatable, newPaintState, paintEditorCell } from "./editor";
+import { beatBadge, checkBeatable, newPaintState, paintEditorCell, sharePlayBlockReason } from "./editor";
 import { Stage } from "./engine";
 import { playScript, solveLevel } from "./solve";
 
@@ -90,6 +90,29 @@ describe("editor beatability", () => {
     const def = emptyDraft();
     def.tiles[4] = "  b      e    ";
     expect(checkBeatable(def)).toBe(false);
+  });
+});
+
+describe("share play unbeatable gate", () => {
+  it("allows a beatable decoded stage", () => {
+    expect(sharePlayBlockReason([emptyDraft()])).toBeNull();
+  });
+
+  it("blocks an unbeatable decoded stage with localized copy", () => {
+    const def = emptyDraft();
+    def.tiles[4] = "  b      e    ";
+    expect(sharePlayBlockReason([def])).toBe("Unbeatable stage.");
+  });
+
+  it("blocks a pack when any stage is unbeatable", () => {
+    const bad = emptyDraft();
+    bad.tiles[4] = "  b      e    ";
+    expect(sharePlayBlockReason([emptyDraft(), bad])).toBe("Unbeatable stage.");
+    expect(sharePlayBlockReason([bad, emptyDraft()])).toBe("Unbeatable stage.");
+  });
+
+  it("allows a pack of beatable stages", () => {
+    expect(sharePlayBlockReason([emptyDraft(), emptyDraft()])).toBeNull();
   });
 });
 

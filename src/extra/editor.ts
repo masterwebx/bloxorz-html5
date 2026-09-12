@@ -64,6 +64,18 @@ export function beatBadge(def: LevelDef, playable: string | null): string {
   return checkBeatable(def) ? t("creator.beatable") : t("creator.impossible");
 }
 
+/**
+ * Gate for pasted/typed share codes (single or pack) before play starts.
+ * Returns localized error copy when any stage is unbeatable; null when OK to launch.
+ * Campaign passcodes are not routed through this helper.
+ */
+export function sharePlayBlockReason(defs: LevelDef[], limit = 80_000): string | null {
+  for (const def of defs) {
+    if (!checkBeatable(def, limit)) return t("error.unbeatable");
+  }
+  return null;
+}
+
 function solid(def: LevelDef, x: number, y: number): boolean {
   const ch = tileChar(def, x, y);
   return ch !== " " && ch !== "e";

@@ -205,6 +205,7 @@
   "error.unknownPass": "그 패스코드는 캠페인 스테이지가 아닙니다.",
   "error.badCode": "그 코드를 읽을 수 없습니다.",
   "error.badSeed": "그 리버스 시드를 읽을 수 없습니다. BXS. 코드를 붙여넣으세요.",
+  "error.unbeatable": "클리어할 수 없는 스테이지입니다.",
   "beat.ok": "클리어 가능",
   "beat.no": "불가능",
   "beat.check": "확인 중…",

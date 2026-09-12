@@ -205,6 +205,7 @@
   "error.unknownPass": "Kein Kampagnenlevel zu diesem Passwort.",
   "error.badCode": "Code nicht lesbar.",
   "error.badSeed": "Seed nicht lesbar. BXS.-Code einfügen.",
+  "error.unbeatable": "Unschlagbare Stufe.",
   "beat.ok": "LÖSBAR",
   "beat.no": "UNMÖGLICH",
   "beat.check": "Prüfe…",

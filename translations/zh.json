@@ -205,6 +205,7 @@
   "error.unknownPass": "这不是战役关卡密码。",
   "error.badCode": "无法读取该代码。",
   "error.badSeed": "无法读取该种子。请粘贴 BXS. 代码。",
+  "error.unbeatable": "无法通关的关卡。",
   "beat.ok": "可通关",
   "beat.no": "不可能",
   "beat.check": "检查中…",
