@@ -153,6 +153,7 @@
   "play.gauntlet": "GAUNTLET {diff}",
   "play.replay": "REPLAY",
   "play.help1": "Use the arrow keys or W A S and D to move the block around.",
+  "play.helpSwitch": "Press {key} to switch between the small blocks.",
   "hud.stage": "Stage",
   "hud.time": "Time",
   "hud.attempts": "Attempts",

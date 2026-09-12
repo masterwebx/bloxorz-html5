@@ -173,6 +173,7 @@
   "play.gauntlet": "试炼 {diff}",
   "play.replay": "回放",
   "play.help1": "方向键或 W A S D 移动方块。",
+  "play.helpSwitch": "按 {key} 切换控制的小方块。",
   "hud.stage": "关卡",
   "hud.time": "时间",
   "hud.attempts": "尝试",

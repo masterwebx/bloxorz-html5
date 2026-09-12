@@ -173,6 +173,7 @@
   "play.gauntlet": "ガントレット {diff}",
   "play.replay": "リプレイ",
   "play.help1": "矢印キーか W A S D でブロックを動かす。",
+  "play.helpSwitch": "{key} で小さいブロックを切り替える。",
   "hud.stage": "面",
   "hud.time": "タイム",
   "hud.attempts": "挑戦",

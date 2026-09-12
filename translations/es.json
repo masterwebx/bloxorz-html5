@@ -173,6 +173,7 @@
   "play.gauntlet": "DESAFÍO {diff}",
   "play.replay": "REPETICIÓN",
   "play.help1": "Flechas o W A S D para mover el bloque.",
+  "play.helpSwitch": "Pulsa {key} para cambiar entre los bloques pequeños.",
   "hud.stage": "Fase",
   "hud.time": "Tiempo",
   "hud.attempts": "Intentos",

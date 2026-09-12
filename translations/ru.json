@@ -173,6 +173,7 @@
   "play.gauntlet": "ИСПЫТАНИЕ {diff}",
   "play.replay": "ПОВТОР",
   "play.help1": "Стрелки или W A S и D двигают блок.",
+  "play.helpSwitch": "Нажми {key}, чтобы переключить маленький блок.",
   "hud.stage": "Сцена",
   "hud.time": "Время",
   "hud.attempts": "Попытки",

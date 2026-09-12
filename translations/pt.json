@@ -173,6 +173,7 @@
   "play.gauntlet": "DESAFIO {diff}",
   "play.replay": "REPETIÇÃO",
   "play.help1": "Setas ou W A S D para rolar o bloco.",
+  "play.helpSwitch": "Carrega em {key} para mudar entre os blocos pequenos.",
   "hud.stage": "Fase",
   "hud.time": "Tempo",
   "hud.attempts": "Tentativas",

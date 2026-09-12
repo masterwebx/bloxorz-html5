@@ -173,6 +173,7 @@
   "play.gauntlet": "DÉFI {diff}",
   "play.replay": "RELECTURE",
   "play.help1": "Flèches ou W A S D pour rouler le bloc.",
+  "play.helpSwitch": "Appuie sur {key} pour changer de petit bloc.",
   "hud.stage": "Étape",
   "hud.time": "Temps",
   "hud.attempts": "Essais",

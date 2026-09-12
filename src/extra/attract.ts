@@ -85,3 +85,20 @@ export function wantsClassicCampaignMoveHelp(opts: MoveHelpSession & { stageNo: 
 export function wantsClassicStage1MoveHint(opts: MoveHelpSession & { stageNo: number }): boolean {
   return wantsClassicCampaignMoveHelp(opts) && opts.stageNo === 1;
 }
+
+/**
+ * First classic stages that introduce split-cube switching (levels with a `v` pad).
+ * Classic campaign stages 08 and 09 are the first two; later split stages get no tip.
+ */
+export const CLASSIC_SWITCH_HINT_STAGES = [8, 9] as const;
+
+/** Classic-campaign overlay tip for the swap/switch control (DOM `#play-help`). */
+export function wantsClassicSwitchHint(opts: MoveHelpSession & { stageNo: number }): boolean {
+  if (!wantsClassicCampaignMoveHelp(opts)) return false;
+  return (CLASSIC_SWITCH_HINT_STAGES as readonly number[]).includes(opts.stageNo);
+}
+
+/** True when DOM `#play-help` should show (stage-01 move tip and/or switch tip). */
+export function wantsClassicDomPlayHelp(opts: MoveHelpSession & { stageNo: number }): boolean {
+  return wantsClassicStage1MoveHint(opts) || wantsClassicSwitchHint(opts);
+}

@@ -173,6 +173,7 @@
   "play.gauntlet": "تحدٍ {diff}",
   "play.replay": "إعادة",
   "play.help1": "استخدم أسهم الاتجاه أو W A S و D لتحريك المكعب.",
+  "play.helpSwitch": "اضغط {key} للتبديل بين المكعبات الصغيرة.",
   "hud.stage": "المرحلة",
   "hud.time": "الوقت",
   "hud.attempts": "محاولات",

@@ -173,6 +173,7 @@
   "play.gauntlet": "챌린지 {diff}",
   "play.replay": "리플레이",
   "play.help1": "방향키 또는 W A S D로 블록을 움직이세요.",
+  "play.helpSwitch": "{key} 키로 작은 블록을 전환하세요.",
   "hud.stage": "스테이지",
   "hud.time": "시간",
   "hud.attempts": "시도",

@@ -157,9 +157,8 @@ import {
   classicInstructionBitmapsVisible,
   shouldRepaintAttractTitle,
   shouldStartAttract,
-  wantsClassicCampaignMoveHelp,
-  wantsClassicStage1MoveHint,
 } from "./attract";
+import { classicPlayHelpKind, instructionPadAdvance, switchHelpKeyLabel, wantsCreateJsHelpBitmap } from "./playHelp";
 import {
   ACH_COUNT,
   ACH_PAGE,
@@ -512,6 +511,11 @@ let letterbox: TintShape | null = null;
 let blocksWereIdle = true;
 let prevPadButtons = new Set<number>();
 let prevInstrStart = false;
+let prevInstrConfirm = false;
+let prevInstrSwap = false;
+let prevHelpConfirm = false;
+/** Stage session key that already dismissed the DOM/bitmap play tip via pad confirm. */
+let playHelpDismissedKey = "";
 let uiBusy = false;
 let touchChrome: TouchChrome | null = null;
 let localSaveWrapped = false;
@@ -2316,6 +2320,71 @@ function cueMenuHover(): void {
   rumble(50, 0.28, 0.36);
 }
 
+function playHelpSessionOpts(stageNo: number) {
+  if (!playSession) return null;
+  return {
+    classicRun: playSession.classicRun,
+    kind: playSession.kind,
+    stageNo,
+    attract: playSession.attract,
+    replay: playSession.replay,
+  };
+}
+
+function playHelpDismissKey(stageNo: number): string {
+  const kind = classicPlayHelpKind(
+    playHelpSessionOpts(stageNo) ?? { classicRun: false, kind: "custom", stageNo },
+  );
+  return `${playClock}|${stageNo}|${kind}`;
+}
+
+function syncPlayHelpTip(on: boolean): void {
+  const help = $("play-help");
+  if (!help) return;
+  if (!on || !playSession) {
+    help.hidden = true;
+    help.textContent = "";
+    return;
+  }
+  const stageNo = window.stage?.levelNumber ?? 0;
+  const opts = playHelpSessionOpts(stageNo);
+  if (!opts) {
+    help.hidden = true;
+    help.textContent = "";
+    return;
+  }
+  const kind = classicPlayHelpKind(opts);
+  // Stage 01 move tip stays CreateJS bitmap for en-classic; DOM tip is HD-only for move.
+  // Switch tips always use this DOM overlay (remapped key) in every locale.
+  const wantDom =
+    kind === "switch" || (kind === "move" && usesHdType());
+  if (!wantDom || playHelpDismissedKey === playHelpDismissKey(stageNo)) {
+    help.hidden = true;
+    help.textContent = "";
+    return;
+  }
+  const settings = loadSettings();
+  if (kind === "move") help.textContent = t("play.help1");
+  else help.textContent = t("play.helpSwitch", { key: switchHelpKeyLabel(settings) });
+  help.hidden = false;
+}
+
+function dismissPlayHelpTip(): void {
+  const stageNo = window.stage?.levelNumber ?? 0;
+  playHelpDismissedKey = playHelpDismissKey(stageNo);
+  const help = $("play-help");
+  if (help) {
+    help.hidden = true;
+    help.textContent = "";
+  }
+  const ht = window.stage?.bloxWorld?.helpText;
+  if (ht) {
+    ht.alpha = 0;
+    ht.visible = false;
+  }
+  lastHelpTextKey = null;
+}
+
 function syncPlayChrome(on: boolean): void {
   syncPlayStageName(on);
   const box = $("play-chrome");
@@ -2324,15 +2393,11 @@ function syncPlayChrome(on: boolean): void {
   box.hidden = !show;
   setBitmapPlayText(!show);
   const timeEl = $("play-time");
+  syncPlayHelpTip(on);
   if (!show) {
     lastPlayHudKey = "";
     box.classList.remove("has-pass", "has-play-time");
     if (timeEl) timeEl.hidden = true;
-    const help = $("play-help");
-    if (help) {
-      help.hidden = true;
-      help.textContent = "";
-    }
     return;
   }
   const world = window.stage?.bloxWorld as { moves?: number; background?: { menuButton?: { dispatchEvent?: (ev: unknown) => void } } } | undefined;
@@ -2341,18 +2406,18 @@ function syncPlayChrome(on: boolean): void {
   const moves = displayMoveCount(world?.moves ?? 0, window.stage?.totalMoves ?? 0, accumulate);
   const code = playSession?.defs[Math.max(0, stageNo - 1)]?.code || playDef()?.code || "";
   const classic = isClassicPlayHud();
-  const classicFirst = !!playSession && wantsClassicStage1MoveHint({
+  const helpKind = playSession ? classicPlayHelpKind({
     classicRun: playSession.classicRun,
     kind: playSession.kind,
     stageNo,
     attract: playSession.attract,
     replay: playSession.replay,
-  });
+  }) : null;
   const stageName = playHudStageName(stageNo);
   const settings = loadSettings();
   const started = window.stage?.startTime ?? Date.now();
   const clock = padClock(Date.now() - started);
-  const key = `${stageNo}|${moves}|${code}|${classic}|${classicFirst}|${stageName}|${localeId()}|${settings.showStageName}|${settings.showPlayTime}|${clock}`;
+  const key = `${stageNo}|${moves}|${code}|${classic}|${helpKind}|${stageName}|${localeId()}|${settings.showStageName}|${settings.showPlayTime}|${clock}|${settings.keys.swap}`;
   if (key === lastPlayHudKey) return;
   lastPlayHudKey = key;
   const passBox = $("play-pass");
@@ -2361,7 +2426,6 @@ function syncPlayChrome(on: boolean): void {
   const moveVal = $("play-moves-val");
   const moveLab = $("play-moves-lab");
   const menu = $("play-menu");
-  const help = $("play-help");
   box.classList.toggle("has-pass", classic);
   box.classList.toggle("has-play-time", settings.showPlayTime);
   if (passBox) passBox.hidden = !classic;
@@ -2378,10 +2442,7 @@ function syncPlayChrome(on: boolean): void {
     if (!timeLab && !timeVal) timeEl.textContent = t("hud.time") + ": " + clock;
   }
   if (menu) menu.textContent = t("play.menu");
-  if (help) {
-    help.hidden = !classicFirst;
-    help.textContent = t("play.help1");
-  }
+  syncPlayHelpTip(on);
 }
 
 function syncStageCard(on: boolean, title = ""): void {
@@ -5320,10 +5381,16 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   playLaunching = true;
   lastTintKey = "";
   lastHelpTextKey = null;
+  playHelpDismissedKey = "";
   lastHdSuppressLabel = "";
   enterPlayVisuals();
   hushPlayAudio();
   unlockAudio();
+  absorbHeldMenuConfirm();
+  prevInstrStart = false;
+  prevInstrConfirm = false;
+  prevInstrSwap = false;
+  prevHelpConfirm = false;
   const stage = window.stage;
   if (stage) stage.touchMode = false;
   if (stage) stage.levelNumber = levelNumber;
@@ -5539,22 +5606,22 @@ function syncHelpText(): void {
   const hd = usesHdType();
   const stageNo = window.stage?.levelNumber ?? 0;
   const session = playSession;
-  const wantClassic =
-    !!session &&
-    wantsClassicCampaignMoveHelp({
-      classicRun: session.classicRun,
-      kind: session.kind,
-      stageNo,
-      attract: session.attract,
-      replay: session.replay,
-    });
-  // HD uses DOM `#play-help` for stage 01 only; CreateJS HelpText is classic-English campaign only.
-  const showBitmap = !hd && wantClassic;
+  const opts = session
+    ? {
+        classicRun: session.classicRun,
+        kind: session.kind,
+        stageNo,
+        attract: session.attract,
+        replay: session.replay,
+        hdType: hd,
+      }
+    : null;
+  const showBitmap = !!opts && wantsCreateJsHelpBitmap(opts) && playHelpDismissedKey !== playHelpDismissKey(stageNo);
   const ht = window.stage?.bloxWorld?.helpText;
   const htMatches = showBitmap
     ? !ht || (ht.visible !== false && (ht.alpha ?? 1) > 0)
     : !ht || (ht.visible === false && !(ht.alpha ?? 0));
-  const key = `${showBitmap ? 1 : 0}|${stageNo}|${session?.classicRun ? 1 : 0}|${session?.kind ?? ""}`;
+  const key = `${showBitmap ? 1 : 0}|${stageNo}|${session?.classicRun ? 1 : 0}|${session?.kind ?? ""}|${playHelpDismissedKey}`;
   // Skip the gameContainer walk when mode is unchanged and helpText still matches.
   if (lastHelpTextKey === key && htMatches) return;
   lastHelpTextKey = key;
@@ -5798,6 +5865,7 @@ function instructionGlyphs(): OverlayNode[] {
 function advanceInstructions(dir: 1 | -1 | 0): void {
   const inst = instructionClip();
   if (!inst?.play) return;
+  // Only block while the carousel is mid-tween between stops (paused === false).
   if (inst.paused === false) return;
   // Hide classic pages before the timeline advances so HD never flashes a bitmap frame.
   if (usesHdType()) suppressClassicBitmapsForHd("instructions");
@@ -5815,22 +5883,60 @@ function advanceInstructions(dir: 1 | -1 | 0): void {
 }
 
 function pollInstructionsPad(): void {
-  const start = heldPadButtons().has(loadSettings().pads.pause);
-  if (start && !prevInstrStart) {
-    prevInstrStart = true;
-    advanceInstructions(0);
-    pollMenuPad();
-    return;
+  const pads = loadSettings().pads;
+  const held = heldPadButtons();
+  const start = held.has(pads.pause);
+  const confirm = held.has(pads.confirm);
+  const swap = held.has(pads.swap);
+  const frame = instructionClip()?.currentFrame ?? 0;
+
+  const edge = (on: boolean, was: boolean): boolean => on && !was;
+  let handled = false;
+  if (edge(start, prevInstrStart)) {
+    const dir = instructionPadAdvance("pause", frame);
+    if (dir === 0) advanceInstructions(0);
+    handled = true;
+  } else if (edge(confirm, prevInstrConfirm)) {
+    const dir = instructionPadAdvance("confirm", frame);
+    if (dir === 1 || dir === -1 || dir === 0) advanceInstructions(dir);
+    handled = true;
+  } else if (edge(swap, prevInstrSwap)) {
+    const dir = instructionPadAdvance("swap", frame);
+    if (dir === 1 || dir === -1 || dir === 0) advanceInstructions(dir);
+    handled = true;
+  }
+  // Always drain menu-pad edges so held Confirm/Start from the title menu cannot stick.
+  for (const ev of pollMenuPad({ pauseConfirms: false })) {
+    if (handled) continue;
+    const dir = instructionPadAdvance(ev, frame);
+    if (dir === "quit") quitPlay();
+    else if (dir === 1 || dir === -1 || dir === 0) advanceInstructions(dir);
   }
   prevInstrStart = start;
-  for (const ev of pollMenuPad()) {
-    if (ev === "confirm" || ev === "right" || ev === "down") advanceInstructions(1);
-    else if (ev === "left" || ev === "up") advanceInstructions(-1);
-    else if (ev === "back") {
-      if ((instructionClip()?.currentFrame ?? 0) <= 20) quitPlay();
-      else advanceInstructions(-1);
-    }
+  prevInstrConfirm = confirm;
+  prevInstrSwap = swap;
+}
+
+function playHelpTipVisible(): boolean {
+  const help = $("play-help");
+  if (help && !help.hidden && help.textContent) return true;
+  const stageNo = window.stage?.levelNumber ?? 0;
+  const opts = playHelpSessionOpts(stageNo);
+  if (!opts || playHelpDismissedKey === playHelpDismissKey(stageNo)) return false;
+  return wantsCreateJsHelpBitmap({ ...opts, hdType: usesHdType() });
+}
+
+/** Confirm / A dismisses the Stage 01 or switch tip while pad is driving. */
+function pollPlayHelpDismissPad(): void {
+  if (!playHelpTipVisible()) {
+    prevHelpConfirm = heldPadButtons().has(loadSettings().pads.confirm);
+    return;
   }
+  const pads = loadSettings().pads;
+  const held = heldPadButtons();
+  const confirm = held.has(pads.confirm);
+  if (confirm && !prevHelpConfirm) dismissPlayHelpTip();
+  prevHelpConfirm = confirm;
 }
 
 function inStagePlay(): boolean {
@@ -6527,10 +6633,15 @@ function syncOverlay(): void {
     if (playing) {
       syncStageCard(false);
       tickSolve();
+      const inStage = label === "game" || label === "restart";
       if (isPauseMenuOpen()) pollPauseMenuPad();
-      else pollGamepad(autoSolve ? undefined : stage, togglePauseMenu);
+      else if (inStage) {
+        pollPlayHelpDismissPad();
+        pollGamepad(autoSolve ? undefined : stage, togglePauseMenu);
+      }
       if (!playSession) return;
       syncHelpText();
+      syncPlayHelpTip(inStage && !attracting);
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);
       blocksWereIdle = idle;

@@ -173,6 +173,7 @@
   "play.gauntlet": "चुनौती {diff}",
   "play.replay": "रीप्ले",
   "play.help1": "तीर कुंजियाँ या W A S और D से ब्लॉक घुमाएँ।",
+  "play.helpSwitch": "छोटे ब्लॉकों के बीच बदलने के लिए {key} दबाएँ।",
   "hud.stage": "स्टेज",
   "hud.time": "समय",
   "hud.attempts": "कोशिश",

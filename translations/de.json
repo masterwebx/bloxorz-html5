@@ -173,6 +173,7 @@
   "play.gauntlet": "PARCOURS {diff}",
   "play.replay": "WIEDERHOLUNG",
   "play.help1": "Pfeiltasten oder W A S D bewegen den Block.",
+  "play.helpSwitch": "Mit {key} zwischen den kleinen Blöcken wechseln.",
   "hud.stage": "Level",
   "hud.time": "Zeit",
   "hud.attempts": "Versuche",
