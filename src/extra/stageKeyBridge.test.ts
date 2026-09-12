@@ -61,4 +61,9 @@ describe("shouldEndCreatorStrokeFromPad", () => {
     expect(shouldEndCreatorStrokeFromPad(false, false)).toBe(false);
     expect(shouldEndCreatorStrokeFromPad(false, true)).toBe(false);
   });
+
+  it("treats keyboard Enter/Space as confirmHeld so pad poll does not clear the hold", () => {
+    // Pad A not pressed, but keyboard paint key still down → must not end.
+    expect(shouldEndCreatorStrokeFromPad(true, true)).toBe(false);
+  });
 });

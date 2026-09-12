@@ -169,23 +169,24 @@ describe("gamepad pause and menu confirm", () => {
     expect(Math.max(...steady) - Math.min(...steady)).toBeLessThanOrEqual(1);
   });
 
-  it("uses faster creator repeat cadence when requested", () => {
+  it("uses creator repeat cadence that stays one-cell-per-tap friendly", () => {
+    const opts = { repeatInitial: 5, repeatRate: 3 };
     hold([]);
-    pollMenuPad({ repeatInitial: 2, repeatRate: 2 });
+    pollMenuPad(opts);
     hold([13]);
-    expect(pollMenuPad({ repeatInitial: 2, repeatRate: 2 })).toEqual(["down"]);
+    expect(pollMenuPad(opts)).toEqual(["down"]);
     const gaps: number[] = [];
     let since = 0;
     for (let i = 0; i < 40; i++) {
       since++;
-      const ev = pollMenuPad({ repeatInitial: 2, repeatRate: 2 });
+      const ev = pollMenuPad(opts);
       if (ev.includes("down")) {
         gaps.push(since);
         since = 0;
       }
     }
-    expect(gaps[0]).toBe(2);
-    expect(gaps.slice(1).every((g) => g === 2)).toBe(true);
+    expect(gaps[0]).toBe(5);
+    expect(gaps.slice(1).every((g) => g === 3)).toBe(true);
   });
 
   it("merges synthetic keyboard dirs without marking pad driving", () => {
@@ -199,13 +200,13 @@ describe("gamepad pause and menu confirm", () => {
   });
 
   it("keeps dir hold-repeat armed across confirm when requested", () => {
-    const opts = { keepDirHoldOnConfirm: true, confirmCool: 3, repeatInitial: 2, repeatRate: 2 };
+    const opts = { keepDirHoldOnConfirm: true, confirmCool: 4, repeatInitial: 5, repeatRate: 3 };
     hold([]);
     pollMenuPad(opts);
     hold([13]);
     expect(pollMenuPad(opts)).toEqual(["down"]);
-    // Drain dir cool so confirm edge can fire.
-    expect(pollMenuPad(opts)).toEqual([]);
+    // Drain until cool is 1 so the next poll can edge-fire confirm (INITIAL=5 → 4 empty frames).
+    for (let i = 0; i < 4; i++) expect(pollMenuPad(opts)).toEqual([]);
     hold([13, 0]);
     expect(pollMenuPad(opts)).toEqual(["confirm"]);
     let saw = false;
@@ -220,11 +221,13 @@ describe("gamepad pause and menu confirm", () => {
 
   it("primes keyboard dir hold without double-firing the edge", () => {
     hold([]);
-    pollMenuPad({ repeatInitial: 2, repeatRate: 2 });
+    pollMenuPad({ repeatInitial: 5, repeatRate: 3 });
     setExtraMenuHeld({ right: true });
-    primeMenuDirHold("right", 2);
-    expect(pollMenuPad({ repeatInitial: 2, repeatRate: 2 })).toEqual([]);
-    expect(pollMenuPad({ repeatInitial: 2, repeatRate: 2 })).toEqual(["right"]);
+    primeMenuDirHold("right", 5);
+    // cool=5 → four empty polls, then first hold-repeat.
+    expect(pollMenuPad({ repeatInitial: 5, repeatRate: 3 })).toEqual([]);
+    for (let i = 0; i < 3; i++) expect(pollMenuPad({ repeatInitial: 5, repeatRate: 3 })).toEqual([]);
+    expect(pollMenuPad({ repeatInitial: 5, repeatRate: 3 })).toEqual(["right"]);
     clearExtraMenuHeld();
   });
 

@@ -23,7 +23,11 @@ export function detachClassicWindowKeyListeners(
   }
 }
 
-/** Pad confirm-release must not end a mouse paint stroke (only keyboard/pad holds). */
+/**
+ * Pad/keyboard confirm-release must not end a mouse paint stroke.
+ * `confirmHeld` must include keyboard Enter/Space paint holds — pad-only checks
+ * clear editorPaintHeld on the next tick while Enter is still down.
+ */
 export function shouldEndCreatorStrokeFromPad(editorPaintHeld: boolean, confirmHeld: boolean): boolean {
   return editorPaintHeld && !confirmHeld;
 }

@@ -51,10 +51,13 @@ let lastPadAt = 0;
 
 const MENU_REPEAT_INITIAL = 6;
 const MENU_REPEAT_RATE = 4;
-/** Stage Creator grid cursor — snappier than menu list navigation. */
-export const CREATOR_REPEAT_INITIAL = 2;
-export const CREATOR_REPEAT_RATE = 2;
-export const CREATOR_CONFIRM_COOL = 3;
+/**
+ * Stage Creator grid cursor — slightly snappier than menu (6/4), but slow
+ * enough that a short tap is one cell (INITIAL=2 overshot before keyup).
+ */
+export const CREATOR_REPEAT_INITIAL = 5;
+export const CREATOR_REPEAT_RATE = 3;
+export const CREATOR_CONFIRM_COOL = 4;
 /** Ignore keyboard clear shortly after pad input (OS remappers fire keydown after poll). */
 const KEYBOARD_CLEAR_GRACE_MS = 320;
 

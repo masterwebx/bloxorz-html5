@@ -465,6 +465,8 @@ let beatCheckTimer = 0;
 let creatorPreviewSettleTimer = 0;
 /** Keyboard dirs fed into pollMenuPad so creator arrows match pad hold-repeat (no OS key-delay). */
 const creatorKeyDirs: Partial<Record<"up" | "down" | "left" | "right", boolean>> = {};
+/** Enter/Space paint hold — pad poll must not treat release when only keyboard confirm is down. */
+let creatorPaintKeyHeld = false;
 let lastTintKey = "";
 let bgCycleLastMs = 0;
 let lastPlayHudKey = "";
@@ -3265,7 +3267,13 @@ function scheduleCreatorPreviewSettle(deferMs = 90): void {
   creatorPreviewSettleTimer = window.setTimeout(() => {
     creatorPreviewSettleTimer = 0;
     if (extraView !== "creator-edit") return;
-    if (editorPaintHeld || heldPadButtons().has(loadSettings().pads.confirm)) return;
+    if (
+      editorPaintHeld ||
+      creatorPaintKeyHeld ||
+      heldPadButtons().has(loadSettings().pads.confirm)
+    ) {
+      return;
+    }
     if (creatorKeyDirs.up || creatorKeyDirs.down || creatorKeyDirs.left || creatorKeyDirs.right) {
       scheduleCreatorPreviewSettle(deferMs);
       return;
@@ -3315,7 +3323,10 @@ function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "ba
     if (ev === "right") editCursor.x = Math.min(14, editCursor.x + 1);
     if (ev === "up") editCursor.y = Math.max(0, editCursor.y - 1);
     if (ev === "down") editCursor.y = Math.min(9, editCursor.y + 1);
-    const held = editorPaintHeld || heldPadButtons().has(loadSettings().pads.confirm);
+    const held =
+      editorPaintHeld ||
+      creatorPaintKeyHeld ||
+      heldPadButtons().has(loadSettings().pads.confirm);
     if (held) paintEditorAt(editCursor.x, editCursor.y, "drag");
     else {
       // Same cheap Shape path as paint-hold — full Tile clips were hitching every step.
@@ -3735,6 +3746,7 @@ function openPanel(name: Screen): void {
   if (name === "creator-edit") {
     editCursor = { x: draft.spawn[0], y: draft.spawn[1] };
     editorPaintHeld = false;
+    creatorPaintKeyHeld = false;
     creatorStrokePainted = false;
     creatorKeyDirs.up = creatorKeyDirs.down = creatorKeyDirs.left = creatorKeyDirs.right = false;
     clearExtraMenuHeld();
@@ -6007,6 +6019,9 @@ function releaseHudInputFocus(): void {
 }
 
 function handleTouchPadDown(code: string): void {
+  if (extraView === "creator-edit" && (code === "Space" || code === "Enter")) {
+    creatorPaintKeyHeld = true;
+  }
   if (currentLabel() === "instructions") {
     if (code === "ArrowRight" || code === "ArrowDown") advanceInstructions(1);
     else if (code === "ArrowLeft" || code === "ArrowUp") advanceInstructions(-1);
@@ -6036,6 +6051,7 @@ function handleTouchPadDown(code: string): void {
 
 function endCreatorPaintStroke(): void {
   editorPaintHeld = false;
+  creatorPaintKeyHeld = false;
   lastPaintCell = "";
   cancelCreatorPreviewSettle();
   if (!creatorPaintStroke) return;
@@ -6048,7 +6064,10 @@ function endCreatorPaintStroke(): void {
 }
 
 function handleTouchPadUp(code: string): void {
-  if (extraView === "creator-edit" && (code === "Space" || code === "Enter")) endCreatorPaintStroke();
+  if (extraView === "creator-edit" && (code === "Space" || code === "Enter")) {
+    creatorPaintKeyHeld = false;
+    endCreatorPaintStroke();
+  }
   if (inStagePlay()) window.stage?.triggerKeyUp?.({ code });
 }
 
@@ -6079,7 +6098,9 @@ function bindMenuPad(): void {
     // Only end keyboard/pad paint holds. Mouse drag uses creatorPaintStroke without
     // editorPaintHeld — treating every "confirm up" frame as paint-end rebuilt the HUD
     // mid-stroke and killed CreateJS pressmove (one tile per click).
-    if (shouldEndCreatorStrokeFromPad(editorPaintHeld, held.has(pads.confirm))) {
+    // Keyboard Enter/Space must count as confirmHeld or the next tick clears the hold.
+    const confirmHeld = held.has(pads.confirm) || creatorPaintKeyHeld;
+    if (shouldEndCreatorStrokeFromPad(editorPaintHeld, confirmHeld)) {
       endCreatorPaintStroke();
     }
     const edges: { btn: number; fn: () => void }[] = [
@@ -6106,6 +6127,7 @@ function bindMenuPad(): void {
   }
   prevCreatorPad = new Set();
   clearExtraMenuHeld();
+  creatorPaintKeyHeld = false;
   creatorKeyDirs.up = creatorKeyDirs.down = creatorKeyDirs.left = creatorKeyDirs.right = false;
   if (uiBusy) {
     pollMenuPad();
@@ -6276,7 +6298,10 @@ function bind(): void {
 
   window.addEventListener("keyup", (ev) => {
     if (extraView === "creator-edit") {
-      if (ev.code === "Space" || ev.key === "Enter") endCreatorPaintStroke();
+      if (ev.code === "Space" || ev.key === "Enter") {
+        creatorPaintKeyHeld = false;
+        endCreatorPaintStroke();
+      }
       const act = actionFromCode(ev.code);
       let cleared = false;
       if (act === "up" || ev.key === "ArrowUp" || ev.code === "KeyW") {
@@ -6399,11 +6424,15 @@ function bind(): void {
       }
       if (act === "confirm" || ev.key === "Enter") {
         ev.preventDefault();
+        if (ev.repeat) return;
+        creatorPaintKeyHeld = true;
         handleCreatorNav("confirm");
         return;
       }
       if (act === "swap" || ev.code === "Space") {
         ev.preventDefault();
+        if (ev.repeat) return;
+        creatorPaintKeyHeld = true;
         editorPaintHeld = true;
         paintEditorAt(editCursor.x, editCursor.y, "start");
         return;
