@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { backingStoreSize, cappedStageScale, MAX_STAGE_SCALE } from "./stageScale";
+import {
+  backingStoreSize,
+  cappedStageScale,
+  cssOffsetToStageLocal,
+  MAX_STAGE_SCALE,
+} from "./stageScale";
 
 describe("cappedStageScale", () => {
   it("keeps windowed ~960 CSS near the cap without dropping DPR", () => {
@@ -32,5 +37,20 @@ describe("cappedStageScale", () => {
     const { stageScale } = cappedStageScale(display, 1.5);
     expect(stageScale).toBeCloseTo(1.8, 5);
     expect(stageScale).toBeLessThan(MAX_STAGE_SCALE);
+  });
+
+  it("maps CSS offsets to logical stage coords when buffer ≠ CSS (capped FS)", () => {
+    const display = Math.min(3840 / 550, 2160 / 300);
+    const { stageScale } = cappedStageScale(display, 1.5);
+    const cssW = 550 * display;
+    const cssH = 300 * display;
+    const { width: canvasW, height: canvasH } = backingStoreSize(550, 300, stageScale);
+    // Mid-canvas CSS click must land at logical (275, 150) — same as CreateJS localX/Y.
+    const mid = cssOffsetToStageLocal(cssW / 2, cssH / 2, cssW, cssH, canvasW, canvasH, stageScale, stageScale);
+    expect(mid.x).toBeCloseTo(275, 5);
+    expect(mid.y).toBeCloseTo(150, 5);
+    const corner = cssOffsetToStageLocal(0, 0, cssW, cssH, canvasW, canvasH, stageScale, stageScale);
+    expect(corner.x).toBeCloseTo(0, 5);
+    expect(corner.y).toBeCloseTo(0, 5);
   });
 });

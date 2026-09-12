@@ -440,6 +440,9 @@ let animateHome = false;
 let undoStack: LevelDef[] = [];
 let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
+/** True while a mouse/pad paint stroke is active — board preview uses cheap Shape diamonds. */
+let creatorPaintStroke = false;
+let beatCheckTimer = 0;
 let lastTintKey = "";
 let bgCycleLastMs = 0;
 let lastPlayHudKey = "";
@@ -3230,6 +3233,18 @@ function cycleEditorTool(dir: 1 | -1): void {
   paintHud();
 }
 
+function refreshCreatorPreview(forceShapes = creatorPaintStroke): void {
+  hud?.refreshCreatorBoard({
+    tiles: draft.tiles,
+    spawn: draft.spawn,
+    marks: editorMarks(draft),
+    cursor: editCursor,
+    spawnTool: paint.tool === "spawn",
+    colors: loadSettings().colorCustom,
+    forceShapes,
+  });
+}
+
 function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
   if (x < 0 || y < 0 || x >= 15 || y >= 10) return;
   if (phase === "drag") {
@@ -3254,14 +3269,9 @@ function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
   editCursor = { x, y };
   paintEditorCell(draft, x, y, paint);
   beaten = false;
-  hud?.refreshCreatorBoard({
-    tiles: draft.tiles,
-    spawn: draft.spawn,
-    marks: editorMarks(draft),
-    cursor: editCursor,
-    spawnTool: paint.tool === "spawn",
-    colors: loadSettings().colorCustom,
-  });
+  // Stroke path: Shape diamonds only — skip Tile/MovieClip construction per cell.
+  creatorPaintStroke = true;
+  refreshCreatorPreview(true);
 }
 
 function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "back"): void {
@@ -3276,24 +3286,13 @@ function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "ba
     if (ev === "down") editCursor.y = Math.min(9, editCursor.y + 1);
     const held = editorPaintHeld || heldPadButtons().has(loadSettings().pads.confirm);
     if (held) paintEditorAt(editCursor.x, editCursor.y, "drag");
-    else {
-      hud?.refreshCreatorBoard({
-        tiles: draft.tiles,
-        spawn: draft.spawn,
-        marks: editorMarks(draft),
-        cursor: editCursor,
-        spawnTool: paint.tool === "spawn",
-        colors: loadSettings().colorCustom,
-      });
-    }
+    else refreshCreatorPreview(false);
     return;
   }
   if (ev === "confirm") {
     editorPaintHeld = true;
     paintEditorAt(editCursor.x, editCursor.y, "start");
-    scheduleBeatCheck();
-    markHudDirty();
-    paintHud();
+    // Settle on confirm-release / paint-end — keep the stroke on Shape diamonds.
   }
 }
 
@@ -4411,10 +4410,7 @@ function handleHudAction(act: string): void {
     const y = Number(parts[2]);
     paintEditorAt(x, y, parts[3] === "drag" ? "drag" : "start");
   } else if (act === "paint-end") {
-    lastPaintCell = "";
-    scheduleBeatCheck();
-    markHudDirty();
-    paintHud();
+    endCreatorPaintStroke();
   } else if (act.startsWith("diff:")) {
     puzzleDiff = act.slice(5) as Difficulty;
     markHudDirty();
@@ -5745,7 +5741,8 @@ function commitTape(won: boolean, stageNo: number): void {
   tape = [];
 }
 
-function scheduleBeatCheck(): void {
+function runBeatCheck(): void {
+  creatorPaintStroke = false;
   const issue = isPlayable(draft);
   if (issue) {
     beatLabel = issue;
@@ -5758,6 +5755,23 @@ function scheduleBeatCheck(): void {
     markHudDirty();
     paintHud();
   }
+}
+
+/** Beatability solve; pass `{ deferMs }` to keep pointer/pad strokes off the main-thread hitch. */
+function scheduleBeatCheck(opts?: { deferMs?: number }): void {
+  if (beatCheckTimer) {
+    clearTimeout(beatCheckTimer);
+    beatCheckTimer = 0;
+  }
+  const defer = opts?.deferMs;
+  if (defer != null && defer >= 0) {
+    beatCheckTimer = window.setTimeout(() => {
+      beatCheckTimer = 0;
+      runBeatCheck();
+    }, defer) as unknown as number;
+    return;
+  }
+  runBeatCheck();
 }
 
 function saveDraft(): void {
@@ -5974,8 +5988,17 @@ function handleTouchPadDown(code: string): void {
   else if (code === "Space") handleMenuNav("confirm");
 }
 
+function endCreatorPaintStroke(): void {
+  editorPaintHeld = false;
+  lastPaintCell = "";
+  if (!creatorPaintStroke) return;
+  // Clear before defer so pad/keyup polling cannot re-arm the settle timer every frame.
+  creatorPaintStroke = false;
+  scheduleBeatCheck({ deferMs: 0 });
+}
+
 function handleTouchPadUp(code: string): void {
-  if (extraView === "creator-edit" && (code === "Space" || code === "Enter")) editorPaintHeld = false;
+  if (extraView === "creator-edit" && (code === "Space" || code === "Enter")) endCreatorPaintStroke();
   if (inStagePlay()) window.stage?.triggerKeyUp?.({ code });
 }
 
@@ -6003,7 +6026,7 @@ function bindMenuPad(): void {
   if (extraView === "creator-edit") {
     const held = heldPadButtons();
     const pads = loadSettings().pads;
-    if (!held.has(pads.confirm)) editorPaintHeld = false;
+    if (!held.has(pads.confirm)) endCreatorPaintStroke();
     const edges: { btn: number; fn: () => void }[] = [
       { btn: pads.swap, fn: () => cycleEditorTool(1) },
       { btn: 4, fn: () => cycleEditorTool(-1) },
@@ -6179,7 +6202,7 @@ function bind(): void {
 
   window.addEventListener("keyup", (ev) => {
     if (extraView === "creator-edit" && (ev.code === "Space" || ev.key === "Enter")) {
-      editorPaintHeld = false;
+      endCreatorPaintStroke();
     }
     if (currentLabel() !== "game") return;
     const act = actionFromCode(ev.code);
@@ -6285,9 +6308,6 @@ function bind(): void {
         ev.preventDefault();
         editorPaintHeld = true;
         paintEditorAt(editCursor.x, editCursor.y, "start");
-        scheduleBeatCheck();
-        markHudDirty();
-        paintHud();
         return;
       }
       if (ev.key === "q" || ev.key === "Q" || ev.key === "[") {

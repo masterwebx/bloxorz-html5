@@ -114,12 +114,19 @@ export function clipForTile(ch: string): { name: ClipName; dim: number } | null 
   }
 }
 
+/**
+ * Map HUD-local pointer coords onto a Coolmath face diamond.
+ * Faces cover grid square [x, x+1] × (y−1, y]; Math.round biased the visual
+ * center (x+0.5, y−0.5) onto the +X neighbor. Tiny EPS absorbs tip FP noise.
+ */
 export function pickBoardCell(localX: number, localY: number): { x: number; y: number } | null {
   const px = (localX - BOARD_OX) / BOARD_SCALE;
   const py = (localY - BOARD_OY) / BOARD_SCALE;
   const raw = unproject(px, py);
-  let x = Math.round(raw.x);
-  let y = Math.round(raw.y);
+  const EPS = 1e-6;
+  // `+ 0` clears signed-zero from ceil/floor near the axes (vitest deep-equal).
+  let x = Math.floor(raw.x + EPS) + 0;
+  let y = Math.ceil(raw.y - EPS) + 0;
   if (x >= 0 && y >= 0 && x < GRID_W && y < GRID_H) return { x, y };
   // Soft edge grab: clicks just outside the board still land on the nearest rim cell.
   const cx = Math.max(0, Math.min(GRID_W - 1, x));

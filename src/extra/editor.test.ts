@@ -247,4 +247,15 @@ describe("stage creator board assets", () => {
     expect(center.x).toBeCloseTo((a.x + b.x + c.x + d.x) / 4, 5);
     expect(center.y).toBeLessThan(tip.y);
   });
+
+  it("picks the cell under the cursor ring (face center), not the +X neighbor", () => {
+    for (let y = 0; y < 10; y++) {
+      for (let x = 0; x < 15; x++) {
+        const tip = boardScreen(x, y);
+        const center = boardCellCenter(x, y);
+        expect(pickBoardCell(tip.x, tip.y)).toEqual({ x, y });
+        expect(pickBoardCell(center.x, center.y)).toEqual({ x, y });
+      }
+    }
+  });
 });
