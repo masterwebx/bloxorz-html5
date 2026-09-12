@@ -1,5 +1,5 @@
 import atlasMap from "./atlasMap.json";
-import { getTheme, themeFileUrl, type ThemePack } from "./themePack";
+import { atlasUrlFor, getTheme, themeFileUrl, type ThemePack } from "./themePack";
 
 type AtlasFrame = {
   name: string;
@@ -22,6 +22,11 @@ export function themeAtlasFiles(): string[] {
     if (row.file) files.add(row.file);
   }
   return [...files];
+}
+
+/** Theme ids currently retained in the atlas canvas cache (tests / diagnostics). */
+export function cachedThemeAtlasIds(): string[] {
+  return [...cache.keys()];
 }
 
 function lookupPackFile(pack: ThemePack, file: string): string | null {
@@ -74,23 +79,55 @@ async function loadAll(srcs: string[]): Promise<Map<string, HTMLImageElement>> {
 }
 
 export function forgetThemeAtlas(id?: string): void {
-  if (id) cache.delete(id);
-  else cache.clear();
+  if (id) {
+    cache.delete(id);
+    return;
+  }
+  cache.clear();
 }
 
-/** Return a writable copy so tile/block bake never mutates the pristine cache. */
-function cloneAtlasCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("atlas");
-  ctx.drawImage(source, 0, 0);
-  return canvas;
+/** Drop every cached theme atlas except `keepId` (one 4096² sheet retained). */
+export function evictThemeAtlasesExcept(keepId: string): void {
+  for (const key of [...cache.keys()]) {
+    if (key === keepId) continue;
+    cache.delete(key);
+  }
 }
 
-export async function composeThemeAtlas(id: string, force = false): Promise<HTMLCanvasElement> {
-  if (!force && cache.has(id)) return cloneAtlasCanvas(cache.get(id)!);
+/**
+ * Prefer a packed `atlas.png` (theme.json `atlas` or default file) when it loads.
+ * Avoids decoding hundreds of slice PNGs into a fresh 4096² compose.
+ */
+async function tryLoadStaticAtlas(id: string): Promise<HTMLCanvasElement | null> {
+  const pack = getTheme(id);
+  const candidates: string[] = [];
+  const declared = atlasUrlFor(id);
+  if (declared) candidates.push(declared);
+  const fallback = themeFileUrl(id, pack.atlas || "atlas.png");
+  if (fallback && !candidates.includes(fallback)) candidates.push(fallback);
+  if (pack.builtin && pack.atlas !== "atlas.png") {
+    const plain = themeFileUrl(id, "atlas.png");
+    if (!candidates.includes(plain)) candidates.push(plain);
+  }
+  for (const src of candidates) {
+    if (!src) continue;
+    const img = await loadImage(src);
+    if (!img) continue;
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (w < 64 || h < 64) continue;
+    const canvas = document.createElement("canvas");
+    canvas.width = map.width;
+    canvas.height = map.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    return canvas;
+  }
+  return null;
+}
+
+async function composeFromSlices(id: string): Promise<HTMLCanvasElement> {
   const canvas = document.createElement("canvas");
   canvas.width = map.width;
   canvas.height = map.height;
@@ -112,7 +149,23 @@ export async function composeThemeAtlas(id: string, force = false): Promise<HTML
       ctx.drawImage(img, 0, 0, img.naturalWidth || img.width, img.naturalHeight || img.height, row.x, row.y, row.w, row.h);
     }
   }
+  images.clear();
+  return canvas;
+}
+
+/**
+ * Build or reuse the theme atlas. Returns the cached canvas (single sheet per theme).
+ * Callers that mutate pixels (color bake) must recompose via `force` / `forgetThemeAtlas`
+ * after Reset all — do not keep a second 4096² clone by default.
+ */
+export async function composeThemeAtlas(id: string, force = false): Promise<HTMLCanvasElement> {
+  if (!force && cache.has(id)) {
+    evictThemeAtlasesExcept(id);
+    return cache.get(id)!;
+  }
+  if (force) cache.delete(id);
+  const canvas = (await tryLoadStaticAtlas(id)) ?? (await composeFromSlices(id));
   cache.set(id, canvas);
-  // Callers (bake / Reset all) mutate the returned canvas — never hand out the cache.
-  return cloneAtlasCanvas(canvas);
+  evictThemeAtlasesExcept(id);
+  return canvas;
 }

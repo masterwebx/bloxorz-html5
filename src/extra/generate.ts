@@ -1,6 +1,6 @@
 import { H, LEVELS, occupied, Stage, W } from "./engine";
 import type { LevelDef, SplitDef, SwitchDef, SwitchMode } from "./types";
-import { applyCmd, shortestLen, solveLevel } from "./solve";
+import { applyCmd, solveLevel } from "./solve";
 import type { WalkCmd } from "./walkthrough";
 
 export type Difficulty = "easy" | "medium" | "hard" | "insane";
@@ -11,6 +11,8 @@ export interface Puzzle {
   difficulty: Difficulty;
   solutionLen: number;
   usedObstacles: number;
+  /** Shortest walk when known — attract / auto-solve reuse this and skip a second BFS. */
+  solution?: WalkCmd[];
 }
 
 export interface QualityOpts {
@@ -186,17 +188,23 @@ export function pruneOptionalSwitches(def: LevelDef, bfs: number): LevelDef {
 }
 
 export function tightenPuzzle(p: Puzzle, bfs: number): Puzzle {
-  const first = solveLevel(p.def, bfs);
+  const first =
+    p.solution?.length && p.solutionLen === p.solution.length
+      ? { ok: true as const, cmds: p.solution }
+      : solveLevel(p.def, bfs);
   if (!first.ok || !first.cmds.length) return p;
   let def = pruneUnusedSwitches(p.def, first.cmds);
   def = pruneOptionalSwitches(def, bfs);
   const again = solveLevel(def, bfs);
-  if (!again.ok || !again.cmds.length) return { ...p, def: pruneUnusedSwitches(p.def, first.cmds) };
+  if (!again.ok || !again.cmds.length) {
+    return { ...p, def: pruneUnusedSwitches(p.def, first.cmds), solution: first.cmds.slice() };
+  }
   return {
     ...p,
     def,
     solutionLen: again.cmds.length,
     usedObstacles: usedObstacleCount(def, again.cmds),
+    solution: again.cmds.slice(),
   };
 }
 
@@ -571,6 +579,7 @@ export function remixCampaign(seed: string, band: "mid" | "late" | "end", diffic
     difficulty,
     solutionLen: solved.ok ? solved.cmds.length : 80,
     usedObstacles: solved.ok ? usedObstacleCount(packed, solved.cmds) : countObstacles(packed.tiles),
+    solution: solved.ok ? solved.cmds.slice() : undefined,
   };
 }
 
@@ -615,6 +624,7 @@ export function remixCampaignSearch(
         difficulty,
         solutionLen: solved.cmds.length,
         usedObstacles: usedObstacleCount(packed, solved.cmds),
+        solution: solved.cmds.slice(),
       };
       if (accept(p)) return p;
     }
@@ -766,6 +776,7 @@ function finishPuzzle(
     difficulty,
     solutionLen: solved.cmds.length,
     usedObstacles: usedObstacleCount(pruned, solved.cmds),
+    solution: solved.cmds.slice(),
   };
 }
 
@@ -800,9 +811,11 @@ function tryPlain(rng: () => number, seed: string, difficulty: Difficulty, wantF
   const tiles = toTiles(grid);
   if (!inObstacleBand(tiles, difficulty)) return null;
   const def = packDef(tiles, spawn, seed);
-  const len = shortestLen(def, 80_000);
+  const solved = solveLevel(def, 80_000);
+  if (!solved.ok || !solved.cmds.length) return null;
+  const len = solved.cmds.length;
   if (len < band.min || len > band.max) return null;
-  return { def, seed, difficulty, solutionLen: len, usedObstacles: 0 };
+  return { def, seed, difficulty, solutionLen: len, usedObstacles: 0, solution: solved.cmds.slice() };
 }
 
 function tryBridges(rng: () => number, seed: string, difficulty: Difficulty): Puzzle | null {
@@ -847,10 +860,19 @@ function tryBridges(rng: () => number, seed: string, difficulty: Difficulty): Pu
   const tiles = toTiles(grid);
   if (!inObstacleBand(tiles, difficulty)) return null;
   const def = packDef(tiles, spawn, seed, switches);
-  const len = shortestLen(def, 120_000);
+  const solved = solveLevel(def, 120_000);
+  if (!solved.ok || !solved.cmds.length) return null;
+  const len = solved.cmds.length;
   const band = BAND[difficulty];
   if (len < Math.max(10, band.min - 4) || len > band.max + 8) return null;
-  return { def, seed, difficulty, solutionLen: len, usedObstacles: usedObstacleCount(def, solveLevel(def, 120_000).cmds) };
+  return {
+    def,
+    seed,
+    difficulty,
+    solutionLen: len,
+    usedObstacles: usedObstacleCount(def, solved.cmds),
+    solution: solved.cmds.slice(),
+  };
 }
 
 function trySplit(rng: () => number, seed: string, difficulty: Difficulty): Puzzle | null {
@@ -895,10 +917,19 @@ function trySplit(rng: () => number, seed: string, difficulty: Difficulty): Puzz
   const tiles = toTiles(grid);
   if (!inObstacleBand(tiles, difficulty)) return null;
   const def = packDef(tiles, spawn, seed, [], splits);
-  const len = shortestLen(def, 150_000);
+  const solved = solveLevel(def, 150_000);
+  if (!solved.ok || !solved.cmds.length) return null;
+  const len = solved.cmds.length;
   const band = BAND[difficulty];
   if (len < 8 || len > band.max + 10) return null;
-  return { def, seed, difficulty, solutionLen: len, usedObstacles: usedObstacleCount(def, solveLevel(def, 150_000).cmds) };
+  return {
+    def,
+    seed,
+    difficulty,
+    solutionLen: len,
+    usedObstacles: usedObstacleCount(def, solved.cmds),
+    solution: solved.cmds.slice(),
+  };
 }
 
 function farthest(list: [number, number][], from: [number, number]): [number, number] {
@@ -1711,13 +1742,18 @@ export function tryArchetypePuzzle(
   for (let i = 0; i < attempts; i++) {
     const raw = buildArchetypeCandidate(seed, arch, difficulty, i);
     if (!raw) continue;
-    const solved = solveLevel(raw.def, bfs);
+    // Reuse builder tape when present — avoid a second full BFS for the same floor.
+    const solved =
+      raw.solution?.length
+        ? { ok: true as const, cmds: raw.solution }
+        : solveLevel(raw.def, bfs);
     if (!solved.ok || !solved.cmds.length) continue;
     let p: Puzzle = {
       ...raw,
       seed,
       solutionLen: solved.cmds.length,
       usedObstacles: usedObstacleCount(raw.def, solved.cmds),
+      solution: solved.cmds.slice(),
     };
     if (quality) {
       p = tightenPuzzle(p, bfs);

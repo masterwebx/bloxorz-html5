@@ -37,6 +37,12 @@ export function attractTitleLabel(brand: string): string {
   return trimmed || "BLOXORZ+";
 }
 
+/** True when the attract billboard must be rebuilt (enter / brand change / hide). */
+export function shouldRepaintAttractTitle(prevKey: string, on: boolean, label: string): boolean {
+  if (!on) return prevKey !== "";
+  return prevKey !== label;
+}
+
 /** English Classic instruction bitmaps (“Use the arrow keys”, etc.). */
 export function classicInstructionBitmapsVisible(opts: {
   hdType: boolean;

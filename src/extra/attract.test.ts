@@ -6,6 +6,7 @@ import {
   attractIdleMs,
   attractTitleLabel,
   bumpAttractIdle,
+  shouldRepaintAttractTitle,
   shouldStartAttract,
 } from "./attract";
 
@@ -77,5 +78,13 @@ describe("title attract idle gate", () => {
     expect(attractTitleLabel("DEVORZ+")).toBe("DEVORZ+");
     expect(attractTitleLabel("  ")).toBe("BLOXORZ+");
     expect(ATTRACT_TITLE_Y).toBe(268);
+  });
+
+  it("gates attract title redraw until the label changes", () => {
+    expect(shouldRepaintAttractTitle("", true, "BLOXORZ+")).toBe(true);
+    expect(shouldRepaintAttractTitle("BLOXORZ+", true, "BLOXORZ+")).toBe(false);
+    expect(shouldRepaintAttractTitle("BLOXORZ+", true, "DEVORZ+")).toBe(true);
+    expect(shouldRepaintAttractTitle("BLOXORZ+", false, "")).toBe(true);
+    expect(shouldRepaintAttractTitle("", false, "")).toBe(false);
   });
 });

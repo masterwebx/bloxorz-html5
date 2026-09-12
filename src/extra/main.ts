@@ -124,7 +124,7 @@ import {
   setCurrentThemeId,
   themeMenuItems,
 } from "./themePack";
-import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
+import { composeThemeAtlas, evictThemeAtlasesExcept, forgetThemeAtlas } from "./themeAtlas";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playStageSting, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
 import { solveLevel } from "./solve";
@@ -146,6 +146,7 @@ import {
   bumpAttractIdle,
   classicCongratsVisible,
   classicInstructionBitmapsVisible,
+  shouldRepaintAttractTitle,
   shouldStartAttract,
 } from "./attract";
 import {
@@ -475,6 +476,10 @@ let finishStageCap: number | null = null;
 let attractMode = false;
 let attractIdleAt = Date.now();
 let attractFading = false;
+/** Last attract billboard paint key — gate redraws off CreateJS ticks. */
+let lastAttractTitlePaint = "";
+/** Bumps to cancel a deferred finish→next attract chain. */
+let attractChainToken = 0;
 let deleteSaveStep = 0;
 let packOrder: string[] = [];
 let packName = t("creator.untitledPack");
@@ -622,15 +627,10 @@ function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): HT
 }
 
 function invalidateBlockHueCache(): void {
+  releaseColorBakeCanvases();
   atlasRects = null;
   atlasCanvas = null;
-  blockHueSource = null;
-  blockHueLayout = null;
-  blockHueTinted = null;
   bakedBlockColor = null;
-  tileHueSource = {};
-  tileHueLayout = {};
-  tileHueTinted = {};
   tileFrameIndexes = null;
   bakedTileColors = {};
   tileAtlasReady = false;
@@ -668,9 +668,30 @@ function makeHueCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: 
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d");
+  // Readback only on bake scratches — do not force software backing on Stage/hit canvases.
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
   return { canvas, ctx };
+}
+
+function releaseBakeCanvas(canvas: HTMLCanvasElement | null | undefined): void {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+/** Drop packed block/tile bake sheets when customize is off (~tens of MB). */
+function releaseColorBakeCanvases(): void {
+  releaseBakeCanvas(blockHueSource);
+  releaseBakeCanvas(blockHueTinted);
+  for (const id of Object.keys(tileHueSource) as TileColorSlotId[]) releaseBakeCanvas(tileHueSource[id]);
+  for (const id of Object.keys(tileHueTinted) as TileColorSlotId[]) releaseBakeCanvas(tileHueTinted[id]);
+  blockHueSource = null;
+  blockHueLayout = null;
+  blockHueTinted = null;
+  tileHueSource = {};
+  tileHueLayout = {};
+  tileHueTinted = {};
 }
 
 /** Build / reuse packed block-only pristine source. Destination remains the live atlas. */
@@ -774,6 +795,15 @@ function applyBlockHue(force = false): void {
     void lastHueBakeMs;
     bakedBlockColor = next;
     clearPlayBlockHueFilters();
+    // Customize off → free packed sheets; live atlas already restored to pristine.
+    if (next === null) {
+      releaseBakeCanvas(blockHueSource);
+      releaseBakeCanvas(blockHueTinted);
+      blockHueSource = null;
+      blockHueLayout = null;
+      blockHueTinted = null;
+      atlasRects = null;
+    }
   };
   if (force || typeof requestAnimationFrame !== "function") run();
   else requestAnimationFrame(run);
@@ -884,6 +914,7 @@ function applyTileColors(force = false): void {
   }
   // All slots off after a prior bake (or packed extract) → restore pristine sheet.
   if (!anyOn) {
+    releaseColorBakeCanvases();
     restorePristineTileSheet();
     return;
   }
@@ -3566,6 +3597,7 @@ function defaultMenuCursor(): number {
 
 function applyTheme(theme: ThemeId, reload = false): void {
   const id = normalizeTheme(theme);
+  const prevId = currentThemeId();
   setCurrentThemeId(id);
   try {
     localStorage.setItem("theme", id);
@@ -3603,6 +3635,7 @@ function applyTheme(theme: ThemeId, reload = false): void {
     sel.value = id;
   }
   setHdRendering(isHdTheme(id));
+  if (prevId && prevId !== id) forgetThemeAtlas(prevId);
   void swapAtlasLive(id);
   applyLooks();
   for (const clip of hud?.hueClips() ?? []) (clip as { __bloxHue?: number }).__bloxHue = undefined;
@@ -3620,13 +3653,17 @@ function loadAtlasImage(theme: ThemeId): Promise<HTMLCanvasElement> {
   return composeThemeAtlas(theme);
 }
 
-async function swapAtlasLive(theme: ThemeId): Promise<void> {
+async function swapAtlasLive(theme: ThemeId, ready?: HTMLCanvasElement | null): Promise<void> {
   try {
-    const img = await loadAtlasImage(theme);
+    const img = ready ?? (await loadAtlasImage(theme));
+    evictThemeAtlasesExcept(theme);
+    // New sheet pixels — drop any prior color-bake packs tied to the old atlas.
+    invalidateBlockHueCache();
     const sheet = atlasSheet();
     if (sheet) adoptAtlasCanvas(sheet, img);
     const images = adobeComp()?.getImages?.();
     if (images) images.bloxorz_atlas_ = img;
+    atlasCanvas = img;
     refreshPlayTilesAfterTheme();
   } catch {
     /* keep current atlas */
@@ -4128,6 +4165,10 @@ function handleHudAction(act: string): void {
     });
     activeColorPreset = DEFAULT_COLOR_PRESET_NAME;
     applyLooks();
+    releaseColorBakeCanvases();
+    bakedBlockColor = null;
+    atlasRects = null;
+    bakedTileColors = {};
     scheduleBlockHueBake(80);
     applyTileColors(true);
     markHudDirty();
@@ -4941,11 +4982,42 @@ function showAttractTitle(on: boolean): void {
   const el = ensureAttractTitle();
   el.textContent = "";
   el.classList.remove("is-on");
-  if (!on) return;
+  if (!on) {
+    lastAttractTitlePaint = "";
+    return;
+  }
   const label = attractTitleLabel(brandName(getName()));
+  if (!shouldRepaintAttractTitle(lastAttractTitlePaint, true, label)) {
+    hud?.setVisible(true);
+    raiseHud();
+    return;
+  }
+  lastAttractTitlePaint = label;
   hud?.setVisible(true);
   raiseHud();
   hud?.drawAttractTitle(label);
+}
+
+/** Finish tick must not also pay generateAttract — defer to idle/rAF. */
+function scheduleNextAttractRun(): void {
+  const token = ++attractChainToken;
+  const kick = () => {
+    if (token !== attractChainToken) return;
+    if (!attractMode && !playSession?.attract) return;
+    startAttractRun();
+  };
+  const ric = (
+    window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    }
+  ).requestIdleCallback;
+  if (typeof ric === "function") {
+    ric(() => kick(), { timeout: 120 });
+  } else if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => kick());
+  } else {
+    window.setTimeout(kick, 0);
+  }
 }
 
 function startAttractRun(): void {
@@ -4961,14 +5033,21 @@ function startAttractRun(): void {
     record: false,
     attract: true,
   });
-  const result = solveLevel(p.def);
-  if (result.ok && result.cmds.length) {
+  const tape =
+    p.solution?.length
+      ? p.solution
+      : (() => {
+          const result = solveLevel(p.def);
+          return result.ok ? result.cmds : [];
+        })();
+  if (tape.length) {
     autoSolve = true;
-    solveTape = result.cmds.slice() as TapeCmd[];
+    solveTape = tape.slice() as TapeCmd[];
     solveFeeder = createFeeder(solveTape);
     solveRetries = 0;
     beatBanner = "";
   }
+  lastAttractTitlePaint = "";
   showAttractTitle(true);
 }
 
@@ -4987,6 +5066,7 @@ function beginAttractMode(): void {
 
 function endAttractMode(): void {
   if (!attractMode && !playSession?.attract) return;
+  attractChainToken++;
   attractMode = false;
   attractFading = true;
   showAttractTitle(false);
@@ -6180,8 +6260,8 @@ function syncOverlay(): void {
       window.stage?.bloxWorld?.destroy?.();
       setVanillaCongraVisible(false);
       setInstructionBitmaps(false);
-      // Chain another random seeded demo — no finish UI / title cards.
-      startAttractRun();
+      // Chain another random seeded demo off this tick (generation is expensive).
+      scheduleNextAttractRun();
       return;
     }
     if (playSession?.replay) {
@@ -6620,9 +6700,20 @@ export function startBloxorzShell(): void {
     applyDomCopy();
     setHdRendering(isHdTheme(theme));
     applyThemeMedia();
-    if (theme !== savedTheme) await composeThemeAtlas(theme).catch(() => null);
-    else await warmAtlas;
-    void swapAtlasLive(theme);
+    let atlas: HTMLCanvasElement | null = null;
+    if (theme !== savedTheme) {
+      forgetThemeAtlas(savedTheme);
+      atlas = await composeThemeAtlas(theme).catch(() => null);
+    } else {
+      atlas = await warmAtlas;
+    }
+    await swapAtlasLive(theme, atlas);
+    if (liveBlockTint() || anyTileTintOn()) {
+      applyBlockHue(true);
+      applyTileColors(true);
+    } else {
+      releaseColorBakeCanvases();
+    }
     lastHudPaint = "";
     markHudDirty();
     paintHud();
@@ -6746,19 +6837,5 @@ window.__bloxLoadThemeAtlas = async (theme: string) => {
   const id = await bootThemes(theme);
   return composeThemeAtlas(id, true);
 };
-
-(function patchHitCanvas(): void {
-  if (typeof HTMLCanvasElement === "undefined") return;
-  const proto = HTMLCanvasElement.prototype as typeof HTMLCanvasElement.prototype & { __bloxHit?: boolean };
-  if (proto.__bloxHit) return;
-  proto.__bloxHit = true;
-  const orig = proto.getContext;
-  proto.getContext = function (this: HTMLCanvasElement, type: string, attrs?: CanvasRenderingContext2DSettings) {
-    if (type === "2d") {
-      return orig.call(this, type, { ...(attrs || {}), willReadFrequently: true });
-    }
-    return orig.call(this, type, attrs);
-  } as typeof orig;
-})();
 
 gateSoundPlay();

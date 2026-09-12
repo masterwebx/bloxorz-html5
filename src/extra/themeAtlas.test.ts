@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { themeAtlasFiles } from "./themeAtlas";
+import { cachedThemeAtlasIds, forgetThemeAtlas, themeAtlasFiles } from "./themeAtlas";
 
 describe("theme atlas folders", () => {
   it("maps sprites to folder files instead of atlas.png", () => {
@@ -15,7 +15,12 @@ describe("theme atlas folders", () => {
     expect(files).toContain("misc/wina.png");
     expect(files.some((f) => f.endsWith("atlas.png"))).toBe(false);
   });
+
+  it("exposes cache ids for eviction checks", () => {
+    forgetThemeAtlas();
+    expect(cachedThemeAtlasIds()).toEqual([]);
+  });
 });
 
-/** composeThemeAtlas returns clones of the pristine cache (see themeAtlas.ts) so
- *  tile/block bake cannot poison Reset all / Default — verified manually in-browser. */
+/** composeThemeAtlas keeps a single sheet per active theme (evicts others) and
+ *  prefers themes/<id>/atlas.png when that file loads — verified in-browser for RAM. */
