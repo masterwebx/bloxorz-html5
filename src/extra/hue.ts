@@ -51,10 +51,25 @@ export function clipHueAction(prev: number | undefined, hue: number, animating: 
   return animating ? "update" : "skip";
 }
 
-export function shiftingHue(base: number, enabled: boolean, elapsedMs: number, degPerSec = 24): number {
+/** Backdrop hue-cycle speed (°/s). ~60s for a full spectrum pass — slow and continuous. */
+export const BG_CYCLE_DEG_PER_SEC = 6;
+
+/**
+ * Continuous hue for backdrop cycling. Returns a fractional degree in [0, 360)
+ * so callers can drive smooth CSS / ColorMatrix updates without 1° steps.
+ */
+export function shiftingHue(base: number, enabled: boolean, elapsedMs: number, degPerSec = BG_CYCLE_DEG_PER_SEC): number {
   const start = wrapHue(base);
-  if (!enabled) return Math.round(start);
-  return Math.round(wrapHue(start + (elapsedMs / 1000) * degPerSec));
+  if (!enabled) return start;
+  return wrapHue(start + (elapsedMs / 1000) * degPerSec);
+}
+
+/** Rotate a #rrggbb swatch by hue degrees (backdrop cycle fill). */
+export function shiftHexHue(hex: string, degrees: number): string {
+  const rgb = parseHexRgb(hex);
+  if (!rgb || !degrees) return hex;
+  const [r, g, b] = hueRotateRgb(rgb[0], rgb[1], rgb[2], degrees);
+  return `#${[r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function rustFaces(hue: number): { top: string; left: string; right: string; edge: string } {

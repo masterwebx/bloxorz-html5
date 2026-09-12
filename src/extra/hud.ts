@@ -646,15 +646,17 @@ export class ExtraHud {
           slot.id === "bg" ? 44 : 56,
         ),
       );
+      // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
+      this.add(this.act(pickId, " ", 198, y, 11, false, 28));
       if (slot.id === "bg") {
-        // Cycle sits beside Off/On — backdrop-only hue shift (not the block).
+        // Cycle sits to the right of the backdrop swatch — backdrop-only hue shift.
         const cycleId = "toggle-bg-cycle";
         const cycleOn = !!opts.bgCycle;
         this.add(
           this.act(
             cycleId,
             `${this.focusId === cycleId ? "> " : "  "}${t("settings.colorCycle")}${cycleOn ? " ✓" : ""}`,
-            164,
+            232,
             y,
             11,
             false,
@@ -662,8 +664,6 @@ export class ExtraHud {
           ),
         );
       }
-      // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
-      this.add(this.act(pickId, " ", 198, y, 11, false, 28));
     });
     // Last slot (Bridge R) ends at y≈202. Vertical stack below — never beside Bridge R or each other.
     const loadY = 218;
@@ -778,10 +778,15 @@ export class ExtraHud {
     falls: number;
     fails: number;
     rows: { title: string; meta: string }[];
+    scroll?: number;
+    pageSize?: number;
   }): void {
     this.clear();
     this.hideMascot();
     const theme = paint();
+    const scroll = Math.max(0, opts.scroll ?? 0);
+    const pageSize = opts.pageSize ?? 5;
+    const total = opts.rows.length;
     const heading = opts.title.toUpperCase();
     if (canBillboard(heading)) {
       const label = foldBillboard(heading).slice(0, 18);
@@ -794,10 +799,23 @@ export class ExtraHud {
     this.add(text(opts.cleared, 275, 62, 12, theme.muted, "center"));
     this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 86, 12, theme.ink, "center"));
     if (!opts.rows.length) this.add(text(t("finish.none"), 40, 118, 11, theme.muted));
-    opts.rows.slice(0, 5).forEach((row, i) => {
+    opts.rows.slice(scroll, scroll + pageSize).forEach((row, i) => {
       this.add(text(row.title, 40, 118 + i * 22, 11));
       this.add(text(row.meta, 320, 118 + i * 22, 11, theme.muted));
     });
+    if (total > pageSize) {
+      const trackH = 140;
+      const trackX = 528;
+      const trackY = 112;
+      const bar = new createjs.Shape();
+      bar.graphics.beginFill(theme.track).drawRect(trackX, trackY, 6, trackH);
+      const thumbH = Math.max(18, trackH * (pageSize / total));
+      const max = Math.max(1, total - pageSize);
+      const thumbY = trackY + (trackH - thumbH) * (scroll / max);
+      bar.graphics.beginFill(theme.fill).drawRect(trackX, thumbY, 6, thumbH);
+      bar.mouseEnabled = false;
+      this.add(bar);
+    }
     // Screenshot + Menu anchored bottom-left under the stage list.
     this.add(this.act("screenshot", t("finish.screenshot"), 40, 268, 12, false, 130));
     this.add(this.act("back", t("common.menu"), 180, 268, 12, false, 90));

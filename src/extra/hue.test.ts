@@ -21,6 +21,8 @@ import {
   packBlockLayout,
   rustFaces,
   shiftingHue,
+  shiftHexHue,
+  BG_CYCLE_DEG_PER_SEC,
   clipHueAction,
 } from "./hue";
 
@@ -52,11 +54,17 @@ describe("block hue bake", () => {
     expect(baked.data[2]).toBeGreaterThan(140);
   });
 
-  it("shifts the block hue over time only when enabled", () => {
+  it("shifts hue continuously over time only when enabled", () => {
     expect(shiftingHue(10, false, 10_000)).toBe(10);
     expect(shiftingHue(10, true, 0)).toBe(10);
     expect(shiftingHue(10, true, 1000, 24)).toBe(34);
     expect(shiftingHue(350, true, 1000, 24)).toBe(14);
+    // Fractional degrees — no hard 1° steps.
+    expect(shiftingHue(10, true, 500, 24)).toBe(22);
+    expect(shiftingHue(0, true, 250, 6)).toBeCloseTo(1.5, 5);
+    expect(BG_CYCLE_DEG_PER_SEC).toBe(6);
+    expect(shiftHexHue("#b86a2e", 0)).toBe("#b86a2e");
+    expect(shiftHexHue("#ff0000", 120)).not.toBe("#ff0000");
     expect(hueDelta(10, 14)).toBe(4);
     expect(hueDelta(350, 10)).toBe(20);
     expect(clipHueAction(undefined, 0, true)).toBe("skip");

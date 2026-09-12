@@ -43,7 +43,9 @@ import {
   needsBlockColorBake,
   needsTileColorBake,
   packBlockLayout,
+  BG_CYCLE_DEG_PER_SEC,
   parseHexRgb,
+  shiftHexHue,
   shiftingHue,
   TILE_COLOR_SLOTS,
   type AtlasRect,
@@ -358,6 +360,7 @@ type LibCtor = {
 const NAME_KEY = "bloxorz-player-name";
 const LIST_PAGE = 6;
 const LIST_HISTORY = 5;
+const LIST_FINISH = 5;
 const VANILLA_BUTTONS = ["startNewGame", "resumeGame", "loadStage", "toggleSound", "credits"];
 const KEY_CMD: Record<string, TapeCmd> = {
   ArrowUp: "up",
@@ -996,12 +999,14 @@ function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string,
   if (!sprite) return;
   const tagged = sprite as SkyClip & { __bloxTintKey?: string };
   const hex = normalizeHex(tintHex);
-  const cycle = Math.round(cycleHue) % 360;
+  const cycle = ((cycleHue % 360) + 360) % 360;
   const tintOn = sThemeBg() && amt > 0.01 && !!cjs?.ColorFilter;
+  // Tenths of a degree — continuous enough without thrashing the filter cache every frame.
+  const cycleKey = Math.round(cycle * 10);
   const key =
-    !sThemeBg() || (!tintOn && !cycle)
+    !sThemeBg() || (!tintOn && !cycleKey)
       ? "off"
-      : `${hex}|${amt.toFixed(3)}|c${cycle}`;
+      : `${hex}|${amt.toFixed(3)}|c${cycleKey}`;
   if (tagged.__bloxTintKey === key) return;
   tagged.__bloxTintKey = key;
   if (key === "off") {
@@ -2782,7 +2787,6 @@ function navItems(): NavItem[] {
     const rows: NavItem[] = [{ id: "settings" }];
     for (const slot of COLOR_SLOT_META) {
       rows.push({ id: "color-toggle:" + slot.id });
-      if (slot.id === "bg") rows.push({ id: "toggle-bg-cycle" });
       rows.push({
         id: "color-pick:" + slot.id,
         adjust: () => {
@@ -2791,6 +2795,8 @@ function navItems(): NavItem[] {
           el?.click();
         },
       });
+      // Cycle sits after the backdrop swatch in focus order (right of the picker).
+      if (slot.id === "bg") rows.push({ id: "toggle-bg-cycle" });
     }
     rows.push({
       id: "color-preset",
@@ -3107,6 +3113,19 @@ function moveNav(dir: 1 | -1): void {
       return;
     }
   }
+  if (extraView === "finish") {
+    const maxScroll = Math.max(0, finishStatRows().length - LIST_FINISH);
+    if (dir === 1 && menuCursor >= navItems().length - 1 && listScroll < maxScroll) {
+      listScroll += 1;
+      menuCursor = navItems().length - 1;
+      return;
+    }
+    if (dir === -1 && menuCursor <= 0 && listScroll > 0) {
+      listScroll -= 1;
+      menuCursor = 0;
+      return;
+    }
+  }
   const items = navItems();
   if (!items.length) return;
   let i = menuCursor;
@@ -3272,13 +3291,18 @@ function paintHud(): void {
   } else if (extraView === "finish") {
     const st = window.stage;
     const copy = finishCopy();
+    const rows = finishStatRows();
+    const maxScroll = Math.max(0, rows.length - LIST_FINISH);
+    if (listScroll > maxScroll) listScroll = maxScroll;
     hud.drawFinish({
       title: copy.title,
       cleared: copy.cleared,
       moves: lastFinished?.totalMoves ?? st?.totalMoves ?? 0,
       falls: lastFinishFalls || st?.totalFalls || 0,
       fails: lastFinished?.fails ?? 0,
-      rows: finishStatRows(),
+      rows,
+      scroll: listScroll,
+      pageSize: LIST_FINISH,
     });
   } else if (extraView === "puzzles") {
     hud.drawPuzzles(utcDateLabel());
@@ -3425,7 +3449,7 @@ function openPanel(name: Screen): void {
     noteTitleActivity();
   }
   if (name === "load") loadError = "";
-  if (name === "creator-manage" || name === "creator-saved" || name === "creator-pack" || name === "history" || name === "achievements" || name === "records") listScroll = 0;
+  if (name === "creator-manage" || name === "creator-saved" || name === "creator-pack" || name === "history" || name === "achievements" || name === "records" || name === "finish") listScroll = 0;
   if (name === "creator-pack") {
     packOrder = [];
     packName = t("creator.untitledPack");
@@ -5314,11 +5338,12 @@ function applyPlayTint(): void {
   if (sky) sky.visible = !cam && sky.visible;
   // CSS handles hue-cycle for DOM theme media / webcam; CreateJS sky needs a light filter update.
   const hasDomBg = document.body.classList.contains("has-theme-media") || cam;
-  const cycleHue = s.bgCycle && !hasDomBg ? shiftingHue(0, true, performance.now(), 22) : 0;
+  const cycleHue = s.bgCycle && !hasDomBg ? shiftingHue(0, true, performance.now(), BG_CYCLE_DEG_PER_SEC) : 0;
   applySkySpriteTint(cam ? null : skySpr, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0, cycleHue);
   applySkySpriteTint(cam ? null : sky, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0, cycleHue);
   if (!gc?.addChildAt || !cjs?.Shape) return;
-  const key = `${bg?.tint ?? 0}|${bg?.hex || ""}|${s.themeBg}|${cam}|c${Math.round(cycleHue)}`;
+  // Tenths-degree key so the overlay fill tracks a continuous spectrum without 1° jumps.
+  const key = `${bg?.tint ?? 0}|${bg?.hex || ""}|${s.themeBg}|${cam}|c${Math.round(cycleHue * 10)}`;
   let overlay = gc.__bloxTint;
   const listed = !!(overlay && gc.children?.includes(overlay));
   if (!listed) {
@@ -5340,7 +5365,8 @@ function applyPlayTint(): void {
   lastTintKey = key;
   overlay.graphics.clear();
   if (s.themeBg && bg && !cam) {
-    overlay.graphics.beginFill(hexCss(bg.hex, 1)).drawRect(-40, -40, 630, 380);
+    const fillHex = cycleHue ? shiftHexHue(bg.hex, cycleHue) : bg.hex;
+    overlay.graphics.beginFill(hexCss(fillHex, 1)).drawRect(-40, -40, 630, 380);
     overlay.alpha = Math.min(0.55, 0.12 + bg.tint * 0.4);
     overlay.visible = true;
   } else {
@@ -5704,6 +5730,15 @@ function bind(): void {
   window.addEventListener(
     "wheel",
     (ev) => {
+      if (extraView === "finish") {
+        const max = Math.max(0, finishStatRows().length - LIST_FINISH);
+        if (!max) return;
+        ev.preventDefault();
+        listScroll = Math.max(0, Math.min(max, listScroll + (ev.deltaY > 0 ? 1 : -1)));
+        markHudDirty();
+        paintHud();
+        return;
+      }
       if (extraView === "history") {
         const max = Math.max(0, loadFinishedStages().length - LIST_HISTORY);
         if (!max) return;
@@ -5946,7 +5981,8 @@ function syncOverlay(): void {
   // Backdrop-only CreateJS sky cycle (DOM media uses CSS animation — skip here).
   if (loadSettings().bgCycle) {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-    if (now - bgCycleLastMs >= 64) {
+    // ~60fps updates for continuous hue — cheap overlay RGB rotate, not block atlas work.
+    if (now - bgCycleLastMs >= 16) {
       bgCycleLastMs = now;
       const cam = usingLiveBg();
       const hasDomBg = document.body.classList.contains("has-theme-media") || cam;
@@ -6025,6 +6061,23 @@ function syncOverlay(): void {
     if (playSession?.replay) {
       lastLabel = label;
       leavePlayTo(playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "history");
+      return;
+    }
+    // Stage Creator TEST / custom draft play — return to editor, no normal win screen.
+    const creatorTest =
+      playSession?.returnTo === "creator-edit" || playSession?.entry === "creator-test";
+    if (creatorTest) {
+      lastLabel = label;
+      beaten = true;
+      if (autoSolve) stopAutoSolve("");
+      rumble(220, 0.45, 0.4);
+      const finishStage = lastLevelNum || stage?.levelNumber || 1;
+      if (tape.length) {
+        commitTape(true, finishStage);
+        persistWonStage(finishStage);
+      }
+      reportPlayWin(finishStage);
+      leavePlayTo("creator-edit");
       return;
     }
     if (autoSolve) stopAutoSolve("");
