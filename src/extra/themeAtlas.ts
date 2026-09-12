@@ -13,8 +13,11 @@ type AtlasFrame = {
   srcY?: number;
 };
 
+/** Retained sheet: prefer HTMLImageElement (decoded bitmap, no live canvas buffer). */
+export type ThemeAtlasSheet = HTMLCanvasElement | HTMLImageElement;
+
 const map = atlasMap as { width: number; height: number; frames: AtlasFrame[] };
-const cache = new Map<string, HTMLCanvasElement>();
+const cache = new Map<string, ThemeAtlasSheet>();
 
 export function themeAtlasFiles(): string[] {
   const files = new Set<string>();
@@ -78,27 +81,38 @@ async function loadAll(srcs: string[]): Promise<Map<string, HTMLImageElement>> {
   return out;
 }
 
+function releaseSheet(sheet: ThemeAtlasSheet | undefined): void {
+  if (!sheet) return;
+  if (sheet instanceof HTMLCanvasElement) {
+    sheet.width = 0;
+    sheet.height = 0;
+  }
+}
+
 export function forgetThemeAtlas(id?: string): void {
   if (id) {
+    releaseSheet(cache.get(id));
     cache.delete(id);
     return;
   }
+  for (const sheet of cache.values()) releaseSheet(sheet);
   cache.clear();
 }
 
-/** Drop every cached theme atlas except `keepId` (one 4096² sheet retained). */
+/** Drop every cached theme atlas except `keepId` (one sheet retained). */
 export function evictThemeAtlasesExcept(keepId: string): void {
   for (const key of [...cache.keys()]) {
     if (key === keepId) continue;
+    releaseSheet(cache.get(key));
     cache.delete(key);
   }
 }
 
 /**
  * Prefer a packed `atlas.png` (theme.json `atlas` or default file) when it loads.
- * Avoids decoding hundreds of slice PNGs into a fresh 4096² compose.
+ * Returns an HTMLImageElement — no 4096² canvas retained for default play.
  */
-async function tryLoadStaticAtlas(id: string): Promise<HTMLCanvasElement | null> {
+async function tryLoadStaticAtlas(id: string): Promise<HTMLImageElement | null> {
   const pack = getTheme(id);
   const candidates: string[] = [];
   const declared = atlasUrlFor(id);
@@ -116,23 +130,48 @@ async function tryLoadStaticAtlas(id: string): Promise<HTMLCanvasElement | null>
     const w = img.naturalWidth || img.width;
     const h = img.naturalHeight || img.height;
     if (w < 64 || h < 64) continue;
-    const canvas = document.createElement("canvas");
-    canvas.width = map.width;
-    canvas.height = map.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0);
-    return canvas;
+    return img;
   }
   return null;
 }
 
-async function composeFromSlices(id: string): Promise<HTMLCanvasElement> {
+/** Turn a composed canvas into a PNG Image and drop the live canvas buffer. */
+async function canvasToImage(canvas: HTMLCanvasElement): Promise<HTMLImageElement> {
+  const blob = await new Promise<Blob | null>((resolve) => {
+    try {
+      canvas.toBlob((b) => resolve(b), "image/png");
+    } catch {
+      resolve(null);
+    }
+  });
+  if (!blob) {
+    // Fallback: keep canvas if toBlob unsupported
+    return canvas as unknown as HTMLImageElement;
+  }
+  const url = URL.createObjectURL(blob);
+  const img = await loadImage(url);
+  canvas.width = 0;
+  canvas.height = 0;
+  // Revoke after decode; Image keeps its own bitmap.
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    /* ignore */
+  }
+  if (!img) throw new Error("atlas-image");
+  return img;
+}
+
+async function composeFromSlices(id: string): Promise<ThemeAtlasSheet> {
+  // Match packed atlas.png: half-res sheet keeps cold RAM under budget; draw path upscales.
+  const scale = 0.5;
   const canvas = document.createElement("canvas");
-  canvas.width = map.width;
-  canvas.height = map.height;
+  canvas.width = Math.round(map.width * scale);
+  canvas.height = Math.round(map.height * scale);
+  // Default GPU-friendly context — never willReadFrequently on the full sheet.
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("atlas");
+  ctx.imageSmoothingEnabled = true;
   const needed = themeAtlasFiles();
   const urls = [...new Set(needed.map((file) => resolveAtlasFile(id, file)).filter((u): u is string => !!u))];
   const images = await loadAll(urls);
@@ -141,31 +180,59 @@ async function composeFromSlices(id: string): Promise<HTMLCanvasElement> {
     const src = resolveAtlasFile(id, row.file);
     const img = src ? images.get(src) : null;
     if (!img) continue;
+    const dx = Math.round(row.x * scale);
+    const dy = Math.round(row.y * scale);
+    const dw = Math.max(1, Math.round(row.w * scale));
+    const dh = Math.max(1, Math.round(row.h * scale));
     if (row.folder === "block") {
       const sx = row.srcX ?? 0;
       const sy = row.srcY ?? 0;
-      ctx.drawImage(img, sx, sy, row.w, row.h, row.x, row.y, row.w, row.h);
+      ctx.drawImage(img, sx, sy, row.w, row.h, dx, dy, dw, dh);
     } else {
-      ctx.drawImage(img, 0, 0, img.naturalWidth || img.width, img.naturalHeight || img.height, row.x, row.y, row.w, row.h);
+      ctx.drawImage(img, 0, 0, img.naturalWidth || img.width, img.naturalHeight || img.height, dx, dy, dw, dh);
     }
   }
   images.clear();
-  return canvas;
+  // Prefer Image retention so we do not keep a permanent canvas backing store.
+  try {
+    return await canvasToImage(canvas);
+  } catch {
+    return canvas;
+  }
 }
 
 /**
- * Build or reuse the theme atlas. Returns the cached canvas (single sheet per theme).
+ * Build or reuse the theme atlas. Returns the cached sheet (single image/canvas per theme).
  * Callers that mutate pixels (color bake) must recompose via `force` / `forgetThemeAtlas`
  * after Reset all — do not keep a second 4096² clone by default.
  */
-export async function composeThemeAtlas(id: string, force = false): Promise<HTMLCanvasElement> {
+export async function composeThemeAtlas(id: string, force = false): Promise<ThemeAtlasSheet> {
   if (!force && cache.has(id)) {
     evictThemeAtlasesExcept(id);
     return cache.get(id)!;
   }
-  if (force) cache.delete(id);
-  const canvas = (await tryLoadStaticAtlas(id)) ?? (await composeFromSlices(id));
-  cache.set(id, canvas);
+  if (force) {
+    releaseSheet(cache.get(id));
+    cache.delete(id);
+  }
+  const sheet = (await tryLoadStaticAtlas(id)) ?? (await composeFromSlices(id));
+  cache.set(id, sheet);
   evictThemeAtlasesExcept(id);
+  return sheet;
+}
+
+/** Materialize a writable FULL-LOGICAL canvas from a cached sheet (color bake only). */
+export function sheetToWritableCanvas(sheet: ThemeAtlasSheet): HTMLCanvasElement | null {
+  if (sheet instanceof HTMLCanvasElement && sheet.width === map.width && sheet.height === map.height) {
+    return sheet;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = map.width;
+  canvas.height = map.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  // Upscale half-res (or any scaled) sheet back to logical 4096 so bake rects match ssMetadata.
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sheet, 0, 0, map.width, map.height);
   return canvas;
 }

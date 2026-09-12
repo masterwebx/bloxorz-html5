@@ -124,7 +124,14 @@ import {
   setCurrentThemeId,
   themeMenuItems,
 } from "./themePack";
-import { composeThemeAtlas, evictThemeAtlasesExcept, forgetThemeAtlas } from "./themeAtlas";
+import {
+  composeThemeAtlas,
+  evictThemeAtlasesExcept,
+  forgetThemeAtlas,
+  sheetToWritableCanvas,
+  type ThemeAtlasSheet,
+} from "./themeAtlas";
+import { atlasScaleForSheet, patchCreateJsAtlasScale, setAtlasImageScale } from "./atlasScale";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playStageSting, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
 import { solveLevel } from "./solve";
@@ -449,7 +456,8 @@ let webcamStream: MediaStream | null = null;
 let tabCastStream: MediaStream | null = null;
 let tabCastPrompt: Promise<void> | null = null;
 let atlasRects: AtlasRect[] | null = null;
-let atlasCanvas: HTMLCanvasElement | null = null;
+/** Live atlas sheet (Image preferred; Canvas only while color-bake mutates pixels). */
+let atlasCanvas: ThemeAtlasSheet | null = null;
 /** Packed pristine block-only sheet (not the full 4096² atlas). */
 let blockHueSource: HTMLCanvasElement | null = null;
 let blockHueLayout: PackedBlockLayout | null = null;
@@ -600,29 +608,39 @@ type SpriteSheetLike = {
   _frames?: { image?: CanvasImageSource }[];
 };
 
-function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): HTMLCanvasElement | null {
-  let canvas: HTMLCanvasElement;
-  if (source instanceof HTMLCanvasElement) {
-    canvas = source;
-  } else if (source instanceof HTMLImageElement) {
-    canvas = document.createElement("canvas");
-    canvas.width = source.naturalWidth || source.width;
-    canvas.height = source.naturalHeight || source.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    // Keep default smoothing on whole-atlas adopt — NN here softens in-game tiles.
-    ctx.drawImage(source, 0, 0);
-  } else {
+/**
+ * Point CreateJS frames at `source` without copying Image → 4096² canvas.
+ * Color bake calls `ensureWritableAtlas` when it needs a mutable sheet.
+ */
+function adoptAtlasCanvas(sheet: SpriteSheetLike, source: CanvasImageSource): ThemeAtlasSheet | null {
+  if (!(source instanceof HTMLCanvasElement) && !(source instanceof HTMLImageElement)) {
     return null;
   }
+  patchCreateJsAtlasScale();
+  setAtlasImageScale(atlasScaleForSheet(source));
   if (sheet._images) {
-    for (let i = 0; i < sheet._images.length; i++) sheet._images[i] = canvas;
+    for (let i = 0; i < sheet._images.length; i++) sheet._images[i] = source;
   }
-  for (const frame of sheet._frames ?? []) frame.image = canvas;
+  for (const frame of sheet._frames ?? []) frame.image = source;
   // Invalidate hue bake only when the sheet is rebuilt from a fresh bitmap.
   if (source instanceof HTMLImageElement) {
     invalidateBlockHueCache();
   }
+  return source;
+}
+
+/** Promote the live atlas to a writable FULL-LOGICAL canvas (color customize / tile bake only). */
+function ensureWritableAtlas(sheet: SpriteSheetLike, source: CanvasImageSource): HTMLCanvasElement | null {
+  if (source instanceof HTMLCanvasElement && source.width >= 4096 && source.height >= 4096) {
+    adoptAtlasCanvas(sheet, source);
+    setAtlasImageScale(1);
+    return source;
+  }
+  if (!(source instanceof HTMLImageElement) && !(source instanceof HTMLCanvasElement)) return null;
+  const canvas = sheetToWritableCanvas(source);
+  if (!canvas) return null;
+  adoptAtlasCanvas(sheet, canvas);
+  setAtlasImageScale(1);
   return canvas;
 }
 
@@ -710,8 +728,9 @@ function collectBlockAtlas(): { live: HTMLCanvasElement; source: HTMLCanvasEleme
     rects.push(frame.rect);
   }
   if (!sourceImg || !rects.length) return null;
-  const live = adoptAtlasCanvas(sheet, sourceImg);
+  const live = ensureWritableAtlas(sheet, sourceImg);
   if (!live) return null;
+  atlasCanvas = live;
   if (blockHueSource && blockHueLayout && atlasRects && atlasCanvas === live) {
     return { live, source: blockHueSource, layout: blockHueLayout, rects: atlasRects };
   }
@@ -780,7 +799,16 @@ function applyBlockHue(force = false): void {
     const next = liveBlockTint();
     if (bakedBlockColor === next && next !== null) return;
     if (bakedBlockColor === null && next === null) return;
-    const ctx = atlasCanvas.getContext("2d");
+    const sheet = atlasSheet();
+    const live =
+      atlasCanvas instanceof HTMLCanvasElement
+        ? atlasCanvas
+        : sheet
+          ? ensureWritableAtlas(sheet, atlasCanvas)
+          : sheetToWritableCanvas(atlasCanvas);
+    if (!live) return;
+    atlasCanvas = live;
+    const ctx = live.getContext("2d");
     if (!ctx) return;
     if (!blockHueTinted || blockHueTinted.width !== blockHueLayout.width || blockHueTinted.height !== blockHueLayout.height) {
       const tinted = makeHueCanvas(blockHueLayout.width, blockHueLayout.height);
@@ -847,7 +875,7 @@ function collectTileAtlas(): boolean {
     const layout = packBlockLayout(rects);
     // Ensure live canvas first so extract reads pristine pixels.
     if (!sourceImg) continue;
-    const live = adoptAtlasCanvas(sheet, sourceImg);
+    const live = ensureWritableAtlas(sheet, sourceImg);
     if (!live) return false;
     atlasCanvas = live;
     const packed = extractPackedBlockSource(makeHueCanvas, live, layout);
@@ -877,6 +905,7 @@ function restorePristineTileSheet(): void {
       // Drop packed sources extracted from the previous (possibly tinted) live atlas.
       invalidateBlockHueCache();
       const sheet = atlasSheet();
+      // Restore uses Image when possible; bake will promote to canvas on next tint.
       const live = sheet ? adoptAtlasCanvas(sheet, img) : null;
       const images = adobeComp()?.getImages?.();
       if (images) images.bloxorz_atlas_ = live ?? img;
@@ -953,7 +982,16 @@ function applyTileColors(force = false): void {
       }
     }
     if (!atlasCanvas) return;
-    const ctx = atlasCanvas.getContext("2d");
+    const sheetForBlit = atlasSheet();
+    const liveAtlas =
+      atlasCanvas instanceof HTMLCanvasElement
+        ? atlasCanvas
+        : sheetForBlit
+          ? ensureWritableAtlas(sheetForBlit, atlasCanvas)
+          : sheetToWritableCanvas(atlasCanvas);
+    if (!liveAtlas) return;
+    atlasCanvas = liveAtlas;
+    const ctx = liveAtlas.getContext("2d");
     if (!ctx) return;
     const next = liveTileTints();
     for (const id of TILE_COLOR_SLOTS) {
@@ -3649,11 +3687,11 @@ function applyTheme(theme: ThemeId, reload = false): void {
   ensureMenuMusic();
 }
 
-function loadAtlasImage(theme: ThemeId): Promise<HTMLCanvasElement> {
+function loadAtlasImage(theme: ThemeId): Promise<ThemeAtlasSheet> {
   return composeThemeAtlas(theme);
 }
 
-async function swapAtlasLive(theme: ThemeId, ready?: HTMLCanvasElement | null): Promise<void> {
+async function swapAtlasLive(theme: ThemeId, ready?: ThemeAtlasSheet | null): Promise<void> {
   try {
     const img = ready ?? (await loadAtlasImage(theme));
     evictThemeAtlasesExcept(theme);
@@ -6597,7 +6635,7 @@ declare global {
     __bloxTileIdleFrame?: (type: string, doorOpen?: boolean) => number | null;
     __bloxDenseBoard?: boolean;
     applyLiveTheme?: (theme: string) => void;
-    __bloxLoadThemeAtlas?: (theme: string) => Promise<HTMLCanvasElement>;
+    __bloxLoadThemeAtlas?: (theme: string) => Promise<ThemeAtlasSheet>;
     AdobeAn?: {
       getComposition: (id: string) => {
         getLibrary: () => LibCtor;
@@ -6700,7 +6738,7 @@ export function startBloxorzShell(): void {
     applyDomCopy();
     setHdRendering(isHdTheme(theme));
     applyThemeMedia();
-    let atlas: HTMLCanvasElement | null = null;
+    let atlas: ThemeAtlasSheet | null = null;
     if (theme !== savedTheme) {
       forgetThemeAtlas(savedTheme);
       atlas = await composeThemeAtlas(theme).catch(() => null);
@@ -6835,7 +6873,12 @@ window.__bloxLoadThemeAtlas = async (theme: string) => {
     /* ignore */
   }
   const id = await bootThemes(theme);
-  return composeThemeAtlas(id, true);
+  // Reuse cache when present — do not force a second 4096 compose on every boot.
+  const sheet = await composeThemeAtlas(id, false);
+  patchCreateJsAtlasScale();
+  setAtlasImageScale(atlasScaleForSheet(sheet));
+  return sheet;
 };
 
 gateSoundPlay();
+patchCreateJsAtlasScale();

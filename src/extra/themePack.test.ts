@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAtlasFile } from "./themeAtlas";
+import { resolveAtlasFile, themeAtlasFiles } from "./themeAtlas";
 import {
   getTheme,
   installThemeZip,
@@ -95,10 +95,12 @@ describe("theme packs", () => {
     expect(ids).not.toContain("solid3d");
   });
 
-  it("does not require a packed atlas.png", () => {
+  it("builtins declare atlas.png but still resolve without a forced packed sheet", () => {
     setCurrentThemeId("gray");
     expect(getTheme("gray").builtin).toBe(true);
-    expect(getTheme("original").atlas).toBeUndefined();
+    // Cold-load prefers themes/<id>/atlas.png when present; slice compose remains the fallback.
+    expect(getTheme("original").atlas === undefined || getTheme("original").atlas === "atlas.png").toBe(true);
+    expect(themeAtlasFiles().some((f) => f.endsWith("atlas.png"))).toBe(false);
   });
 
   it("puts a nested custom pack in the same list the theme dropdown uses", async () => {

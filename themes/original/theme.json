@@ -20,5 +20,6 @@
   },
   "audio": {
     "music": "music.mp3"
-  }
+  },
+  "atlas": "atlas.png"
 }
