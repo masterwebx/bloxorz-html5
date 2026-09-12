@@ -655,12 +655,12 @@ export class ExtraHud {
         this.add(
           this.act(
             cycleId,
-            `${this.focusId === cycleId ? "> " : "  "}${t("settings.colorCycle")}${cycleOn ? " ✓" : ""}`,
+            `${this.focusId === cycleId ? "> " : "  "}${cycleOn ? t("settings.colorCycleOn") : t("settings.colorCycleOff")}`,
             232,
             y,
             11,
             false,
-            52,
+            78,
           ),
         );
       }

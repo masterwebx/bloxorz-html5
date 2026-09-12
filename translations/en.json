@@ -303,6 +303,8 @@
   "settings.colorOn": "On",
   "settings.colorOff": "Off",
   "settings.colorCycle": "Cycle",
+  "settings.colorCycleOn": "Cycle ON",
+  "settings.colorCycleOff": "Cycle OFF",
   "settings.colorPresetDefault": "Default",
   "settings.colorBlock": "Block",
   "settings.colorStone": "Stone",

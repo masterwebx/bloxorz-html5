@@ -303,6 +303,8 @@
   "settings.colorOn": "オン",
   "settings.colorOff": "オフ",
   "settings.colorCycle": "サイクル",
+  "settings.colorCycleOn": "サイクル ON",
+  "settings.colorCycleOff": "サイクル OFF",
   "settings.colorPresetDefault": "デフォルト",
   "settings.colorBlock": "ブロック",
   "settings.colorStone": "石",

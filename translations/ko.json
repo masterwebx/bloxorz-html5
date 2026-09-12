@@ -303,6 +303,8 @@
   "settings.colorOn": "켜기",
   "settings.colorOff": "끄기",
   "settings.colorCycle": "순환",
+  "settings.colorCycleOn": "순환 켜짐",
+  "settings.colorCycleOff": "순환 꺼짐",
   "settings.colorPresetDefault": "기본",
   "settings.colorBlock": "블록",
   "settings.colorStone": "돌",

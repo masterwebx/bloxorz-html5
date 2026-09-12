@@ -303,6 +303,8 @@
   "settings.colorOn": "تشغيل",
   "settings.colorOff": "إيقاف",
   "settings.colorCycle": "تدوير",
+  "settings.colorCycleOn": "تدوير تشغيل",
+  "settings.colorCycleOff": "تدوير إيقاف",
   "settings.colorPresetDefault": "افتراضي",
   "settings.colorBlock": "المكعب",
   "settings.colorStone": "حجر",

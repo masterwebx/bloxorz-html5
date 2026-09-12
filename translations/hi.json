@@ -303,6 +303,8 @@
   "settings.colorOn": "चालू",
   "settings.colorOff": "बंद",
   "settings.colorCycle": "चक्र",
+  "settings.colorCycleOn": "चक्र चालू",
+  "settings.colorCycleOff": "चक्र बंद",
   "settings.colorPresetDefault": "डिफ़ॉल्ट",
   "settings.colorBlock": "ब्लॉक",
   "settings.colorStone": "पत्थर",

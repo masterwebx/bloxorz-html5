@@ -303,6 +303,8 @@
   "settings.colorOn": "开",
   "settings.colorOff": "关",
   "settings.colorCycle": "循环",
+  "settings.colorCycleOn": "循环 开",
+  "settings.colorCycleOff": "循环 关",
   "settings.colorPresetDefault": "默认",
   "settings.colorBlock": "方块",
   "settings.colorStone": "石头",

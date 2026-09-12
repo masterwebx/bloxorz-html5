@@ -303,6 +303,8 @@
   "settings.colorOn": "Sí",
   "settings.colorOff": "No",
   "settings.colorCycle": "Ciclo",
+  "settings.colorCycleOn": "Ciclo ON",
+  "settings.colorCycleOff": "Ciclo OFF",
   "settings.colorPresetDefault": "Predeterminado",
   "settings.colorBlock": "Bloque",
   "settings.colorStone": "Piedra",

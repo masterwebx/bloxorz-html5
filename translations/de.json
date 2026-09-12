@@ -303,6 +303,8 @@
   "settings.colorOn": "An",
   "settings.colorOff": "Aus",
   "settings.colorCycle": "Zyklus",
+  "settings.colorCycleOn": "Zyklus AN",
+  "settings.colorCycleOff": "Zyklus AUS",
   "settings.colorPresetDefault": "Standard",
   "settings.colorBlock": "Block",
   "settings.colorStone": "Stein",

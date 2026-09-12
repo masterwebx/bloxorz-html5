@@ -303,6 +303,8 @@
   "settings.colorOn": "Вкл",
   "settings.colorOff": "Выкл",
   "settings.colorCycle": "Цикл",
+  "settings.colorCycleOn": "Цикл ВКЛ",
+  "settings.colorCycleOff": "Цикл ВЫКЛ",
   "settings.colorPresetDefault": "По умолчанию",
   "settings.colorBlock": "Блок",
   "settings.colorStone": "Камень",
