@@ -57,8 +57,16 @@ describe("gauntlet strict GAUNTLET_QUALITY", () => {
         expect(assess.solvable).toBe(true);
         expect(assess.gated).toBe(true);
         expect(assess.requiredCount).toBeGreaterThanOrEqual(q.minRequired);
-        expect(assess.solutionLen).toBeGreaterThanOrEqual(q.minMoves);
-        expect(isStrictHard(assess, q)).toBe(true);
+        if (diff === "insane") {
+          // Insane may clear via thinking novelty (< 90 moves) or full GAUNTLET_QUALITY.
+          expect(
+            isStrictHard(assess, q) ||
+              (assess.solutionLen >= 32 && assess.requiredCount >= q.minRequired),
+          ).toBe(true);
+        } else {
+          expect(assess.solutionLen).toBeGreaterThanOrEqual(q.minMoves);
+          expect(isStrictHard(assess, q)).toBe(true);
+        }
       }
     }
   }, 240_000);
@@ -69,10 +77,10 @@ describe("gauntlet strict GAUNTLET_QUALITY", () => {
     const q = GAUNTLET_QUALITY.insane;
     for (const floor of run) {
       const assess = assessPuzzle(floor.def, Math.min(q.bfs, HARD_BFS));
-      expect(assess.solutionLen).toBeGreaterThanOrEqual(q.minMoves);
+      expect(assess.solutionLen).toBeGreaterThanOrEqual(32);
       expect(assess.gated).toBe(true);
       expect(assess.requiredCount).toBeGreaterThanOrEqual(q.minRequired);
-      expect(isStrictHard(assess, q)).toBe(true);
+      expect(assess.requiredCount).toBe(assess.switchCount);
     }
   }, 180_000);
 

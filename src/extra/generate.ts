@@ -1,5 +1,5 @@
 import { H, LEVELS, occupied, Stage, W } from "./engine";
-import type { LevelDef, SplitDef, SwitchDef } from "./types";
+import type { LevelDef, SplitDef, SwitchDef, SwitchMode } from "./types";
 import { applyCmd, shortestLen, solveLevel } from "./solve";
 import type { WalkCmd } from "./walkthrough";
 
@@ -42,6 +42,17 @@ export const GAUNTLET_QUALITY: Record<Difficulty, QualityOpts> = {
   hard: { minMoves: 70, minUsed: 10, minRequired: 2, attempts: 8, bfs: 200_000 },
   insane: { minMoves: 90, minUsed: 12, minRequired: 3, attempts: 8, bfs: 220_000 },
 };
+
+/**
+ * Insane "thinking" bar — novel mechanism puzzles that may be shorter than the 90-move remix floor.
+ * Attract/gauntlet accept either full GAUNTLET_QUALITY.insane or this + mechanismScore.
+ */
+export const INSANE_THINKING = {
+  minMoves: 32,
+  minUsed: 8,
+  minRequired: 3,
+  minNovelty: 4,
+} as const;
 
 export const DAILY_OPTS: QualityOpts = { minMoves: 70, minUsed: 10, minRequired: 2, attempts: 6, bfs: 220_000 };
 export const SEEDED_OPTS: QualityOpts = { minMoves: 55, minUsed: 8, minRequired: 2, attempts: 8, bfs: 180_000 };
@@ -245,6 +256,24 @@ export function isStrictHard(assess: PuzzleAssess, opts: Pick<QualityOpts, "minM
   return meetsSwitchGate(assess, opts.minRequired) && assess.solutionLen >= opts.minMoves;
 }
 
+/** Novel insane puzzle: full switch gate + real mechanisms, not a padded ON-bridge maze. */
+export function meetsInsaneThinking(
+  p: Pick<Puzzle, "usedObstacles" | "def">,
+  assess: PuzzleAssess,
+  opts: { minMoves?: number; minUsed?: number; minRequired?: number; minNovelty?: number } = {},
+): boolean {
+  const minMoves = opts.minMoves ?? INSANE_THINKING.minMoves;
+  const minUsed = opts.minUsed ?? INSANE_THINKING.minUsed;
+  const minRequired = opts.minRequired ?? INSANE_THINKING.minRequired;
+  const minNovelty = opts.minNovelty ?? INSANE_THINKING.minNovelty;
+  return (
+    meetsSwitchGate(assess, minRequired) &&
+    assess.solutionLen >= minMoves &&
+    p.usedObstacles >= minUsed &&
+    mechanismScore(p.def) >= minNovelty
+  );
+}
+
 export function sharedBridgeCount(def: LevelDef): number {
   const hits = new Map<string, number>();
   for (const sw of def.switches ?? []) {
@@ -274,6 +303,71 @@ export function isLateCampaignShape(def: LevelDef): boolean {
     (def.splits ?? []).length > 0 ||
     fragile >= 12
   );
+}
+
+/**
+ * Design novelty for insane attract/gauntlet — rewards thinking mechanisms, not padded length.
+ * Official end-campaign floors score ~8–12; linear ON-only island chains score ~0–3.
+ */
+export function mechanismScore(def: LevelDef): number {
+  let score = 0;
+  const shared = sharedBridgeCount(def);
+  if (shared >= 1) score += 3;
+  if (shared >= 3) score += 1;
+  if (hasStartingOnBridges(def)) score += 2;
+  if (hasOffOrToggle(def)) score += 3;
+  if ((def.splits ?? []).length > 0) score += 2;
+  const modes = new Set((def.switches ?? []).flatMap((sw) => sw.bridges.map((b) => b.mode)));
+  if (modes.size >= 2) score += 2;
+  if (modes.has("onoff")) score += 1;
+  if (def.tiles.some((row) => row.includes("h"))) score += 1;
+  const fragile = countObstacles(def.tiles);
+  if (fragile >= 8 && fragile < 45) score += 1;
+  return score;
+}
+
+/** Insane design bar: must use real Bloxorz mechanisms, not a long ON-bridge corridor. */
+export function meetsInsaneDesign(def: LevelDef, minScore = 4): boolean {
+  return mechanismScore(def) >= minScore;
+}
+
+/** Hard/insane builders mix start-ON, toggle, and plain ON so routes are non-obvious. */
+function pickBridgePresentation(
+  rng: () => number,
+  difficulty: Difficulty,
+  kind: "l" | "r",
+): { tile: string; mode: SwitchMode } {
+  if (difficulty === "easy" || difficulty === "medium") {
+    return { tile: kind, mode: "on" };
+  }
+  const roll = rng();
+  if (roll < 0.32) return { tile: kind === "l" ? "k" : "q", mode: "off" };
+  if (roll < 0.62) return { tile: kind, mode: "onoff" };
+  if (roll < 0.78) return { tile: kind === "l" ? "k" : "q", mode: "onoff" };
+  return { tile: kind, mode: "on" };
+}
+
+/** Link two switches to one bridge so order/state matters (classic Bloxorz shared gates). */
+function maybeShareBridges(rng: () => number, switches: SwitchDef[], difficulty: Difficulty): void {
+  if (difficulty === "easy" || difficulty === "medium" || switches.length < 2) return;
+  const links = difficulty === "insane" ? 1 + Math.floor(rng() * 2) : rng() < 0.55 ? 1 : 0;
+  for (let n = 0; n < links; n++) {
+    const a = switches[Math.floor(rng() * switches.length)]!;
+    const b = switches[Math.floor(rng() * switches.length)]!;
+    if (a === b || !b.bridges.length) continue;
+    const target = b.bridges[Math.floor(rng() * b.bridges.length)]!;
+    if (a.bridges.some((x) => x.x === target.x && x.y === target.y)) continue;
+    const mode: SwitchMode = rng() < 0.55 ? "onoff" : target.mode === "on" ? "off" : "on";
+    a.bridges.push({ x: target.x, y: target.y, mode });
+  }
+}
+
+function maybeHeavySwitches(rng: () => number, grid: string[][], switches: SwitchDef[], difficulty: Difficulty): void {
+  if (difficulty !== "hard" && difficulty !== "insane") return;
+  for (const sw of switches) {
+    if (grid[sw.y]?.[sw.x] !== "s") continue;
+    if (rng() < (difficulty === "insane" ? 0.45 : 0.25)) grid[sw.y][sw.x] = "h";
+  }
 }
 
 export function flipLevel(def: LevelDef, fx: boolean, fy: boolean): LevelDef {
@@ -320,6 +414,54 @@ export function remixCampaign(seed: string, band: "mid" | "late" | "end", diffic
     solutionLen: solved.ok ? solved.cmds.length : 80,
     usedObstacles: solved.ok ? usedObstacleCount(packed, solved.cmds) : countObstacles(packed.tiles),
   };
+}
+
+/** Exhaust end/late donors × flips until `accept` passes — better variety than one random remix. */
+export function remixCampaignSearch(
+  seed: string,
+  band: "mid" | "late" | "end",
+  difficulty: Difficulty,
+  accept: (p: Puzzle) => boolean,
+  avoidKeys?: Set<string>,
+): Puzzle | null {
+  const [lo, hi] = DONOR[band];
+  const rng = mulberry32(hashSeed(`remix-search:${seed}:${band}`));
+  const donors = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  // Shuffle donors with seed so floors don't all start at the same official level.
+  for (let i = donors.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [donors[i], donors[j]] = [donors[j]!, donors[i]!];
+  }
+  const flips: [boolean, boolean][] = [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ];
+  for (let fi = flips.length - 1; fi > 0; fi--) {
+    const j = Math.floor(rng() * (fi + 1));
+    [flips[fi], flips[j]] = [flips[j]!, flips[fi]!];
+  }
+  for (const di of donors) {
+    const src = LEVELS[di] ?? LEVELS[29]!;
+    for (const [fx, fy] of flips) {
+      const def = flipLevel(src, fx, fy);
+      const packed = packDef(def.tiles, def.spawn, `${seed}:d${di}:${fx?1:0}${fy?1:0}`, def.switches, def.splits);
+      const key = packed.tiles.join("");
+      if (avoidKeys?.has(key)) continue;
+      const solved = solveLevel(packed, 220_000);
+      if (!solved.ok || !solved.cmds.length) continue;
+      const p: Puzzle = {
+        def: packed,
+        seed,
+        difficulty,
+        solutionLen: solved.cmds.length,
+        usedObstacles: usedObstacleCount(packed, solved.cmds),
+      };
+      if (accept(p)) return p;
+    }
+  }
+  return null;
 }
 
 export function hashSeed(text: string): number {
@@ -436,9 +578,19 @@ function packDef(
   };
 }
 
-function scorePuzzle(len: number, used: number, opts: QualityOpts, required = 0, gated = false): number {
-  const meet = (len >= opts.minMoves ? 4000 : 0) + (used >= opts.minUsed ? 2000 : 0) + (required >= opts.minRequired ? 5000 : 0);
-  return meet + (gated ? 8000 : 0) + required * 900 + len * 4 + used * 3;
+function scorePuzzle(
+  len: number,
+  used: number,
+  opts: QualityOpts,
+  required = 0,
+  gated = false,
+  novelty = 0,
+): number {
+  const meet =
+    (len >= opts.minMoves ? 4000 : 0) +
+    (used >= opts.minUsed ? 2000 : 0) +
+    (required >= opts.minRequired ? 5000 : 0);
+  return meet + (gated ? 8000 : 0) + required * 900 + len * 4 + used * 3 + novelty * 600;
 }
 
 function finishPuzzle(
@@ -640,23 +792,24 @@ function trySlots(rng: () => number, seed: string, difficulty: Difficulty, nIsla
   const switches: SwitchDef[] = [];
   const exits: [number, number][] = [];
   for (let i = 0; i < n - 1; i++) {
-    const kind = rng() < 0.5 ? "l" : "r";
+    const kind = (rng() < 0.5 ? "l" : "r") as "l" | "r";
+    const present = pickBridgePresentation(rng, difficulty, kind);
     const targets: SwitchDef["bridges"] = [];
     let mouth: [number, number];
     if (vertical) {
       const x = shift + Math.floor(rng() * iw);
       const y0 = origin + (i + 1) * ih + i * gap;
       for (let g = 0; g < gap; g++) {
-        grid[y0 + g][x] = kind;
-        targets.push({ x, y: y0 + g, mode: "on" });
+        grid[y0 + g][x] = present.tile;
+        targets.push({ x, y: y0 + g, mode: present.mode });
       }
       mouth = [x, y0 - 1];
     } else {
       const y = shift + Math.floor(rng() * ih);
       const x0 = origin + (i + 1) * iw + i * gap;
       for (let g = 0; g < gap; g++) {
-        grid[y][x0 + g] = kind;
-        targets.push({ x: x0 + g, y, mode: "on" });
+        grid[y][x0 + g] = present.tile;
+        targets.push({ x: x0 + g, y, mode: present.mode });
       }
       mouth = [x0 - 1, y];
     }
@@ -693,23 +846,24 @@ function trySlots(rng: () => number, seed: string, difficulty: Difficulty, nIsla
       /* skip the extra cut */
     } else {
     const cut = pick(rng, cutPool);
-    const kind = rng() < 0.5 ? "l" : "r";
+    const kind = (rng() < 0.5 ? "l" : "r") as "l" | "r";
+    const present = pickBridgePresentation(rng, difficulty, kind);
     const line: SwitchDef["bridges"] = [];
     if (vertical) {
       for (let x = 0; x < iw; x++) {
         const cx = shift + x;
         const ch = grid[cut[1]][cx];
         if (ch === "e" || ch === "s" || ch === "h" || ch === "v") continue;
-        grid[cut[1]][cx] = kind;
-        line.push({ x: cx, y: cut[1], mode: "on" });
+        grid[cut[1]][cx] = present.tile;
+        line.push({ x: cx, y: cut[1], mode: present.mode });
       }
     } else {
       for (let y = 0; y < ih; y++) {
         const cy = shift + y;
         const ch = grid[cy][cut[0]];
         if (ch === "e" || ch === "s" || ch === "h" || ch === "v") continue;
-        grid[cy][cut[0]] = kind;
-        line.push({ x: cut[0], y: cy, mode: "on" });
+        grid[cy][cut[0]] = present.tile;
+        line.push({ x: cut[0], y: cy, mode: present.mode });
       }
     }
     if (line.length) {
@@ -741,8 +895,9 @@ function trySlots(rng: () => number, seed: string, difficulty: Difficulty, nIsla
     }
   }
 
-  const tiles = toTiles(grid);
-  const def = packDef(tiles, spawn, seed, switches, splits);
+  maybeShareBridges(rng, switches, difficulty);
+  maybeHeavySwitches(rng, grid, switches, difficulty);
+  const def = packDef(toTiles(grid), spawn, seed, switches, splits);
   return finishPuzzle(def, seed, difficulty, 140_000);
 }
 
@@ -829,7 +984,8 @@ function tryPacked(rng: () => number, seed: string, difficulty: Difficulty): Puz
   for (let i = 0; i < path.length - 1; i++) {
     const [r1, c1] = path[i];
     const [r2, c2] = path[i + 1];
-    const kind = rng() < 0.5 ? "l" : "r";
+    const kind = (rng() < 0.5 ? "l" : "r") as "l" | "r";
+    const present = pickBridgePresentation(rng, difficulty, kind);
     const targets: SwitchDef["bridges"] = [];
     if (r1 === r2) {
       const left = Math.min(c1, c2);
@@ -837,15 +993,15 @@ function tryPacked(rng: () => number, seed: string, difficulty: Difficulty): Puz
       const yBase = r1 === 0 ? 0 : heights[0] + gap;
       const y = yBase + Math.floor(rng() * heights[r1]);
       for (let g = 0; g < gap; g++) {
-        grid[y][x0 + g] = kind;
-        targets.push({ x: x0 + g, y, mode: "on" });
+        grid[y][x0 + g] = present.tile;
+        targets.push({ x: x0 + g, y, mode: present.mode });
       }
     } else {
       const x0 = c1 * (iw + gap) + Math.floor(rng() * iw);
       const y0 = heights[0];
       for (let g = 0; g < gap; g++) {
-        grid[y0 + g][x0] = kind;
-        targets.push({ x: x0, y: y0 + g, mode: "on" });
+        grid[y0 + g][x0] = present.tile;
+        targets.push({ x: x0, y: y0 + g, mode: present.mode });
       }
     }
     if (!targets.length) return null;
@@ -885,6 +1041,8 @@ function tryPacked(rng: () => number, seed: string, difficulty: Difficulty): Puz
     }
   }
 
+  maybeShareBridges(rng, switches, difficulty);
+  maybeHeavySwitches(rng, grid, switches, difficulty);
   const def = packDef(toTiles(grid), spawn, seed, switches, splits);
   return finishPuzzle(def, seed, difficulty, 200_000);
 }
@@ -982,11 +1140,12 @@ function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): 
     const b = snake[i + 1];
     const edge = edgeForRooms(edges, a, b);
     if (!edge) return null;
-    const kind = rng() < 0.5 ? "l" : "r";
+    const kind = (rng() < 0.5 ? "l" : "r") as "l" | "r";
+    const present = pickBridgePresentation(rng, difficulty, kind);
     const targets: SwitchDef["bridges"] = [];
     for (const [x, y] of edge.cells) {
-      grid[y][x] = kind;
-      targets.push({ x, y, mode: "on" });
+      grid[y][x] = present.tile;
+      targets.push({ x, y, mode: present.mode });
     }
     if (!targets.length) return null;
     const swPool = room(a[0], a[1]).filter((c) => grid[c[1]][c[0]] === "b");
@@ -1012,7 +1171,25 @@ function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): 
     }
   }
 
-  return finishPuzzle(packDef(toTiles(grid), spawn, seed, switches, []), seed, difficulty, 200_000);
+  // Insane full-board: add a split in the last room when space allows.
+  const splits: SplitDef[] = [];
+  if (difficulty === "hard" || difficulty === "insane") {
+    const padPool = last.filter((c) => grid[c[1]][c[0]] === "b" || grid[c[1]][c[0]] === "f");
+    if (padPool.length >= 5 && rng() < 0.7) {
+      const pad = pick(rng, padPool);
+      const drops = last.filter((c) => manhattan(c, pad) >= 2 && !(c[0] === end[0] && c[1] === end[1]));
+      if (drops.length >= 2) {
+        const a = pick(rng, drops);
+        const b = farthest(drops, a);
+        grid[pad[1]][pad[0]] = "v";
+        splits.push({ x: pad[0], y: pad[1], a, b });
+      }
+    }
+  }
+
+  maybeShareBridges(rng, switches, difficulty);
+  maybeHeavySwitches(rng, grid, switches, difficulty);
+  return finishPuzzle(packDef(toTiles(grid), spawn, seed, switches, splits), seed, difficulty, 200_000);
 }
 
 /**
@@ -1126,9 +1303,10 @@ function tryRibbon(rng: () => number, seed: string, difficulty: Difficulty): Puz
     const t = Math.floor(((c + 1) / (cuts + 1)) * (line.length - 8)) + 4;
     const [bx, by] = line[t];
     if (grid[by][bx] !== "b") continue;
-    const kind = rng() < 0.5 ? "l" : "r";
-    grid[by][bx] = kind;
-    const targets: SwitchDef["bridges"] = [{ x: bx, y: by, mode: "on" }];
+    const kind = (rng() < 0.5 ? "l" : "r") as "l" | "r";
+    const present = pickBridgePresentation(rng, difficulty, kind);
+    grid[by][bx] = present.tile;
+    const targets: SwitchDef["bridges"] = [{ x: bx, y: by, mode: present.mode }];
     const prev = line[Math.max(0, t - 1)];
     const dx = bx - prev[0];
     const dy = by - prev[1];
@@ -1137,8 +1315,8 @@ function tryRibbon(rng: () => number, seed: string, difficulty: Difficulty): Puz
     const nx = bx + px;
     const ny = by + py;
     if (nx >= 0 && ny >= 0 && nx < W && ny < H && grid[ny][nx] === "b") {
-      grid[ny][nx] = kind;
-      targets.push({ x: nx, y: ny, mode: "on" });
+      grid[ny][nx] = present.tile;
+      targets.push({ x: nx, y: ny, mode: present.mode });
     }
     const swAt = line[Math.max(1, t - 3 - Math.floor(rng() * 2))];
     if (grid[swAt[1]][swAt[0]] !== "b") continue;
@@ -1153,6 +1331,8 @@ function tryRibbon(rng: () => number, seed: string, difficulty: Difficulty): Puz
   for (const [x, y] of line) {
     if (grid[y][x] === "b" && rng() < 0.12 && !(x === spawn[0] && y === spawn[1])) grid[y][x] = "f";
   }
+  maybeShareBridges(rng, switches, difficulty);
+  maybeHeavySwitches(rng, grid, switches, difficulty);
   const tiles = toTiles(grid);
   const def = packDef(tiles, spawn, seed, switches);
   return finishPuzzle(def, seed, difficulty, 140_000);
@@ -1177,13 +1357,17 @@ export function generateQualityPuzzle(seed: string, opts: QualityOpts, difficult
     const tight = opts.minRequired > 0 ? tightenPuzzle(p, opts.bfs) : p;
     const assess = opts.minRequired > 0 ? assessPuzzle(tight.def, Math.min(opts.bfs, HARD_BFS)) : null;
     const used = tight.usedObstacles;
-    const sc = scorePuzzle(tight.solutionLen, used, opts, assess?.requiredCount ?? 0, assess?.gated ?? false);
+    const novelty = mechanismScore(tight.def);
+    const sc = scorePuzzle(tight.solutionLen, used, opts, assess?.requiredCount ?? 0, assess?.gated ?? false, novelty);
     if (sc > bestScore) {
       best = tight;
       bestScore = sc;
     }
     if (opts.minRequired > 0) {
-      if (assess && isStrictHard(assess, opts)) return tight;
+      if (assess && isStrictHard(assess, opts)) {
+        // High gauntlet bars also want mechanism novelty when builders can provide it.
+        if (opts.minMoves < 70 || novelty >= 3) return tight;
+      }
     } else if (tight.solutionLen >= opts.minMoves && used >= opts.minUsed) {
       return tight;
     }
@@ -1191,7 +1375,16 @@ export function generateQualityPuzzle(seed: string, opts: QualityOpts, difficult
   if (opts.minRequired > 0) {
     if (best) {
       const assess = assessPuzzle(best.def, HARD_BFS);
-      if (meetsSwitchGate(assess, opts.minRequired)) return best;
+      if (meetsSwitchGate(assess, opts.minRequired) && (opts.minMoves < 70 || mechanismScore(best.def) >= 2)) {
+        return best;
+      }
+    }
+    if (opts.minMoves >= 70) {
+      const remix = remixCampaignSearch(seed, "end", difficulty, (p) => {
+        const a = assessPuzzle(p.def, HARD_BFS);
+        return isStrictHard(a, opts) && p.usedObstacles >= opts.minUsed;
+      });
+      if (remix) return remix;
     }
     return forceHardPuzzle(seed, opts, difficulty);
   }
@@ -1311,11 +1504,13 @@ function buildArchetypeCandidate(
 export type TryArchetypeOpts = {
   /** When true with quality set: only isStrictHard accepts; never soft / best-of-weak. */
   strictQuality?: boolean;
+  /** Minimum mechanismScore — insane attract/gauntlet demand thinking layouts. */
+  minNovelty?: number;
 };
 
 /**
  * Build one archetype puzzle. When `quality` is set, tighten and score against it.
- * Attract may soft-accept; gauntlet passes `strictQuality: true` so only GAUNTLET_QUALITY clears.
+ * Insane attract/gauntlet pass `strictQuality` (+ optional minNovelty) so soft/best-of-weak never ships.
  */
 export function tryArchetypePuzzle(
   seed: string,
@@ -1326,6 +1521,7 @@ export function tryArchetypePuzzle(
   opts: TryArchetypeOpts = {},
 ): Puzzle | null {
   const strict = !!opts.strictQuality && !!quality;
+  const minNovelty = opts.minNovelty ?? 0;
   const attempts = maxAttempts ?? (quality ? Math.max(6, quality.attempts) : 12);
   const bfs = quality?.bfs ?? 180_000;
   let best: Puzzle | null = null;
@@ -1344,7 +1540,16 @@ export function tryArchetypePuzzle(
     if (quality) {
       p = tightenPuzzle(p, bfs);
       const assess = assessPuzzle(p.def, Math.min(bfs, HARD_BFS));
-      const sc = scorePuzzle(p.solutionLen, p.usedObstacles, quality, assess.requiredCount, assess.gated);
+      const novelty = mechanismScore(p.def);
+      if (minNovelty > 0 && novelty < minNovelty) {
+        const sc = scorePuzzle(p.solutionLen, p.usedObstacles, quality, assess.requiredCount, assess.gated, novelty);
+        if (sc > bestScore) {
+          best = p;
+          bestScore = sc;
+        }
+        continue;
+      }
+      const sc = scorePuzzle(p.solutionLen, p.usedObstacles, quality, assess.requiredCount, assess.gated, novelty);
       if (sc > bestScore) {
         best = p;
         bestScore = sc;
@@ -1352,41 +1557,32 @@ export function tryArchetypePuzzle(
       if (isStrictHard(assess, quality) && p.usedObstacles >= quality.minUsed) {
         return p;
       }
+      // Insane thinking accept: high-novelty gated puzzles below the padded 90-move remix floor.
+      if (
+        strict &&
+        minNovelty > 0 &&
+        meetsInsaneThinking(p, assess, { minNovelty, minRequired: quality.minRequired })
+      ) {
+        return p;
+      }
       if (strict) continue;
-      // Attract / soft path only: gated switch bar without move floor.
+      // Soft path only (non-strict callers): gated switch bar without move floor.
       if (meetsSwitchGate(assess, quality.minRequired)) {
         return p;
       }
-      // Soft accept: long enough + enough used obstacles for showcase.
-      if (p.solutionLen >= Math.min(quality.minMoves, BAND[difficulty].max) && p.usedObstacles >= Math.min(4, quality.minUsed)) {
+      if (
+        p.solutionLen >= Math.min(quality.minMoves, BAND[difficulty].max) &&
+        p.usedObstacles >= Math.min(4, quality.minUsed)
+      ) {
         return p;
       }
       continue;
     }
+    if (minNovelty > 0 && mechanismScore(p.def) < minNovelty) continue;
     return p;
   }
-  // Gauntlet must not ship best-of-weak; attract may.
+  // Strict must not ship best-of-weak; non-strict may.
   return strict ? null : best;
-}
-
-/**
- * Attract-mode puzzle: rotate generator archetypes at insane / GAUNTLET_QUALITY.
- * Soft roster fill remains attract-only — never reused by generateRun.
- */
-export function generateAttract(seed: string): Puzzle {
-  const clean = seed.trim() || "BLOX";
-  const primary = attractArchetypeForSeed(clean);
-  const order = [primary, ...ATTRACT_ARCHETYPES.filter((a) => a !== primary)];
-  const q = GAUNTLET_QUALITY.insane;
-  for (const arch of order) {
-    const p = tryArchetypePuzzle(clean, arch, "insane", q, 6);
-    if (p) return { ...p, difficulty: "insane" };
-  }
-  for (const arch of order) {
-    const p = tryArchetypePuzzle(clean, arch, "insane", null, 8);
-    if (p) return { ...p, difficulty: "insane" };
-  }
-  return generateQualityPuzzle(clean, q, "insane");
 }
 
 function meetsGauntletFloor(p: Puzzle, q: QualityOpts): boolean {
@@ -1395,59 +1591,110 @@ function meetsGauntletFloor(p: Puzzle, q: QualityOpts): boolean {
   return isStrictHard(assess, q);
 }
 
-/** Archetypes that can realistically clear GAUNTLET_QUALITY (skip soft ribbon/plain burns). */
+function meetsInsaneGauntlet(p: Puzzle, q: QualityOpts, minNovelty: number): boolean {
+  const assess = assessPuzzle(p.def, Math.min(q.bfs, HARD_BFS));
+  if (meetsGauntletFloor(p, q) && (minNovelty <= 0 || meetsInsaneDesign(p.def, minNovelty))) return true;
+  if (minNovelty <= 0) return false;
+  return meetsInsaneThinking(p, assess, { minNovelty, minRequired: q.minRequired });
+}
+
+/** Prefer generative novel layouts; campaign remix is a strong fallback, not the only path. */
 const GAUNTLET_ARCHETYPES: AttractArchetype[] = [
-  "campaignRemix",
   "packed",
   "fullBoard",
   "slots",
+  "campaignRemix",
   "bridges",
   "split",
 ];
 
+/** Attract insane: prefer mechanism-rich builders before soft showcase ones. */
+const ATTRACT_HARD_ARCHETYPES: AttractArchetype[] = [
+  "packed",
+  "fullBoard",
+  "slots",
+  "campaignRemix",
+  "bridges",
+  "ribbon",
+  "split",
+];
+
+const INSANE_NOVELTY = INSANE_THINKING.minNovelty;
+
 /**
- * Gauntlet / seeded run: archetype variety only when GAUNTLET_QUALITY is met.
- * No soft accept, no quality=null fill — miss → band remixCampaign / quality builder.
+ * Attract-mode puzzle: insane GAUNTLET_QUALITY + mechanism novelty.
+ * No quality=null soft fill — miss → end remix search / quality builder.
+ */
+export function generateAttract(seed: string): Puzzle {
+  const clean = seed.trim() || "BLOX";
+  const primary = attractArchetypeForSeed(clean);
+  const q = GAUNTLET_QUALITY.insane;
+  const order = [
+    primary,
+    ...ATTRACT_HARD_ARCHETYPES.filter((a) => a !== primary),
+    ...ATTRACT_ARCHETYPES.filter((a) => a !== primary && !ATTRACT_HARD_ARCHETYPES.includes(a)),
+  ];
+  for (const arch of order) {
+    const p = tryArchetypePuzzle(clean, arch, "insane", q, arch === primary ? 8 : 4, {
+      strictQuality: true,
+      minNovelty: INSANE_NOVELTY,
+    });
+    if (p) return { ...p, difficulty: "insane" };
+  }
+  const remix = remixCampaignSearch(clean, "end", "insane", (p) => meetsInsaneGauntlet(p, q, INSANE_NOVELTY));
+  if (remix) return { ...remix, difficulty: "insane" };
+  const built = generateQualityPuzzle(clean, q, "insane");
+  if (meetsInsaneGauntlet(built, q, 0)) return { ...built, difficulty: "insane" };
+  return { ...(remixCampaign(clean, "end", "insane")), difficulty: "insane" };
+}
+
+/**
+ * Gauntlet / seeded run: archetype variety only when GAUNTLET_QUALITY (+ insane novelty) is met.
+ * No soft accept, no quality=null fill — miss → band remix search / quality builder.
  */
 export function generateRun(seed: string, difficulty: Difficulty, count: number): Puzzle[] {
   const n = Math.max(1, Math.min(33, count));
   const q = GAUNTLET_QUALITY[difficulty];
   const band = gauntletRemixBand(difficulty);
+  const novelty = difficulty === "insane" ? INSANE_NOVELTY : 0;
   const used = new Set<string>();
   return Array.from({ length: n }, (_, i) => {
     const floorSeed = `${seed}#${i}`;
     const primary = runArchetypeForSeed(seed, i);
-    const roster = [
-      primary,
-      ...GAUNTLET_ARCHETYPES.filter((a) => a !== primary),
-    ];
+    const roster = [primary, ...GAUNTLET_ARCHETYPES.filter((a) => a !== primary)];
     let picked: Puzzle | null = null;
-    // Strict quality: primary + a couple strong alts (keep long gauntlets affordable).
-    for (let ai = 0; ai < Math.min(3, roster.length) && !picked; ai++) {
+    for (let ai = 0; ai < Math.min(4, roster.length) && !picked; ai++) {
       const arch = roster[ai]!;
-      const attempts = ai === 0 ? Math.min(6, q.attempts) : 3;
+      const attempts = ai === 0 ? Math.min(8, Math.max(q.attempts, 6)) : 3;
       const cand = tryArchetypePuzzle(`${floorSeed}:${arch}`, arch, difficulty, q, attempts, {
         strictQuality: true,
+        minNovelty: novelty,
       });
       if (!cand) continue;
       const key = cand.def.tiles.join("");
       if (used.has(key)) continue;
+      if (novelty > 0 && !meetsInsaneDesign(cand.def, novelty)) continue;
       picked = { ...cand, difficulty };
     }
-    // Band remix fallback (insane/hard → end).
-    for (let guard = 0; guard < 8 && !picked; guard++) {
-      const p = remixCampaign(guard === 0 ? floorSeed : `${floorSeed}:r${guard}`, band, difficulty);
-      const key = p.def.tiles.join("");
-      if (used.has(key)) continue;
-      if (!meetsGauntletFloor(p, q)) continue;
-      picked = p;
+    if (!picked) {
+      picked = remixCampaignSearch(
+        floorSeed,
+        band,
+        difficulty,
+        (p) => meetsInsaneGauntlet(p, q, novelty),
+        used,
+      );
+      if (picked) picked = { ...picked, difficulty };
     }
-    // Quality builder, then forced gates — still must clear the bar when possible.
     if (!picked) {
       const built = generateQualityPuzzle(`${floorSeed}:gq`, q, difficulty);
-      if (!used.has(built.def.tiles.join("")) && meetsGauntletFloor(built, q)) {
+      if (!used.has(built.def.tiles.join("")) && meetsInsaneGauntlet(built, q, Math.min(novelty, 2))) {
         picked = { ...built, difficulty };
       }
+    }
+    if (!picked) {
+      picked = remixCampaignSearch(floorSeed, band, difficulty, (p) => meetsGauntletFloor(p, q), used);
+      if (picked) picked = { ...picked, difficulty };
     }
     if (!picked) {
       for (let guard = 0; guard < 6; guard++) {
@@ -1472,7 +1719,14 @@ export function difficultyLabel(d: Difficulty): string {
 
 export function difficultyHint(d: Difficulty): string {
   const q = GAUNTLET_QUALITY[d];
-  const shape = d === "easy" ? "mid-campaign routing" : d === "medium" ? "shared gates" : "late-campaign traps";
+  const shape =
+    d === "easy"
+      ? "mid-campaign routing"
+      : d === "medium"
+        ? "shared gates"
+        : d === "hard"
+          ? "late-campaign traps"
+          : "clever gates · non-obvious routes";
   return `${q.minMoves}+ moves · ${shape}`;
 }
 
