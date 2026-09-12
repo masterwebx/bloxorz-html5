@@ -430,17 +430,19 @@ function maybeShareBridges(rng: () => number, switches: SwitchDef[], difficulty:
   }
 }
 
-/** Force at least one shared/competing bridge between two switches (order matters). */
-function forceShareBridge(switches: SwitchDef[]): void {
-  if (switches.length < 2) return;
+/**
+ * Ensure linear island builders aren't pure ON-pad chains: promote a gate to toggle.
+ * Bridge still starts OFF, so the pad remains required — but mode novelty clears the chain reject.
+ */
+function ensureToggleThinking(switches: SwitchDef[]): void {
+  if (switches.length < 1) return;
+  if (hasOffOrToggle({ switches } as LevelDef)) return;
   if (sharedBridgeCount({ switches } as LevelDef) >= 1) return;
-  const a = switches[0]!;
-  const b = switches[switches.length - 1]!;
-  if (!b.bridges.length) return;
-  const target = b.bridges[0]!;
-  if (a.bridges.some((x) => x.x === target.x && x.y === target.y)) return;
-  a.bridges.push({ x: target.x, y: target.y, mode: "onoff" });
+  const sw = switches[Math.min(1, switches.length - 1)]!;
+  for (const b of sw.bridges) b.mode = "onoff";
 }
+
+function maybeHeavySwitches(rng: () => number, grid: string[][], switches: SwitchDef[], difficulty: Difficulty): void {
   if (difficulty === "easy") return;
   for (const sw of switches) {
     if (grid[sw.y]?.[sw.x] !== "s") continue;
@@ -1033,9 +1035,6 @@ function trySlots(rng: () => number, seed: string, difficulty: Difficulty, nIsla
   const wantFrag = Math.min(stone.length, n >= 4 ? 4 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3));
   paintFragileMotif(rng, grid, stone, wantFrag, spawn);
 
-  // Island chains are deprioritized — when used, force competing/shared gates so order matters.
-  forceShareBridge(switches);
-
   const splits: SplitDef[] = [];
   if (n >= 3 && last.length >= 6 && (tall || rng() < 0.7)) {
     const padPool = last.filter((c) => grid[c[1]][c[0]] === "b" || grid[c[1]][c[0]] === "f");
@@ -1052,6 +1051,7 @@ function trySlots(rng: () => number, seed: string, difficulty: Difficulty, nIsla
   }
 
   maybeShareBridges(rng, switches, difficulty);
+  ensureToggleThinking(switches);
   maybeHeavySwitches(rng, grid, switches, difficulty);
   const def = packDef(toTiles(grid), spawn, seed, switches, splits);
   return finishPuzzle(def, seed, difficulty, 140_000);
@@ -1200,8 +1200,7 @@ function tryPacked(rng: () => number, seed: string, difficulty: Difficulty): Puz
   }
 
   maybeShareBridges(rng, switches, difficulty);
-  // Packed rooms are linear by default — force at least one shared/competing gate.
-  forceShareBridge(switches);
+  ensureToggleThinking(switches);
   maybeHeavySwitches(rng, grid, switches, difficulty);
   const def = packDef(toTiles(grid), spawn, seed, switches, splits);
   return finishPuzzle(def, seed, difficulty, 200_000);
@@ -1350,15 +1349,15 @@ function tryFullBoard(rng: () => number, seed: string, difficulty: Difficulty): 
   }
 
   maybeShareBridges(rng, switches, difficulty);
-  forceShareBridge(switches);
+  ensureToggleThinking(switches);
   maybeHeavySwitches(rng, grid, switches, difficulty);
   return finishPuzzle(packDef(toTiles(grid), spawn, seed, switches, splits), seed, difficulty, 200_000);
 }
 
 /**
- * Rectangular islands in a line. Each gap is a gated bridge — the only crossing.
+ * Rectangular islands in a line. Each gap is a single OFF bridge — the only crossing.
  * Used as the hardness safety net so daily / gauntlet never emit a walk-around map.
- * Still injects toggle + shared gates so it is not a pure ON-chain.
+ * Fragile motif polish only — keep every gate independently required.
  */
 export function forcedGatePuzzle(seed: string, gates: number, difficulty: Difficulty = "insane"): Puzzle {
   const nGates = clamp(gates, 1, 4);
@@ -1379,12 +1378,11 @@ export function forcedGatePuzzle(seed: string, gates: number, difficulty: Diffic
     if (i < n - 1) {
       const bx = x0 + iw;
       const by = y0 + 1;
-      const present = pickBridgePresentation(mulberry32(hashSeed(`${seed}:fg:${i}`)), difficulty, i % 2 === 0 ? "l" : "r");
-      if (bx < W) grid[by][bx] = present.tile;
+      if (bx < W) grid[by][bx] = "l";
       const sx = x0;
       const sy = y0;
       grid[sy][sx] = "s";
-      switches.push({ x: sx, y: sy, bridges: [{ x: bx, y: by, mode: present.mode }] });
+      switches.push({ x: sx, y: sy, bridges: [{ x: bx, y: by, mode: "on" }] });
     }
   }
   if (nGates >= 4 && n >= 3) {
@@ -1395,7 +1393,7 @@ export function forcedGatePuzzle(seed: string, gates: number, difficulty: Diffic
       const ch = grid[cy][cutX];
       if (ch === "e" || ch === "s") continue;
       grid[cy][cutX] = "r";
-      line.push({ x: cutX, y: cy, mode: "onoff" });
+      line.push({ x: cutX, y: cy, mode: "on" });
     }
     if (line.length) {
       const sx = 2;
@@ -1404,7 +1402,6 @@ export function forcedGatePuzzle(seed: string, gates: number, difficulty: Diffic
       switches.push({ x: sx, y: sy, bridges: line });
     }
   }
-  forceShareBridge(switches);
   const spawn: [number, number] = [1, y0 + 2];
   const endX = Math.min(W - 1, (n - 1) * (iw + gap) + iw - 1);
   const endY = y0 + ih - 1;
@@ -1419,7 +1416,6 @@ export function forcedGatePuzzle(seed: string, gates: number, difficulty: Diffic
     }
   }
   paintFragileMotif(mulberry32(hashSeed(`${seed}:motif`)), grid, stone, 4, spawn);
-  maybeHeavySwitches(mulberry32(hashSeed(`${seed}:hvy`)), grid, switches, difficulty);
   const def = packDef(toTiles(grid), spawn, seed, switches);
   return finishPuzzle(def, seed, difficulty, 120_000) ?? {
     def,
@@ -1505,7 +1501,7 @@ function tryRibbon(rng: () => number, seed: string, difficulty: Difficulty): Puz
   const ribbonStone = line.filter(([x, y]) => grid[y][x] === "b" && !(x === spawn[0] && y === spawn[1]));
   paintFragileMotif(rng, grid, ribbonStone, Math.min(8, 3 + Math.floor(rng() * 4)), spawn);
   maybeShareBridges(rng, switches, difficulty);
-  forceShareBridge(switches);
+  ensureToggleThinking(switches);
   maybeHeavySwitches(rng, grid, switches, difficulty);
   const tiles = toTiles(grid);
   const def = packDef(tiles, spawn, seed, switches);
