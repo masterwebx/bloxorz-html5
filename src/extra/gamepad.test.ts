@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   absorbHeldMenuConfirm,
+  clearExtraMenuHeld,
   isPadDriving,
   noteKeyboardPlay,
   pollGamepad,
   pollMenuPad,
+  primeMenuDirHold,
   resetPadState,
   rumble,
+  setExtraMenuHeld,
 } from "./gamepad";
 import { invalidateSettingsCache } from "./settings";
 
@@ -164,6 +167,65 @@ describe("gamepad pause and menu confirm", () => {
     expect(gaps.length).toBeGreaterThan(3);
     const steady = gaps.slice(1);
     expect(Math.max(...steady) - Math.min(...steady)).toBeLessThanOrEqual(1);
+  });
+
+  it("uses faster creator repeat cadence when requested", () => {
+    hold([]);
+    pollMenuPad({ repeatInitial: 2, repeatRate: 2 });
+    hold([13]);
+    expect(pollMenuPad({ repeatInitial: 2, repeatRate: 2 })).toEqual(["down"]);
+    const gaps: number[] = [];
+    let since = 0;
+    for (let i = 0; i < 40; i++) {
+      since++;
+      const ev = pollMenuPad({ repeatInitial: 2, repeatRate: 2 });
+      if (ev.includes("down")) {
+        gaps.push(since);
+        since = 0;
+      }
+    }
+    expect(gaps[0]).toBe(2);
+    expect(gaps.slice(1).every((g) => g === 2)).toBe(true);
+  });
+
+  it("merges synthetic keyboard dirs without marking pad driving", () => {
+    hold([]);
+    pollMenuPad();
+    expect(isPadDriving()).toBe(false);
+    setExtraMenuHeld({ down: true });
+    expect(pollMenuPad()).toEqual(["down"]);
+    expect(isPadDriving()).toBe(false);
+    clearExtraMenuHeld();
+  });
+
+  it("keeps dir hold-repeat armed across confirm when requested", () => {
+    const opts = { keepDirHoldOnConfirm: true, confirmCool: 3, repeatInitial: 2, repeatRate: 2 };
+    hold([]);
+    pollMenuPad(opts);
+    hold([13]);
+    expect(pollMenuPad(opts)).toEqual(["down"]);
+    // Drain dir cool so confirm edge can fire.
+    expect(pollMenuPad(opts)).toEqual([]);
+    hold([13, 0]);
+    expect(pollMenuPad(opts)).toEqual(["confirm"]);
+    let saw = false;
+    for (let i = 0; i < 20; i++) {
+      if (pollMenuPad(opts).includes("down")) {
+        saw = true;
+        break;
+      }
+    }
+    expect(saw).toBe(true);
+  });
+
+  it("primes keyboard dir hold without double-firing the edge", () => {
+    hold([]);
+    pollMenuPad({ repeatInitial: 2, repeatRate: 2 });
+    setExtraMenuHeld({ right: true });
+    primeMenuDirHold("right", 2);
+    expect(pollMenuPad({ repeatInitial: 2, repeatRate: 2 })).toEqual([]);
+    expect(pollMenuPad({ repeatInitial: 2, repeatRate: 2 })).toEqual(["right"]);
+    clearExtraMenuHeld();
   });
 
   it("does not rumble for keyboard play even if a pad is plugged in", () => {

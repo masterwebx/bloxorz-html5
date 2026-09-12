@@ -33,7 +33,22 @@ import {
   type Difficulty,
   type GauntletCount,
 } from "./generate";
-import { absorbHeldMenuConfirm, actionFromCode, heldPadButtons, noteKeyboardPlay, pollGamepad, pollMenuPad, resetPadState, rumble } from "./gamepad";
+import {
+  absorbHeldMenuConfirm,
+  actionFromCode,
+  clearExtraMenuHeld,
+  CREATOR_CONFIRM_COOL,
+  CREATOR_REPEAT_INITIAL,
+  CREATOR_REPEAT_RATE,
+  heldPadButtons,
+  noteKeyboardPlay,
+  pollGamepad,
+  pollMenuPad,
+  primeMenuDirHold,
+  resetPadState,
+  rumble,
+  setExtraMenuHeld,
+} from "./gamepad";
 import { PAUSE_ACTIONS, pauseNavFromPad, stepPauseFocus, type PauseAction } from "./pauseNav";
 import {
   blitPackedRecolor,
@@ -442,9 +457,14 @@ let animateHome = false;
 let undoStack: LevelDef[] = [];
 let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
-/** True while a mouse/pad paint stroke is active — board preview uses cheap Shape diamonds. */
+/** True while paint or live cursor nav uses cheap Shape diamonds (settle restores clips). */
 let creatorPaintStroke = false;
+/** True when the current shape-preview stroke actually painted a cell (needs beat check). */
+let creatorStrokePainted = false;
 let beatCheckTimer = 0;
+let creatorPreviewSettleTimer = 0;
+/** Keyboard dirs fed into pollMenuPad so creator arrows match pad hold-repeat (no OS key-delay). */
+const creatorKeyDirs: Partial<Record<"up" | "down" | "left" | "right", boolean>> = {};
 let lastTintKey = "";
 let bgCycleLastMs = 0;
 let lastPlayHudKey = "";
@@ -3233,6 +3253,27 @@ function refreshCreatorPreview(forceShapes = creatorPaintStroke): void {
   });
 }
 
+function cancelCreatorPreviewSettle(): void {
+  if (!creatorPreviewSettleTimer) return;
+  clearTimeout(creatorPreviewSettleTimer);
+  creatorPreviewSettleTimer = 0;
+}
+
+/** After cursor/paint shape previews go idle, restore Tile clips (and beat-check if painted). */
+function scheduleCreatorPreviewSettle(deferMs = 90): void {
+  cancelCreatorPreviewSettle();
+  creatorPreviewSettleTimer = window.setTimeout(() => {
+    creatorPreviewSettleTimer = 0;
+    if (extraView !== "creator-edit") return;
+    if (editorPaintHeld || heldPadButtons().has(loadSettings().pads.confirm)) return;
+    if (creatorKeyDirs.up || creatorKeyDirs.down || creatorKeyDirs.left || creatorKeyDirs.right) {
+      scheduleCreatorPreviewSettle(deferMs);
+      return;
+    }
+    endCreatorPaintStroke();
+  }, deferMs) as unknown as number;
+}
+
 function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
   if (x < 0 || y < 0 || x >= 15 || y >= 10) return;
   if (phase === "drag") {
@@ -3259,6 +3300,8 @@ function paintEditorAt(x: number, y: number, phase: "start" | "drag"): void {
   beaten = false;
   // Stroke path: Shape diamonds only — skip Tile/MovieClip construction per cell.
   creatorPaintStroke = true;
+  creatorStrokePainted = true;
+  cancelCreatorPreviewSettle();
   refreshCreatorPreview(true);
 }
 
@@ -3267,14 +3310,19 @@ function handleCreatorNav(ev: "up" | "down" | "left" | "right" | "confirm" | "ba
     goBack();
     return;
   }
-    if (ev === "left" || ev === "right" || ev === "up" || ev === "down") {
+  if (ev === "left" || ev === "right" || ev === "up" || ev === "down") {
     if (ev === "left") editCursor.x = Math.max(0, editCursor.x - 1);
     if (ev === "right") editCursor.x = Math.min(14, editCursor.x + 1);
     if (ev === "up") editCursor.y = Math.max(0, editCursor.y - 1);
     if (ev === "down") editCursor.y = Math.min(9, editCursor.y + 1);
     const held = editorPaintHeld || heldPadButtons().has(loadSettings().pads.confirm);
     if (held) paintEditorAt(editCursor.x, editCursor.y, "drag");
-    else refreshCreatorPreview(false);
+    else {
+      // Same cheap Shape path as paint-hold — full Tile clips were hitching every step.
+      creatorPaintStroke = true;
+      refreshCreatorPreview(true);
+      scheduleCreatorPreviewSettle();
+    }
     return;
   }
   if (ev === "confirm") {
@@ -3687,6 +3735,10 @@ function openPanel(name: Screen): void {
   if (name === "creator-edit") {
     editCursor = { x: draft.spawn[0], y: draft.spawn[1] };
     editorPaintHeld = false;
+    creatorStrokePainted = false;
+    creatorKeyDirs.up = creatorKeyDirs.down = creatorKeyDirs.left = creatorKeyDirs.right = false;
+    clearExtraMenuHeld();
+    cancelCreatorPreviewSettle();
   }
   if (name === "puzzles-seeded") puzzleSeed = freshSeed();
   if (name === "puzzles-gauntlet") gauntletSeed = freshSeed();
@@ -5750,6 +5802,8 @@ function commitTape(won: boolean, stageNo: number): void {
 
 function runBeatCheck(): void {
   creatorPaintStroke = false;
+  creatorStrokePainted = false;
+  cancelCreatorPreviewSettle();
   const issue = isPlayable(draft);
   if (issue) {
     beatLabel = issue;
@@ -5983,10 +6037,14 @@ function handleTouchPadDown(code: string): void {
 function endCreatorPaintStroke(): void {
   editorPaintHeld = false;
   lastPaintCell = "";
+  cancelCreatorPreviewSettle();
   if (!creatorPaintStroke) return;
   // Clear before defer so pad/keyup polling cannot re-arm the settle timer every frame.
   creatorPaintStroke = false;
-  scheduleBeatCheck({ deferMs: 0 });
+  const painted = creatorStrokePainted;
+  creatorStrokePainted = false;
+  if (painted) scheduleBeatCheck({ deferMs: 0 });
+  else refreshCreatorPreview(false);
 }
 
 function handleTouchPadUp(code: string): void {
@@ -6034,10 +6092,21 @@ function bindMenuPad(): void {
       if (held.has(edge.btn) && !prevCreatorPad.has(edge.btn)) edge.fn();
     }
     prevCreatorPad = held;
-    for (const ev of pollMenuPad({ pauseConfirms: false })) handleMenuNav(ev);
+    setExtraMenuHeld(creatorKeyDirs);
+    for (const ev of pollMenuPad({
+      pauseConfirms: false,
+      repeatInitial: CREATOR_REPEAT_INITIAL,
+      repeatRate: CREATOR_REPEAT_RATE,
+      confirmCool: CREATOR_CONFIRM_COOL,
+      keepDirHoldOnConfirm: true,
+    })) {
+      handleMenuNav(ev);
+    }
     return;
   }
   prevCreatorPad = new Set();
+  clearExtraMenuHeld();
+  creatorKeyDirs.up = creatorKeyDirs.down = creatorKeyDirs.left = creatorKeyDirs.right = false;
   if (uiBusy) {
     pollMenuPad();
     return;
@@ -6206,8 +6275,27 @@ function bind(): void {
   );
 
   window.addEventListener("keyup", (ev) => {
-    if (extraView === "creator-edit" && (ev.code === "Space" || ev.key === "Enter")) {
-      endCreatorPaintStroke();
+    if (extraView === "creator-edit") {
+      if (ev.code === "Space" || ev.key === "Enter") endCreatorPaintStroke();
+      const act = actionFromCode(ev.code);
+      let cleared = false;
+      if (act === "up" || ev.key === "ArrowUp" || ev.code === "KeyW") {
+        creatorKeyDirs.up = false;
+        cleared = true;
+      }
+      if (act === "down" || ev.key === "ArrowDown" || ev.code === "KeyS") {
+        creatorKeyDirs.down = false;
+        cleared = true;
+      }
+      if (act === "left" || ev.key === "ArrowLeft" || ev.code === "KeyA") {
+        creatorKeyDirs.left = false;
+        cleared = true;
+      }
+      if (act === "right" || ev.key === "ArrowRight" || ev.code === "KeyD") {
+        creatorKeyDirs.right = false;
+        cleared = true;
+      }
+      if (cleared) setExtraMenuHeld(creatorKeyDirs);
     }
     if (!inStagePlay()) return;
     const act = actionFromCode(ev.code);
@@ -6284,24 +6372,29 @@ function bind(): void {
         handleHudAction("creator-save");
         return;
       }
-      if (act === "up" || ev.key === "ArrowUp" || ev.code === "KeyW") {
+      // Immediate first step + pollMenuPad hold-repeat (ignore OS key-repeat delay).
+      const armCreatorDir = (dir: "up" | "down" | "left" | "right"): void => {
         ev.preventDefault();
-        handleCreatorNav("up");
+        if (ev.repeat) return;
+        creatorKeyDirs[dir] = true;
+        setExtraMenuHeld(creatorKeyDirs);
+        handleCreatorNav(dir);
+        primeMenuDirHold(dir, CREATOR_REPEAT_INITIAL);
+      };
+      if (act === "up" || ev.key === "ArrowUp" || ev.code === "KeyW") {
+        armCreatorDir("up");
         return;
       }
       if (act === "down" || ev.key === "ArrowDown" || ev.code === "KeyS") {
-        ev.preventDefault();
-        handleCreatorNav("down");
+        armCreatorDir("down");
         return;
       }
       if (act === "left" || ev.key === "ArrowLeft" || ev.code === "KeyA") {
-        ev.preventDefault();
-        handleCreatorNav("left");
+        armCreatorDir("left");
         return;
       }
       if (act === "right" || ev.key === "ArrowRight" || ev.code === "KeyD") {
-        ev.preventDefault();
-        handleCreatorNav("right");
+        armCreatorDir("right");
         return;
       }
       if (act === "confirm" || ev.key === "Enter") {

@@ -51,8 +51,23 @@ let lastPadAt = 0;
 
 const MENU_REPEAT_INITIAL = 6;
 const MENU_REPEAT_RATE = 4;
+/** Stage Creator grid cursor — snappier than menu list navigation. */
+export const CREATOR_REPEAT_INITIAL = 2;
+export const CREATOR_REPEAT_RATE = 2;
+export const CREATOR_CONFIRM_COOL = 3;
 /** Ignore keyboard clear shortly after pad input (OS remappers fire keydown after poll). */
 const KEYBOARD_CLEAR_GRACE_MS = 320;
+
+/** Keyboard (and other) dirs merged into menu-pad polling — not pad-driving. */
+let extraMenuHeld: Partial<Record<MenuPadEvent, boolean>> = {};
+
+export function setExtraMenuHeld(held: Partial<Record<MenuPadEvent, boolean>>): void {
+  extraMenuHeld = held;
+}
+
+export function clearExtraMenuHeld(): void {
+  extraMenuHeld = {};
+}
 
 function nowMs(): number {
   return Date.now();
@@ -144,12 +159,24 @@ export function pollGamepad(
 
 export type MenuPadEvent = "up" | "down" | "left" | "right" | "confirm" | "back";
 
-function menuRepeatDelay(_heldFrames: number): number {
-  return MENU_REPEAT_RATE;
+export type PollMenuPadOpts = {
+  pauseConfirms?: boolean;
+  /** Frames after first dir press before hold-repeat (default menu cadence). */
+  repeatInitial?: number;
+  /** Frames between hold-repeat dir events. */
+  repeatRate?: number;
+  /** Cool after confirm/back edge (default 12). */
+  confirmCool?: number;
+  /** Keep stick/d-pad hold-repeat armed when confirm edges (creator paint-while-move). */
+  keepDirHoldOnConfirm?: boolean;
+};
+
+function menuRepeatDelay(_heldFrames: number, rate: number): number {
+  return rate;
 }
 
 /** Extra menus: edge-triggered pad events with hold-to-repeat for stick/d-pad. */
-export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] {
+export function pollMenuPad(opts?: PollMenuPadOpts): MenuPadEvent[] {
   if (menuCool > 0) menuCool--;
   const settings = loadSettings();
   const held = collectHeld();
@@ -164,7 +191,16 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
   ];
   for (const m of map) if (held.has(m.btn)) now[m.ev] = true;
   if ((opts?.pauseConfirms ?? true) && held.has(settings.pads.pause)) now.confirm = true;
+  // Pad-only: synthetic keyboard dirs must not arm rumble.
   if (Object.keys(now).length > 0) markPadDriving();
+  for (const [ev, on] of Object.entries(extraMenuHeld) as [MenuPadEvent, boolean | undefined][]) {
+    if (on) now[ev] = true;
+  }
+
+  const repeatInitial = opts?.repeatInitial ?? MENU_REPEAT_INITIAL;
+  const repeatRate = opts?.repeatRate ?? MENU_REPEAT_RATE;
+  const confirmCool = opts?.confirmCool ?? 12;
+  const keepDirHold = opts?.keepDirHoldOnConfirm ?? false;
 
   const out: MenuPadEvent[] = [];
   const dirs: MenuPadEvent[] = ["up", "down", "left", "right"];
@@ -176,11 +212,12 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
       if (dirs.includes(ev)) {
         menuHoldEv = ev;
         menuHoldFrames = 0;
-        menuCool = MENU_REPEAT_INITIAL;
+        menuCool = repeatInitial;
       } else {
-        menuHoldEv = null;
         menuHoldFrames = 0;
-        menuCool = 12;
+        menuCool = confirmCool;
+        if (keepDirHold && heldDir) menuHoldEv = heldDir;
+        else menuHoldEv = null;
       }
     }
   }
@@ -189,7 +226,7 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
     menuHoldFrames++;
     if (menuCool === 0) {
       out.push(heldDir);
-      menuCool = menuRepeatDelay(menuHoldFrames);
+      menuCool = menuRepeatDelay(menuHoldFrames, repeatRate);
     }
   } else if (!heldDir) {
     menuHoldEv = null;
@@ -198,6 +235,14 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
 
   prevMenu = now;
   return out;
+}
+
+/** After an immediate keyboard dir step, arm hold-repeat without a second edge fire. */
+export function primeMenuDirHold(ev: "up" | "down" | "left" | "right", cool = MENU_REPEAT_INITIAL): void {
+  prevMenu = { ...prevMenu, [ev]: true };
+  menuHoldEv = ev;
+  menuHoldFrames = 0;
+  menuCool = cool;
 }
 
 /** Ignore a Start/confirm that is still held after leaving a screen. */
@@ -217,6 +262,7 @@ export function resetPadState(): void {
   menuHoldFrames = 0;
   padDriving = false;
   lastPadAt = 0;
+  extraMenuHeld = {};
 }
 
 export function actionFromCode(code: string): Action | null {
