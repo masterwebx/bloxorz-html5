@@ -2781,7 +2781,11 @@ function homeItems(): MenuItem[] {
     { id: "records", label: t("menu.records") },
   ];
   if (hasAchievementMenu()) items.push({ id: "achievements", label: t("menu.achievements") });
-  items.push({ id: "credits", label: t("menu.credits") }, { id: "settings", label: t("menu.settings") });
+  items.push(
+    { id: "credits", label: t("menu.credits") },
+    { id: "settings", label: t("menu.settings") },
+    { id: "discord", label: t("menu.discord") },
+  );
   return items;
 }
 
@@ -3894,7 +3898,9 @@ function handleHudAction(act: string): void {
   else if (act === "load-go") loadPasscode();
   else if (act === "credits") openPanel("credits");
   else if (act === "settings") openPanel("settings");
-  else if (act === "remap") openPanel("remap");
+  else if (act === "discord") {
+    window.open("https://discord.gg/nV928xB3hu", "_blank", "noopener,noreferrer");
+  } else if (act === "remap") openPanel("remap");
   else if (act === "settings-colors") openPanel("settings-colors");
   else if (act === "back") goBack();
   else if (act === "creator") openPanel("creator");
