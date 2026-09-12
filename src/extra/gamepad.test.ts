@@ -118,6 +118,18 @@ describe("gamepad pause and menu confirm", () => {
     expect(isPadDriving()).toBe(true);
   });
 
+  it("maps A/South and Start to menu confirm for splash unlock", () => {
+    hold([]);
+    pollMenuPad();
+    hold([0]);
+    expect(pollMenuPad()).toEqual(["confirm"]);
+    hold([]);
+    pollMenuPad();
+    resetPadState();
+    hold([9]);
+    expect(pollMenuPad()).toEqual(["confirm"]);
+  });
+
   it("repeats stick navigation while held", () => {
     hold([]);
     pollMenuPad();

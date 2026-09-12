@@ -3842,6 +3842,8 @@ function toggleRotateScreen(): void {
 function dismissSplash(): void {
   if (splashDone) return;
   splashDone = true;
+  // Absorb held A/Start so the next screen does not instantly confirm a menu item.
+  absorbHeldMenuConfirm();
   unlockAudio(() => {
     setMenuMusicAllowed(true);
     ensureMenuMusic();
@@ -6585,6 +6587,9 @@ function syncOverlay(): void {
       raiseHud();
     }
     paintHud();
+    // Splash used to return before bindMenuPad — A/Start never dismissed the gate.
+    // pollMenuPad maps confirm (A/South) and Start→confirm; never pollGamepad/pause here.
+    bindMenuPad();
     return;
   }
 
