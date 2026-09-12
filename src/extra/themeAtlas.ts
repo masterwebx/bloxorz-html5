@@ -78,8 +78,19 @@ export function forgetThemeAtlas(id?: string): void {
   else cache.clear();
 }
 
+/** Return a writable copy so tile/block bake never mutates the pristine cache. */
+function cloneAtlasCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("atlas");
+  ctx.drawImage(source, 0, 0);
+  return canvas;
+}
+
 export async function composeThemeAtlas(id: string, force = false): Promise<HTMLCanvasElement> {
-  if (!force && cache.has(id)) return cache.get(id)!;
+  if (!force && cache.has(id)) return cloneAtlasCanvas(cache.get(id)!);
   const canvas = document.createElement("canvas");
   canvas.width = map.width;
   canvas.height = map.height;
@@ -102,5 +113,6 @@ export async function composeThemeAtlas(id: string, force = false): Promise<HTML
     }
   }
   cache.set(id, canvas);
-  return canvas;
+  // Callers (bake / Reset all) mutate the returned canvas — never hand out the cache.
+  return cloneAtlasCanvas(canvas);
 }

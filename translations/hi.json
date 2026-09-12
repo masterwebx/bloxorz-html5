@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} चरण। वही सीड, वही गंटलेट।",
   "settings.blockHue": "ब्लॉक रंग",
   "settings.customizeColors": "रंग अनुकूलित करें",
+  "settings.fullscreen": "पूर्ण स्क्रीन",
   "settings.customizeColorsHint": "ब्लॉक और टाइल का रंग बदलें। बंद = मूल।",
   "settings.colorOn": "चालू",
   "settings.colorOff": "बंद",

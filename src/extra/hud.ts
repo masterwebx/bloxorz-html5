@@ -571,6 +571,7 @@ export class ExtraHud {
     themeBg: boolean;
     webcamBg: boolean;
     tabCastBg: boolean;
+    fullscreen?: boolean;
     music: number;
     sfx: number;
     bgTint: number;
@@ -609,6 +610,17 @@ export class ExtraHud {
     }
     // Backdrop tint + block preview live under Customize colors.
     this.add(this.act("settings-colors", t("settings.customizeColors"), 40, 234, 12, false, 200));
+    this.add(
+      this.act(
+        "toggle-fullscreen",
+        `${this.focusId === "toggle-fullscreen" ? "> " : "  "}${t("settings.fullscreen")}  ${onOff(!!opts.fullscreen)}`,
+        250,
+        234,
+        11,
+        false,
+        200,
+      ),
+    );
     this.add(this.act("remap", t("settings.remap"), 40, 258, 12, false, 160));
     this.add(this.act("settings-save", t("settings.manageSave"), 220, 258, 12, false, 220));
   }

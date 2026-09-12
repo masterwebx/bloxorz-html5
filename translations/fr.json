@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} stages. Même graine, même gauntlet.",
   "settings.blockHue": "Couleur du bloc",
   "settings.customizeColors": "Personnaliser les couleurs",
+  "settings.fullscreen": "Plein écran",
   "settings.customizeColorsHint": "Recolore le bloc et les tuiles. Non = original.",
   "settings.colorOn": "Oui",
   "settings.colorOff": "Non",

@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} stages. Same seed, same gauntlet.",
   "settings.blockHue": "Block color",
   "settings.customizeColors": "Customize colors",
+  "settings.fullscreen": "Fullscreen",
   "settings.customizeColorsHint": "Recolor the block and tiles. Off = original.",
   "settings.colorOn": "On",
   "settings.colorOff": "Off",

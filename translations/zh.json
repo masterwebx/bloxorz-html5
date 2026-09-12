@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} 关。同一种子，同一挑战。",
   "settings.blockHue": "方块颜色",
   "settings.customizeColors": "自定义颜色",
+  "settings.fullscreen": "全屏",
   "settings.customizeColorsHint": "重着色方块与地砖。关 = 原版。",
   "settings.colorOn": "开",
   "settings.colorOff": "关",

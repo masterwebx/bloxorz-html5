@@ -824,19 +824,23 @@ function collectTileAtlas(): boolean {
 /** Reload Coolmath/theme sheet so tile slots off do not leave a pack→blit rewrite. */
 function restorePristineTileSheet(): void {
   tileAtlasReady = false;
+  bakedTileColors = {};
   if (extraView === "settings-colors") {
     markHudDirty();
     paintHud();
   }
   const theme = currentThemeId();
-  void composeThemeAtlas(theme)
+  // Force rebuild so we never re-adopt a cache canvas that bake previously mutated.
+  forgetThemeAtlas(theme);
+  void composeThemeAtlas(theme, true)
     .then((img) => {
-      const sheet = atlasSheet();
-      if (sheet) adoptAtlasCanvas(sheet, img);
-      const images = adobeComp()?.getImages?.();
-      if (images) images.bloxorz_atlas_ = img;
+      // Drop packed sources extracted from the previous (possibly tinted) live atlas.
       invalidateBlockHueCache();
-      atlasCanvas = img;
+      const sheet = atlasSheet();
+      const live = sheet ? adoptAtlasCanvas(sheet, img) : null;
+      const images = adobeComp()?.getImages?.();
+      if (images) images.bloxorz_atlas_ = live ?? img;
+      atlasCanvas = live ?? img;
       bakedTileColors = {};
       tileAtlasReady = true;
       if (liveBlockTint()) applyBlockHue(true);
@@ -864,12 +868,12 @@ function applyTileColors(force = false): void {
   const hasAtlas = TILE_COLOR_SLOTS.some((id) => !!tileHueSource[id] && !!tileHueLayout[id]);
 
   // No tile colors on and never baked → leave the pristine theme sheet alone.
-  if (!anyOn && !anyBaked) {
+  if (!anyOn && !anyBaked && !hasAtlas) {
     tileAtlasReady = true;
     return;
   }
-  // All slots off after a prior bake → restore pristine sheet (no pack→blit rewrite).
-  if (!anyOn && anyBaked) {
+  // All slots off after a prior bake (or packed extract) → restore pristine sheet.
+  if (!anyOn) {
     restorePristineTileSheet();
     return;
   }
@@ -1055,6 +1059,40 @@ function usingTabCast(): boolean {
   return loadSettings().tabCastBg;
 }
 
+function fullscreenTarget(): HTMLElement {
+  return ($("animation_container") || $("app-shell") || document.documentElement) as HTMLElement;
+}
+
+function isFullscreenActive(): boolean {
+  const doc = document as Document & { webkitFullscreenElement?: Element | null };
+  return !!(document.fullscreenElement || doc.webkitFullscreenElement);
+}
+
+/** Toggle fullscreen on the game container (Settings + Ctrl/Cmd+F). */
+function toggleFullscreen(): void {
+  const doc = document as Document & {
+    webkitExitFullscreen?: () => Promise<void> | void;
+    webkitFullscreenElement?: Element | null;
+  };
+  const el = fullscreenTarget() as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+  try {
+    if (isFullscreenActive()) {
+      if (document.exitFullscreen) void document.exitFullscreen();
+      else doc.webkitExitFullscreen?.();
+    } else if (el.requestFullscreen) {
+      void el.requestFullscreen();
+    } else {
+      el.webkitRequestFullscreen?.();
+    }
+  } catch {
+    /* Browser may block fullscreen outside a user gesture or deny Ctrl+F override. */
+  }
+  if (extraView === "settings") {
+    markHudDirty();
+    paintHud();
+  }
+}
+
 function usingLiveBg(): boolean {
   return usingWebcam() || usingTabCast();
 }
@@ -1062,12 +1100,18 @@ function usingLiveBg(): boolean {
 function applyLooks(): void {
   const s = loadSettings();
   const live = s.webcamBg || s.tabCastBg;
+  // Persist: cast tab keeps Cycle off so a reload cannot revive the fight.
+  if (s.tabCastBg && s.bgCycle) {
+    s.bgCycle = false;
+    saveSettings(s);
+  }
   document.body.classList.toggle("no-theme-bg", !s.themeBg && !live);
   document.body.classList.toggle("has-webcam-bg", live);
   // Tint media only when the backdrop slot is enabled (or legacy bgTint without colorCustom).
   const bg = activeBackdrop(s);
   document.body.classList.toggle("has-bg-tint", !live && !!bg);
-  document.body.classList.toggle("has-bg-cycle", !!s.bgCycle);
+  // Cast tab feed must not fight backdrop hue cycling.
+  document.body.classList.toggle("has-bg-cycle", !!s.bgCycle && !s.tabCastBg);
   document.body.style.setProperty("--bg-tint", bg ? hexCss(bg.hex, bg.tint * 0.4) : "transparent");
   document.body.style.setProperty(
     "--play-tint",
@@ -2608,6 +2652,8 @@ function clickPauseButton(name: PauseAction): void {
     if ((menu.currentFrame ?? 0) >= 10) menu.play?.();
     return;
   }
+  // Quit: fully stop auto-solve (not just pause) before leaving play.
+  stopAutoSolve("");
   quitPlay();
 }
 
@@ -2649,6 +2695,15 @@ function releaseSteerKeys(): void {
   }
 }
 
+/** Release any held auto-solve key without clearing the feeder (pause only). */
+function pauseAutoSolveInput(): void {
+  if (!autoSolve) return;
+  if (solveCode) {
+    window.stage?.triggerKeyUp?.({ code: solveCode });
+    solveCode = "";
+  }
+}
+
 function togglePauseMenu(): void {
   const menu = pauseMenuClip();
   if (!menu?.play) return;
@@ -2656,6 +2711,7 @@ function togglePauseMenu(): void {
   if (frame !== 0 && frame !== 12) return;
   if (frame === 0) {
     releaseSteerKeys();
+    pauseAutoSolveInput();
     pauseFocus = 0;
   }
   menu.play();
@@ -2778,6 +2834,7 @@ function navItems(): NavItem[] {
       { id: "toggle-tab-cast" },
       ...(s.tabCastBg ? [{ id: "tab-crop" }] : []),
       { id: "settings-colors" },
+      { id: "toggle-fullscreen" },
       { id: "remap" },
       { id: "settings-save" },
     ];
@@ -3153,6 +3210,7 @@ function hudKey(): string {
     String(s.themeBg),
     String(s.webcamBg),
     String(s.tabCastBg),
+    String(isFullscreenActive()),
     String(s.bgTint),
     String(s.bgHue),
     String(s.bgColor || ""),
@@ -3260,6 +3318,7 @@ function paintHud(): void {
       themeBg: s.themeBg,
       webcamBg: s.webcamBg,
       tabCastBg: s.tabCastBg,
+      fullscreen: isFullscreenActive(),
       music: s.music,
       sfx: s.sfx,
       bgTint: s.bgTint,
@@ -3926,7 +3985,10 @@ function handleHudAction(act: string): void {
   } else if (act === "toggle-tab-cast") {
     const s = loadSettings();
     s.tabCastBg = !s.tabCastBg;
-    if (s.tabCastBg) s.webcamBg = false;
+    if (s.tabCastBg) {
+      s.webcamBg = false;
+      s.bgCycle = false;
+    }
     saveSettings(s);
     applyLooks();
     showGameSky(true);
@@ -3934,6 +3996,8 @@ function handleHudAction(act: string): void {
     applyThemeMedia();
     markHudDirty();
     paintHud();
+  } else if (act === "toggle-fullscreen") {
+    toggleFullscreen();
   } else if (act === "tab-crop") {
     openTabCropEditor();
   } else if (act === "export-save") {
@@ -3975,6 +4039,10 @@ function handleHudAction(act: string): void {
     markHudDirty();
   } else if (act === "toggle-bg-cycle") {
     updateSettings((s) => {
+      if (s.tabCastBg) {
+        s.bgCycle = false;
+        return;
+      }
       s.bgCycle = !s.bgCycle;
     });
     applyLooks();
@@ -5236,6 +5304,8 @@ function tickSolve(): void {
   const stage = window.stage;
   if (!autoSolve || !solveFeeder) return;
   if (currentLabel() !== "game") return;
+  // Pause menu open → pause auto-solve (feeder kept; quit stops fully).
+  if (isPauseMenuOpen()) return;
   if (!stage?.triggerKeyDown) return;
   const hasBlock = playBlocks().length > 0;
   // Block idle only — bridge passable already tracks door.state immediately, so no settle pause.
@@ -5680,6 +5750,18 @@ function bind(): void {
   modalInput()?.addEventListener("keypress", (ev) => ev.stopPropagation());
   window.addEventListener("pointerdown", unlock, { capture: true });
   window.addEventListener("keydown", unlock, { capture: true });
+  document.addEventListener("fullscreenchange", () => {
+    if (extraView === "settings") {
+      markHudDirty();
+      paintHud();
+    }
+  });
+  document.addEventListener("webkitfullscreenchange", () => {
+    if (extraView === "settings") {
+      markHudDirty();
+      paintHud();
+    }
+  });
 
   modalInput()?.addEventListener("paste", () => {
     if (modalKind !== "code-play") return;
@@ -5810,6 +5892,13 @@ function bind(): void {
     if (tabCropOpen) return;
     if (uiBusy) {
       ev.preventDefault();
+      return;
+    }
+    // Ctrl/Cmd+F → fullscreen (steal from browser Find when we can).
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && (ev.key === "f" || ev.key === "F" || ev.code === "KeyF")) {
+      if (document.activeElement === hudInput() || document.activeElement === modalInput()) return;
+      ev.preventDefault();
+      toggleFullscreen();
       return;
     }
     if (handleAttractInput()) {
@@ -5978,7 +6067,8 @@ function syncOverlay(): void {
   // stage-complete/win (finish) so CreateJS never paints one classic frame under HD text.
   if (usesHdType()) suppressClassicBitmapsForHd(label);
   // Backdrop-only CreateJS sky cycle (DOM media uses CSS animation — skip here).
-  if (loadSettings().bgCycle) {
+  // Cast tab forces cycle off — don't keep shifting the CreateJS sky either.
+  if (loadSettings().bgCycle && !loadSettings().tabCastBg) {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     // ~60fps updates for continuous hue — cheap overlay RGB rotate, not block atlas work.
     if (now - bgCycleLastMs >= 16) {
@@ -6234,7 +6324,7 @@ function syncOverlay(): void {
       syncStageCard(false);
       tickSolve();
       if (isPauseMenuOpen()) pollPauseMenuPad();
-      else if (!autoSolve) pollGamepad(stage, togglePauseMenu);
+      else pollGamepad(autoSolve ? undefined : stage, togglePauseMenu);
       if (!playSession) return;
       syncHelpText();
       const idle = !playBlocks().length || blocksIdle();

@@ -41,6 +41,7 @@ describe("i18n", () => {
     expect(t("settings.manageSave")).toBe("Manage save data");
     expect(t("settings.playTime")).toBe("Show time under moves");
     expect(t("settings.tabCast")).toBe("Cast tab background");
+    expect(t("settings.fullscreen")).toBe("Fullscreen");
     expect(t("settings.stageName")).toBe("Stage name");
     expect(t("play.stage", { n: 4 })).toBe("Stage 4");
     expect(t("play.stageCard", { n: "01" })).toBe("STAGE 01");

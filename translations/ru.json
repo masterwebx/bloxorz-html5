@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} этапов. Тот же сид — тот же гаунтлет.",
   "settings.blockHue": "Цвет блока",
   "settings.customizeColors": "Настроить цвета",
+  "settings.fullscreen": "Полный экран",
   "settings.customizeColorsHint": "Перекрасьте блок и плитки. Выкл = оригинал.",
   "settings.colorOn": "Вкл",
   "settings.colorOff": "Выкл",

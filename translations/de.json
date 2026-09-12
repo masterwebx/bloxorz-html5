@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} Stufen. Gleicher Seed, gleiches Gauntlet.",
   "settings.blockHue": "Blockfarbe",
   "settings.customizeColors": "Farben anpassen",
+  "settings.fullscreen": "Vollbild",
   "settings.customizeColorsHint": "Block und Kacheln umfärben. Aus = Original.",
   "settings.colorOn": "An",
   "settings.colorOff": "Aus",

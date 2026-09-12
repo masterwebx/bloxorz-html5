@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n}스테이지. 같은 시드, 같은 건틀릿.",
   "settings.blockHue": "블록 색",
   "settings.customizeColors": "색상 맞춤",
+  "settings.fullscreen": "전체 화면",
   "settings.customizeColorsHint": "블록과 타일 색을 바꿉니다. 끄기 = 원본.",
   "settings.colorOn": "켜기",
   "settings.colorOff": "끄기",

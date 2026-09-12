@@ -16,3 +16,6 @@ describe("theme atlas folders", () => {
     expect(files.some((f) => f.endsWith("atlas.png"))).toBe(false);
   });
 });
+
+/** composeThemeAtlas returns clones of the pristine cache (see themeAtlas.ts) so
+ *  tile/block bake cannot poison Reset all / Default — verified manually in-browser. */

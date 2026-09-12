@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} fases. Misma semilla, mismo gauntlet.",
   "settings.blockHue": "Color del bloque",
   "settings.customizeColors": "Personalizar colores",
+  "settings.fullscreen": "Pantalla completa",
   "settings.customizeColorsHint": "Recolorea el bloque y las losas. Off = original.",
   "settings.colorOn": "Sí",
   "settings.colorOff": "No",

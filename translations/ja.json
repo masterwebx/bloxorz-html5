@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} ステージ。同じシードで同じガントレット。",
   "settings.blockHue": "ブロックの色",
   "settings.customizeColors": "色をカスタム",
+  "settings.fullscreen": "全画面",
   "settings.customizeColorsHint": "ブロックとマスの色を変更。オフ＝オリジナル。",
   "settings.colorOn": "オン",
   "settings.colorOff": "オフ",

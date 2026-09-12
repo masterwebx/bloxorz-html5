@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} مراحل. نفس البذرة، نفس التحدي.",
   "settings.blockHue": "لون المكعب",
   "settings.customizeColors": "تخصيص الألوان",
+  "settings.fullscreen": "ملء الشاشة",
   "settings.customizeColorsHint": "أعد تلوين المكعب والبلاط. إيقاف = الأصلي.",
   "settings.colorOn": "تشغيل",
   "settings.colorOff": "إيقاف",

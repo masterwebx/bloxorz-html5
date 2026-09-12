@@ -298,6 +298,7 @@
   "gauntlet.countHint": "{n} fases. Mesma seed, mesmo gauntlet.",
   "settings.blockHue": "Cor do bloco",
   "settings.customizeColors": "Personalizar cores",
+  "settings.fullscreen": "Ecrã inteiro",
   "settings.customizeColorsHint": "Recolore o bloco e as lajes. Off = original.",
   "settings.colorOn": "Sim",
   "settings.colorOff": "Não",
