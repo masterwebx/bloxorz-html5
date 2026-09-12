@@ -175,6 +175,42 @@ export function finishSessionStatRows(
     }));
 }
 
+/** Pause HUD / finish screen: Attempts = Falls + 1. */
+export function finishAttempts(falls: number): number {
+  return Math.max(0, falls) + 1;
+}
+
+export type FinishDrawInputs = {
+  moves: number;
+  falls: number;
+  attempts: number;
+  rows: { stage: number; moves: number; attempts: number }[];
+};
+
+/**
+ * Single source of truth for the HD finish screen top row + stage list.
+ * Attempts always match Falls + 1. For a single-stage clear, stage Moves/Attempts
+ * match the top row (session/winning-attempt totals) so tape vs totalMoves cannot diverge.
+ */
+export function finishDrawInputs(opts: {
+  falls: number;
+  sessionMoves: number;
+  levels: LevelStat[];
+  maxStage?: number;
+  fallbackStage?: number;
+}): FinishDrawInputs {
+  const falls = Math.max(0, opts.falls);
+  const attempts = finishAttempts(falls);
+  const moves = Math.max(0, opts.sessionMoves);
+  let rows = finishSessionStatRows(opts.levels, { maxStage: opts.maxStage });
+  if (!rows.length) {
+    rows = [{ stage: opts.fallbackStage ?? 1, moves, attempts }];
+  } else if (rows.length === 1) {
+    rows = [{ ...rows[0]!, moves, attempts }];
+  }
+  return { moves, falls, attempts, rows };
+}
+
 /** Coolmath only consumes a move while idle, and Space only swaps while split. */
 export function acceptTapeCmd(cmd: TapeCmd, view: { idle: boolean; split: boolean }): boolean {
   if (cmd === "swap") return view.split;

@@ -817,7 +817,8 @@ export class ExtraHud {
     cleared: string;
     moves: number;
     falls: number;
-    fails: number;
+    /** Attempts = Falls + 1 (same as pause HUD). */
+    attempts: number;
     rows: { title: string; meta: string }[];
     scroll?: number;
     pageSize?: number;
@@ -838,7 +839,7 @@ export class ExtraHud {
       this.add(brandOrbitron(heading.slice(0, 24), 275, 22, 22, "center"));
     }
     this.add(text(opts.cleared, 275, 62, 12, theme.muted, "center"));
-    this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 86, 12, theme.ink, "center"));
+    this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.attempts}`, 275, 86, 12, theme.ink, "center"));
     if (!opts.rows.length) this.add(text(t("finish.none"), 40, 118, 11, theme.muted));
     opts.rows.slice(scroll, scroll + pageSize).forEach((row, i) => {
       this.add(text(row.title, 40, 118 + i * 22, 11));

@@ -100,7 +100,8 @@ import {
   loadFinishedStages,
   saveFinishedStage,
   saveRun,
-  finishSessionStatRows,
+  finishAttempts,
+  finishDrawInputs,
   tapeCmdFromRoll,
   winningTape,
   type FinishedStage,
@@ -3579,15 +3580,19 @@ function paintHud(): void {
   } else if (extraView === "finish") {
     const st = window.stage;
     const copy = finishCopy();
-    const rows = finishStatRows();
+    const stats = finishScreenStats(st);
+    const rows = stats.rows.map((lv) => ({
+      title: t("play.stage", { n: String(lv.stage).padStart(2, "0") }),
+      meta: `${lv.moves} ${t("play.moves")} · ${lv.attempts} ${t("finish.attempts")}`,
+    }));
     const maxScroll = Math.max(0, rows.length - LIST_FINISH);
     if (listScroll > maxScroll) listScroll = maxScroll;
     hud.drawFinish({
       title: copy.title,
       cleared: copy.cleared,
-      moves: lastFinished?.totalMoves ?? st?.totalMoves ?? 0,
-      falls: lastFinishFalls || st?.totalFalls || 0,
-      fails: lastFinished?.fails ?? 0,
+      moves: stats.moves,
+      falls: stats.falls,
+      attempts: stats.attempts,
       rows,
       scroll: listScroll,
       pageSize: LIST_FINISH,
@@ -5308,26 +5313,23 @@ function handleAttractInput(): boolean {
   return true;
 }
 
-function finishStatRows(): { title: string; meta: string }[] {
-  const rows = finishSessionStatRows(lastFinished?.levels ?? [], {
+function finishScreenStats(st?: { totalMoves?: number; totalFalls?: number; levelNumber?: number }) {
+  const falls = lastFinishFalls || st?.totalFalls || 0;
+  const sessionMoves = lastFinished?.totalMoves ?? st?.totalMoves ?? 0;
+  return finishDrawInputs({
+    falls,
+    sessionMoves,
+    levels: lastFinished?.levels ?? [],
     maxStage: finishStageCap ?? undefined,
+    fallbackStage: lastFinished?.levels[0]?.stage ?? st?.levelNumber ?? 1,
   });
-  if (rows.length) {
-    return rows.map((lv) => ({
-      title: t("play.stage", { n: String(lv.stage).padStart(2, "0") }),
-      meta: `${lv.moves} ${t("play.moves")} · ${lv.attempts} ${t("finish.attempts")}`,
-    }));
-  }
-  const st = window.stage;
-  const moves = lastFinished?.totalMoves ?? st?.totalMoves ?? 0;
-  const attempts = Math.max(1, (lastFinished?.fails ?? 0) + 1);
-  const stageNo = lastFinished?.levels[0]?.stage ?? st?.levelNumber ?? 1;
-  return [
-    {
-      title: t("play.stage", { n: String(stageNo).padStart(2, "0") }),
-      meta: `${moves} ${t("play.moves")} · ${attempts} ${t("finish.attempts")}`,
-    },
-  ];
+}
+
+function finishStatRows(): { title: string; meta: string }[] {
+  return finishScreenStats(window.stage).rows.map((lv) => ({
+    title: t("play.stage", { n: String(lv.stage).padStart(2, "0") }),
+    meta: `${lv.moves} ${t("play.moves")} · ${lv.attempts} ${t("finish.attempts")}`,
+  }));
 }
 
 function finishCopy(): { title: string; cleared: string } {
@@ -6647,6 +6649,11 @@ function syncOverlay(): void {
     const finishMoves = stage?.totalMoves ?? tape.length;
     const finishFalls = stage?.totalFalls ?? 0;
     lastFinishFalls = finishFalls;
+    const finishTry = finishAttempts(finishFalls);
+    const singleStageClear =
+      !!playSession &&
+      !keepRunTotals(playSession) &&
+      (playSession.defs.length <= 1 || playSession.card === "daily" || playSession.card === "seeded");
     if (run && playSession?.record) {
       run.complete = true;
       run.totalTimeMs = Date.now() - run.at;
@@ -6657,14 +6664,17 @@ function syncOverlay(): void {
           stage: finishStage,
           timeMs: 0,
           moves: finishMoves,
-          attempts: finishFalls + 1,
+          attempts: finishTry,
           tapes: tape.length ? [{ cmds: tape.slice(), won: true }] : [],
         });
       } else {
         const lv = run.levels.find((l) => l.stage === finishStage)!;
-        if (!lv.moves) lv.moves = finishMoves;
-        if (!lv.attempts) lv.attempts = finishFalls + 1;
+        // Single-stage: prefer session total over a stale tape length (uncleared fails).
+        if (!lv.moves || singleStageClear) lv.moves = finishMoves || lv.moves;
+        if (!lv.attempts || singleStageClear) lv.attempts = finishTry;
       }
+      // Align run.fails with Falls so Attempts display can use Falls + 1.
+      run.fails = finishFalls;
       lastFinished = run;
       saveRun(run);
       run = null;
@@ -6675,14 +6685,14 @@ function syncOverlay(): void {
         player: getName() || "BLOX",
         totalTimeMs: 0,
         totalMoves: finishMoves,
-        fails: 0,
+        fails: finishFalls,
         complete: true,
         levels: [
           {
             stage: finishStage,
             timeMs: 0,
             moves: finishMoves,
-            attempts: finishFalls + 1,
+            attempts: finishTry,
             tapes: tape.length ? [{ cmds: tape.slice(), won: true }] : [],
           },
         ],

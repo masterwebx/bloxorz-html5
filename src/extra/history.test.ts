@@ -4,6 +4,9 @@ import type { LevelDef } from "./types";
 import { H, W } from "./engine";
 import {
   acceptTapeCmd,
+  finishAttempts,
+  finishDrawInputs,
+  finishSessionStatRows,
   loadFinishedStages,
   loadRuns,
   REPLAY_VERSION,
@@ -241,5 +244,77 @@ describe("attempt counting", () => {
     next.attempts = first.attempts;
     expect(next.attempts).toBe(4);
     expect(next.moves).toBe(0);
+  });
+});
+
+describe("finishDrawInputs", () => {
+  it("uses Attempts = Falls + 1 and unifies single-stage Moves", () => {
+    expect(finishAttempts(12)).toBe(13);
+    const stats = finishDrawInputs({
+      falls: 12,
+      sessionMoves: 65,
+      levels: [
+        {
+          stage: 1,
+          timeMs: 0,
+          moves: 491,
+          attempts: 1,
+          tapes: [{ cmds: ["right"], won: true }],
+        },
+      ],
+      maxStage: 1,
+    });
+    expect(stats).toEqual({
+      moves: 65,
+      falls: 12,
+      attempts: 13,
+      rows: [{ stage: 1, moves: 65, attempts: 13 }],
+    });
+    expect(stats.attempts).toBe(stats.falls + 1);
+    expect(stats.rows[0]!.moves).toBe(stats.moves);
+    expect(stats.rows[0]!.attempts).toBe(stats.attempts);
+  });
+
+  it("keeps per-stage moves on multi-stage clears while top Attempts follow Falls", () => {
+    const stats = finishDrawInputs({
+      falls: 3,
+      sessionMoves: 40,
+      levels: [
+        { stage: 1, timeMs: 1, moves: 10, attempts: 2, tapes: [{ cmds: ["right"], won: true }] },
+        { stage: 2, timeMs: 1, moves: 30, attempts: 2, tapes: [{ cmds: ["left"], won: true }] },
+      ],
+      maxStage: 2,
+    });
+    expect(stats.moves).toBe(40);
+    expect(stats.falls).toBe(3);
+    expect(stats.attempts).toBe(4);
+    expect(stats.rows).toEqual([
+      { stage: 1, moves: 10, attempts: 2 },
+      { stage: 2, moves: 30, attempts: 2 },
+    ]);
+  });
+
+  it("builds a fallback stage row when levels are empty", () => {
+    const stats = finishDrawInputs({
+      falls: 0,
+      sessionMoves: 8,
+      levels: [],
+      fallbackStage: 3,
+    });
+    expect(stats.rows).toEqual([{ stage: 3, moves: 8, attempts: 1 }]);
+  });
+});
+
+describe("finishSessionStatRows", () => {
+  it("filters by maxStage", () => {
+    expect(
+      finishSessionStatRows(
+        [
+          { stage: 1, timeMs: 1, moves: 4, attempts: 1, tapes: [{ cmds: ["right"], won: true }] },
+          { stage: 2, timeMs: 1, moves: 8, attempts: 2, tapes: [{ cmds: ["left"], won: true }] },
+        ],
+        { maxStage: 1 },
+      ),
+    ).toEqual([{ stage: 1, moves: 4, attempts: 1 }]);
   });
 });
