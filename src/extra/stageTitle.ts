@@ -64,8 +64,7 @@ export function stageTitleShouldFreeze(prevLabel: string, label: string): boolea
   return prevLabel === "stagetitle" && label !== "stagetitle";
 }
 
-/** Real stage intros: classic stage 1 (instructions) and every other stage title card. */
+/** Stage title / STAGE NN card only — not the classic instructions intro. */
 export function stageStartShouldSting(prevLabel: string, label: string): boolean {
-  if (label !== "stagetitle" && label !== "instructions") return false;
-  return prevLabel !== label;
+  return label === "stagetitle" && prevLabel !== "stagetitle";
 }

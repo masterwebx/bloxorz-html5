@@ -6123,7 +6123,6 @@ function syncOverlay(): void {
   syncLetterbox(onTitle);
   setVanillaTitleVisible(false);
   syncStageTitleAudio(label);
-  syncStageStartSting(label);
 
   if (playSession && !playLaunching && !labeledRun && label !== "finish" && (extraView === "auto" || label === "menu" || label === "splash")) {
     const back = playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";
@@ -6131,7 +6130,9 @@ function syncOverlay(): void {
     return;
   }
 
+  // Leaving instructions stops howto SFX — run before the stage-title sting so STAGE 01 is not cut off.
   if (lastLabel === "instructions" && label !== "instructions") stopAllSounds();
+  syncStageStartSting(label);
 
   if (version) {
     const hide = inRun;

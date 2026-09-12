@@ -14,12 +14,12 @@ describe("stage title sting", () => {
     expect(stageTitleShouldFreeze("stagetitle", "game")).toBe(true);
   });
 
-  it("stings on every real stage intro, including classic instructions", () => {
+  it("stings on the STAGE NN title card, including after classic instructions", () => {
     expect(stageStartShouldSting("menu", "stagetitle")).toBe(true);
     expect(stageStartShouldSting("game", "stagetitle")).toBe(true);
-    expect(stageStartShouldSting("menu", "instructions")).toBe(true);
+    expect(stageStartShouldSting("instructions", "stagetitle")).toBe(true);
+    expect(stageStartShouldSting("menu", "instructions")).toBe(false);
     expect(stageStartShouldSting("stagetitle", "stagetitle")).toBe(false);
-    expect(stageStartShouldSting("instructions", "instructions")).toBe(false);
     expect(stageStartShouldSting("stagetitle", "game")).toBe(false);
     expect(stageStartShouldSting("menu", "game")).toBe(false);
   });
