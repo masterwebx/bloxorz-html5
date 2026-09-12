@@ -2,7 +2,6 @@
   "id": "gray",
   "name": "Gray",
   "hd": false,
-  "render": "atlas",
   "paint": {
     "ink": "#e8eef5",
     "hot": "#ffffff",
@@ -16,6 +15,10 @@
     "billboardGlow": "rgba(160,190,220,0.35)",
     "shadow": "rgba(180,200,220,0.9)"
   },
-  "background": { "type": "sky" },
-  "audio": { "music": "music.mp3" }
+  "background": {
+    "type": "sky"
+  },
+  "audio": {
+    "music": "music.mp3"
+  }
 }

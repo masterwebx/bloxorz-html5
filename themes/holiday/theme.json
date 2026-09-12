@@ -2,7 +2,6 @@
   "id": "holiday",
   "name": "Holiday",
   "hd": false,
-  "render": "atlas",
   "paint": {
     "ink": "#ffe8ef",
     "hot": "#ffffff",
@@ -16,6 +15,10 @@
     "billboardGlow": "rgba(255,80,100,0.35)",
     "shadow": "rgba(255,80,100,0.9)"
   },
-  "background": { "type": "sky" },
-  "audio": { "music": "music.mp3" }
+  "background": {
+    "type": "sky"
+  },
+  "audio": {
+    "music": "music.mp3"
+  }
 }

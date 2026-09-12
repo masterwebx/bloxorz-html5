@@ -1,11 +1,9 @@
 import original from "../../themes/original/theme.json";
 import gray from "../../themes/gray/theme.json";
 import holiday from "../../themes/holiday/theme.json";
-import solid3d from "../../themes/solid3d/theme.json";
 import { inflateZipEntry, listZipEntries, zipBase, type ZipEntry } from "./unzip";
 import { soundIdFromPath } from "./sounds";
 
-export type ThemeRender = "atlas" | "solid3d";
 export type ThemeBgType = "sky" | "image" | "gif" | "video";
 
 export interface ThemePaint {
@@ -28,7 +26,6 @@ export interface ThemePack {
   atlas?: string;
   atlasScale: number;
   hd: boolean;
-  render: ThemeRender;
   paint: ThemePaint;
   background: { type: ThemeBgType; src?: string };
   audio: { music?: string; sfx?: Record<string, string> };
@@ -64,7 +61,6 @@ type RawTheme = {
   atlas?: string;
   atlasScale?: number;
   hd?: boolean;
-  render?: string;
   paint?: Partial<ThemePaint>;
   background?: { type?: string; src?: string };
   audio?: { music?: string; sfx?: Record<string, string> };
@@ -79,7 +75,6 @@ function normalizePack(raw: RawTheme, fallbackId: string, builtin: boolean, file
     atlas: raw.atlas || undefined,
     atlasScale: Number(raw.atlasScale) > 0 ? Number(raw.atlasScale) : 1,
     hd: raw.hd === true || Number(raw.atlasScale) > 1,
-    render: raw.render === "solid3d" ? "solid3d" : "atlas",
     paint: { ...DEFAULT_PAINT, ...raw.paint },
     background: {
       type: bgType === "image" || bgType === "gif" || bgType === "video" ? bgType : "sky",
@@ -93,7 +88,7 @@ function normalizePack(raw: RawTheme, fallbackId: string, builtin: boolean, file
 
 function seedBuiltins(): void {
   if (packs.size) return;
-  for (const raw of [original, gray, holiday, solid3d] as RawTheme[]) {
+  for (const raw of [original, gray, holiday] as RawTheme[]) {
     const pack = normalizePack(raw, raw.id || "original", true);
     packs.set(pack.id, pack);
   }
@@ -107,14 +102,8 @@ export function listThemes(): ThemePack[] {
   });
 }
 
-export function isDevOnlyTheme(id: string): boolean {
-  return id === "solid3d";
-}
-
-export function themeMenuItems(dev = false): { id: string; name: string; builtin: boolean }[] {
-  return listThemes()
-    .filter((pack) => !isDevOnlyTheme(pack.id) || dev)
-    .map((pack) => ({ id: pack.id, name: pack.name, builtin: pack.builtin }));
+export function themeMenuItems(): { id: string; name: string; builtin: boolean }[] {
+  return listThemes().map((pack) => ({ id: pack.id, name: pack.name, builtin: pack.builtin }));
 }
 
 export function getTheme(id: string): ThemePack {
@@ -138,10 +127,6 @@ export function setCurrentThemeId(id: string): void {
 
 export function themePaint(id = currentId): ThemePaint {
   return getTheme(id).paint;
-}
-
-export function isSolid3d(id = currentId): boolean {
-  return getTheme(id).render === "solid3d";
 }
 
 export function isHdTheme(id = currentId): boolean {
@@ -345,7 +330,7 @@ function registerStored(row: StoredPack): ThemePack | null {
 
 let themesBooted = false;
 
-export async function bootThemes(saved?: string | null, dev = false): Promise<string> {
+export async function bootThemes(saved?: string | null): Promise<string> {
   seedBuiltins();
   if (!themesBooted) {
     try {
@@ -381,7 +366,7 @@ export async function bootThemes(saved?: string | null, dev = false): Promise<st
     }
     themesBooted = true;
   }
-  if (saved && packs.has(saved) && (dev || !isDevOnlyTheme(saved))) currentId = saved;
+  if (saved && packs.has(saved)) currentId = saved;
   else currentId = "original";
   return currentId;
 }

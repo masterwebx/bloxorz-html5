@@ -2,7 +2,6 @@
   "id": "original",
   "name": "Original",
   "hd": false,
-  "render": "atlas",
   "paint": {
     "ink": "#ffe6c4",
     "hot": "#ffffff",
@@ -16,6 +15,10 @@
     "billboardGlow": "rgba(255,140,30,0.35)",
     "shadow": "rgba(255,150,40,0.95)"
   },
-  "background": { "type": "sky" },
-  "audio": { "music": "music.mp3" }
+  "background": {
+    "type": "sky"
+  },
+  "audio": {
+    "music": "music.mp3"
+  }
 }

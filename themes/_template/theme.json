@@ -2,7 +2,6 @@
   "id": "my-theme",
   "name": "My Theme",
   "hd": false,
-  "render": "atlas",
   "paint": {
     "ink": "#ffe6c4",
     "hot": "#ffffff",

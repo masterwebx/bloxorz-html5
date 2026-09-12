@@ -110,16 +110,13 @@ import {
   currentThemeId,
   getTheme,
   installThemeZip,
-  isDevOnlyTheme,
   isHdTheme,
-  isSolid3d,
   listCustomThemes,
   removeCustomTheme,
   setCurrentThemeId,
   themeMenuItems,
 } from "./themePack";
 import { composeThemeAtlas, forgetThemeAtlas } from "./themeAtlas";
-import { clearTheme3d, syncTheme3d } from "./theme3d";
 import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJingle, playStageSting, playUiClick, playUiLatch, setMenuMusicAllowed, stopAllSounds, unlockAudio } from "./audio";
 import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
 import { solveLevel } from "./solve";
@@ -556,7 +553,6 @@ function setName(name: string): void {
     cachedDev = isDevName(next);
     nameRead = true;
     if (cachedDev && !wasDev) playDevJingle();
-    if (!cachedDev && isDevOnlyTheme(currentThemeId())) applyTheme("original", true);
   } catch {
     /* ignore */
   }
@@ -1371,7 +1367,7 @@ function toggleSettingsDropdown(wrap: HTMLElement): void {
 }
 
 function themeSelectOpts(): { id: string; name: string }[] {
-  return themeMenuItems(cachedDev).map((pack) => ({
+  return themeMenuItems().map((pack) => ({
     id: pack.id,
     name: pack.builtin ? themePackLabel(pack.id, pack.name) : pack.name,
   }));
@@ -2775,7 +2771,7 @@ function navItems(): NavItem[] {
       { id: "toggle-stage-name" },
       ...(s.mobilePad ? [{ id: "toggle-rotate" }] : []),
       { id: "toggle-play-time" },
-      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems(cachedDev).map((p) => p.id), currentThemeId(), d), true) },
+      { id: "theme-cycle", adjust: (d) => applyTheme(cycleList(themeMenuItems().map((p) => p.id), currentThemeId(), d), true) },
       { id: "locale-cycle", adjust: (d) => applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), d)) },
       { id: "toggle-theme-bg" },
       { id: "toggle-webcam" },
@@ -3167,7 +3163,7 @@ function hudKey(): string {
     String(s.music),
     String(s.sfx),
     currentThemeId(),
-    themeMenuItems(cachedDev).map((p) => p.id).join(","),
+    themeMenuItems().map((p) => p.id).join(","),
     themeUploadMsg,
     localeId(),
     finishKind,
@@ -3479,7 +3475,7 @@ function defaultMenuCursor(): number {
 }
 
 function applyTheme(theme: ThemeId, reload = false): void {
-  const id = isDevOnlyTheme(normalizeTheme(theme)) && !cachedDev ? "original" : normalizeTheme(theme);
+  const id = normalizeTheme(theme);
   setCurrentThemeId(id);
   try {
     localStorage.setItem("theme", id);
@@ -3503,7 +3499,7 @@ function applyTheme(theme: ThemeId, reload = false): void {
   }
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) {
-    const ids = themeMenuItems(cachedDev);
+    const ids = themeMenuItems();
     if (sel.dataset.ids !== ids.map((p) => p.id).join(",")) {
       sel.innerHTML = "";
       for (const pack of ids) {
@@ -3524,7 +3520,6 @@ function applyTheme(theme: ThemeId, reload = false): void {
   lastTintKey = "";
   window.__bloxResetStoneStamp?.();
   refreshPlayTilesAfterTheme();
-  if (!isSolid3d(id)) clearTheme3d();
   markHudDirty();
   lastHudPaint = "";
   paintHud();
@@ -4098,7 +4093,7 @@ function handleHudAction(act: string): void {
   } else if (act.startsWith("theme:")) {
     applyTheme(normalizeTheme(act.slice(6)), true);
   } else if (act === "theme-cycle") {
-    applyTheme(cycleList(themeMenuItems(cachedDev).map((p) => p.id), currentThemeId(), 1), true);
+    applyTheme(cycleList(themeMenuItems().map((p) => p.id), currentThemeId(), 1), true);
   } else if (act === "locale-cycle") {
     applyLanguage(cycleList(listLocales().map((p) => p.id), localeId(), 1));
   } else if (act.startsWith("locale:")) {
@@ -5031,7 +5026,6 @@ function leavePlayTo(view: Screen): void {
   syncStageCard(false);
   syncPauseStats(false);
   syncSelectPrompt(false);
-  clearTheme3d();
   stopAutoSolve("");
   extraView = view;
   overlayMode = "";
@@ -6243,16 +6237,6 @@ function syncOverlay(): void {
       else if (!autoSolve) pollGamepad(stage, togglePauseMenu);
       if (!playSession) return;
       syncHelpText();
-      const world3 = window.stage?.bloxWorld;
-      if (isSolid3d()) {
-        syncTheme3d({
-          on: true,
-          tiles: world3?.tiles,
-          blocks: playBlocks(),
-          layerTiles: world3?.layerTiles,
-          gameContainer: window.stage?.gameContainer,
-        });
-      }
       const idle = !playBlocks().length || blocksIdle();
       if (!autoSolve && blocksWereIdle && !idle) rumble(90, 0.42, 0.62);
       blocksWereIdle = idle;
@@ -6502,7 +6486,7 @@ export function startBloxorzShell(): void {
   void (async () => {
     const savedTheme = currentTheme();
     const warmAtlas = composeThemeAtlas(savedTheme).catch(() => null);
-    const theme = await bootThemes(savedTheme, cachedDev);
+    const theme = await bootThemes(savedTheme);
     setCurrentThemeId(theme);
     await loadExtraLocales();
     applyDocumentLocale(localeId());
@@ -6604,7 +6588,7 @@ export function startBloxorzShell(): void {
   onAchievementsUnlocked((rows) => showAchievementToasts(rows));
   const sel = $("image_select") as HTMLSelectElement | null;
   if (sel) {
-    const ids = themeMenuItems(cachedDev);
+    const ids = themeMenuItems();
     sel.innerHTML = "";
     for (const pack of ids) {
       const opt = document.createElement("option");
@@ -6632,7 +6616,7 @@ window.__bloxLoadThemeAtlas = async (theme: string) => {
   } catch {
     /* ignore */
   }
-  const id = await bootThemes(theme, dev);
+  const id = await bootThemes(theme);
   return composeThemeAtlas(id, true);
 };
 

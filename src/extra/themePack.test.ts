@@ -3,8 +3,6 @@ import { resolveAtlasFile } from "./themeAtlas";
 import {
   getTheme,
   installThemeZip,
-  isHdTheme,
-  isSolid3d,
   listCustomThemes,
   removeCustomTheme,
   setCurrentThemeId,
@@ -89,23 +87,12 @@ async function zipOf(files: { name: string; body: string | Uint8Array; deflate?:
 }
 
 describe("theme packs", () => {
-  it("ships original, gray, holiday, and solid 3D", () => {
-    const ids = themeMenuItems(true).map((p) => p.id);
+  it("ships original, gray, and holiday", () => {
+    const ids = themeMenuItems().map((p) => p.id);
     expect(ids).toContain("original");
     expect(ids).toContain("gray");
     expect(ids).toContain("holiday");
-    expect(ids).toContain("solid3d");
-  });
-
-  it("hides Solid 3D from the theme list unless DEV mode is on", () => {
-    expect(themeMenuItems(false).map((p) => p.id)).not.toContain("solid3d");
-    expect(themeMenuItems(true).map((p) => p.id)).toContain("solid3d");
-  });
-
-  it("marks the 3D pack as HD isometric cubes", () => {
-    expect(isSolid3d("solid3d")).toBe(true);
-    expect(isHdTheme("solid3d")).toBe(true);
-    expect(getTheme("solid3d").render).toBe("solid3d");
+    expect(ids).not.toContain("solid3d");
   });
 
   it("does not require a packed atlas.png", () => {

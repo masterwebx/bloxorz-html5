@@ -195,7 +195,7 @@ def load_original_parts(payload: dict) -> dict[str, Image.Image]:
 
 def main() -> None:
     payload = build_map()
-    for theme in ("original", "gray", "holiday", "solid3d"):
+    for theme in ("original", "gray", "holiday"):
         slice_theme(theme, payload)
     print("wrote", MAP_PATH)
 

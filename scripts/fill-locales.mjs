@@ -11,7 +11,6 @@ const extra = {
     "theme.original": "Original",
     "theme.gray": "Gray",
     "theme.holiday": "Holiday",
-    "theme.solid3d": "Solid 3D",
     "hint.campaign": "{n}+ moves · {era}",
     "hint.era.mid": "mid-campaign routing",
     "hint.era.late": "shared gates",
@@ -52,7 +51,6 @@ const extra = {
     "theme.original": "Original",
     "theme.gray": "Gris",
     "theme.holiday": "Fiesta",
-    "theme.solid3d": "3D sólido",
     "hint.campaign": "{n}+ movimientos · {era}",
     "hint.era.mid": "mitad de campaña",
     "hint.era.late": "puertas compartidas",
@@ -84,7 +82,6 @@ const extra = {
     "theme.original": "原版",
     "theme.gray": "灰色",
     "theme.holiday": "节日",
-    "theme.solid3d": "立体 3D",
     "hint.campaign": "{n}+ 步 · {era}",
     "hint.era.mid": "中期路线",
     "hint.era.late": "共享桥",
@@ -105,7 +102,6 @@ const extra = {
     "theme.original": "オリジナル",
     "theme.gray": "グレー",
     "theme.holiday": "ホリデー",
-    "theme.solid3d": "ソリッド3D",
     "hint.campaign": "{n}+手 · {era}",
     "hint.era.mid": "中盤ルート",
     "hint.era.late": "共有ゲート",
@@ -125,7 +121,6 @@ const extra = {
     "theme.original": "Original",
     "theme.gray": "Grau",
     "theme.holiday": "Fest",
-    "theme.solid3d": "Solid 3D",
     "hint.campaign": "{n}+ Züge · {era}",
     "hint.era.mid": "Mitte der Kampagne",
     "hint.era.late": "geteilte Tore",
@@ -295,7 +290,6 @@ const full = {
     "theme.original": "Original",
     "theme.gray": "Gris",
     "theme.holiday": "Fêtes",
-    "theme.solid3d": "3D",
     "hint.campaign": "{n}+ mouvements · {era}",
     "hint.era.mid": "milieu de campagne",
     "hint.era.late": "ponts partagés",
@@ -464,7 +458,6 @@ const full = {
     "theme.original": "Original",
     "theme.gray": "Cinza",
     "theme.holiday": "Festa",
-    "theme.solid3d": "3D",
     "hint.campaign": "{n}+ movimentos · {era}",
     "hint.era.mid": "meio da campanha",
     "hint.era.late": "pontes compartilhadas",
@@ -541,7 +534,6 @@ const hi = {
   "theme.original": "मूल",
   "theme.gray": "धूसर",
   "theme.holiday": "त्योहार",
-  "theme.solid3d": "3D",
   "touch.pause": "रोकें",
   "boot.installNow": "इंस्टॉल",
   "boot.notNow": "बाद में",
@@ -579,7 +571,6 @@ const ar = {
   "theme.original": "أصلي",
   "theme.gray": "رمادي",
   "theme.holiday": "عيد",
-  "theme.solid3d": "3D",
   "touch.pause": "إيقاف",
 };
 const ko = {
@@ -615,7 +606,6 @@ const ko = {
   "theme.original": "오리지널",
   "theme.gray": "회색",
   "theme.holiday": "홀리데이",
-  "theme.solid3d": "3D",
   "touch.pause": "일시정지",
 };
 const ru = {
@@ -651,7 +641,6 @@ const ru = {
   "theme.original": "Оригинал",
   "theme.gray": "Серый",
   "theme.holiday": "Праздник",
-  "theme.solid3d": "3D",
   "touch.pause": "ПАУЗА",
 };
 

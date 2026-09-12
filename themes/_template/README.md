@@ -50,7 +50,6 @@ Do not keep the same fall frame in both `animations/` and `misc/`. The atlas loa
 | `atlas` | Optional packed sheet. Leave empty to compose from the folders above |
 | `atlasScale` | `2` if the PNG is 2× the original sheet (HD) |
 | `hd` | Smooth filtering instead of nearest-neighbor |
-| `render` | `atlas` (default) or `solid3d` |
 | `paint` | Menu ink colors. Missing keys fall back to Original |
 | `background.type` | `sky`, `image`, `gif`, or `video` |
 | `background.src` | File in this folder for image / gif / video |

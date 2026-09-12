@@ -2,52 +2,51 @@
 
 <img width="1569" height="839" alt="image" src="https://github.com/user-attachments/assets/abdecaec-d4ff-4ba2-9f1e-f16a5a36df93" />
 
+Hey — welcome to **Bloxorz+**. It’s the classic Coolmath Bloxorz you already know (Damien Clarke’s roll-the-block puzzle), with extra ways to play: custom stages, daily and seeded puzzles, gauntlets, themes, color tweaks, and a speedrun timer beside the board.
 
-Coolmath’s HTML5 Bloxorz — Damien Clarke’s puzzle, still rolling in their CreateJS export — plus a stage creator, daily and seeded remixes, gauntlets, live themes, color customize, and a speedrun clock that sits on the 550×300 stage.
+**[Play it in your browser](https://masterwebx.github.io/bloxorz-plus/)**
 
-**[Play it](https://masterwebx.github.io/bloxorz-plus/)**
+## What you can play
 
-## Features
+- **Classic campaign** — all 33 official stages. Start fresh, resume where you left off, or jump in with a passcode (**Load Stage**).
+- **Daily puzzle** — one shared remix each UTC day. Same floor for everyone until the clock rolls over.
+- **Seeded puzzles** — pick a seed under **Puzzles** and play that run, or flip on Endless and keep going.
+- **Gauntlet** — a multi-stage run. Choose Easy / Medium / Hard / Insane, length 5 / 10 / 15 / 33, and an optional seed.
+- **Attract mode** — leave the title screen alone for a bit and it’ll demo a solvable stage. Touch anything to come back.
+- **Custom Stages** — build your own floors (pads, bridges, splits), save packs, share codes, and hit **TEST** in the editor to try a draft before you publish it.
+- **History** — cleared stages show up here so you can replay your saved route.
 
-- **Classic** — all 33 official rooms, passcodes, and the original roll (Start / Resume / Load Stage).
-- **Daily** — one late-campaign remix for everyone that UTC day (shared bridges, bridges that start on, traps).
-- **Seeded** — play or endless-run from a seed under Puzzles.
-- **Gauntlet** — Easy / Medium / Hard / Insane; lengths 5 / 10 / 15 / 33; optional seed. Generative floors prefer planning over long ON-only island chains.
-- **Attract** — idle on the home menu long enough and the title demos a solvable stage (any input returns home).
-- **Custom Stages** — paint pads, bridges, splits; manage packs and enter codes. Editor **TEST** plays the draft and returns to edit.
-- **History** — cleared floors land here; replay the saved tape.
-- **Customize colors** — per-slot On/Off swatches (backdrop, block, stone, exit, switches, fragile, split, bridges), live preview, **Load preset** / save / manage, **Tiles match stone**, **Reset all**. Backdrop **Cycle ON/OFF** shifts hue continuously (not the block).
-- **Crop cast** — with Cast tab background on, drag a crop on the game screen (fills 550×300, no stretch).
-- **Themes** — drop a folder in `themes/` or upload a zip. Original, Gray, and Holiday ship in-repo. Custom music and SFX fall back to Original. GIF and video backgrounds are supported. HD atlases use smooth filtering.
-- **Languages** — drop a JSON file in `translations/`. English (Classic) is the default for English browsers; other recognized languages switch automatically.
-- **Timer** — optional thin column on the right of the stage (Settings → Speedrun timer).
+## Make it yours
 
-<!-- screenshots
-<img alt="Daily" src="docs/daily.png" />
-<img alt="Gauntlet" src="docs/gauntlet.png" />
-<img alt="Paint" src="docs/paint.png" />
-<img alt="Themes" src="docs/themes.png" />
--->
+- **Customize colors** — turn slots on/off and pick colors for the backdrop, block, stone, exit, switches, fragile tiles, split pads, and bridges. Live preview on the right. Load / save / manage presets, match tiles to the stone color, or reset everything. Backdrop can **Cycle** through hues while you play (the block stays put).
+- **Crop cast** — turn on Cast tab background in Settings, then **Crop cast** and drag on the game screen so your image fills the 550×300 playfield without stretching.
+- **Themes** — Original, Gray, and Holiday ship with the game. Upload your own zip from Settings (or drop a folder in `themes/` if you’re hacking locally). Custom music and sound effects fall back to Original when a clip is missing. GIF and video backgrounds work too.
+- **Languages** — switch in Settings. English (Classic) is the default for English browsers; other supported languages pick themselves up when they match your browser.
+- **Speedrun timer** — optional thin clock on the right of the stage (Settings → Speedrun timer).
 
-A fork of [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate). Spencer’s Tauri shell, timer, and themes are why this playfield was here to decorate.
+## Try it locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Browser on port **4398**. `npm test` for the extras. `npm run tauri dev` if you want the desktop wrap. Menu version is **v1.2.5**.
+Open the browser on port **4398**. Menu version is **v1.2.5**.
 
-Drop-in packs:
+`npm test` runs the extras suite. `npm run tauri dev` wraps the same playfield in a desktop shell.
 
-- `themes/<id>/theme.json` — see `themes/_template/`
-- `translations/<id>.json` — copy `translations/en.json` and translate
+Building your own packs:
+
+- Themes: `themes/<id>/theme.json` — see `themes/_template/`
+- Translations: copy `translations/en.json` and translate
+
+Based on [nathan-spencer/bloxorz-cybernate](https://github.com/nathan-spencer/bloxorz-cybernate) — Spencer’s desktop shell, timer, and theme work are what this playfield grew from.
 
 ## Credits
 
 - **Damien Clarke / DX Interactive** — Bloxorz, 21 June 2007
 - **Coolmath** — the Animate / CreateJS playfield
-- **Nathan Spencer** — Cybernate: desktop shell, speedrun timer, original / gray / holiday
-- **Bloxorz+** — creator, puzzles, history, themes, color customize
+- **Nathan Spencer** — Cybernate: desktop shell, speedrun timer, original / gray / holiday themes
+- **Bloxorz+** — custom stages, puzzles, history, themes, color customize, and the rest of the plus features
 
 MIT on the TypeScript extras in `src/extra/`. The game art, audio, and Coolmath stage are not ours to relicense. Unofficial fan project — not affiliated with Damien, DX, or Coolmath.

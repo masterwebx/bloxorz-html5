@@ -746,11 +746,9 @@ function buildCatalog(): AchievementDef[] {
   add("Original Clear", "Finish a stage while using the Original theme.", (s) => (s.themes.original ?? 0) >= 1);
   add("Gray Clear", "Finish a stage while using the Gray theme.", (s) => (s.themes.gray ?? 0) >= 1);
   add("Holiday Clear", "Finish a stage while using the Holiday theme.", (s) => (s.themes.holiday ?? 0) >= 1);
-  add("Solid Clear", "Finish a stage while using the Solid 3D theme.", (s) => (s.themes.solid3d ?? 0) >= 1);
   add("Original Regular", "Finish 5 stages in the Original theme.", (s) => (s.themes.original ?? 0) >= 5);
   add("Gray Regular", "Finish 5 stages in the Gray theme.", (s) => (s.themes.gray ?? 0) >= 5);
   add("Holiday Regular", "Finish 5 stages in the Holiday theme.", (s) => (s.themes.holiday ?? 0) >= 5);
-  add("Solid Regular", "Finish 5 stages in the Solid 3D theme.", (s) => (s.themes.solid3d ?? 0) >= 5);
   add("Clock In", "Finish a stage with the speedrun timer on.", (s) => s.timerWins >= 1);
   add("Clock Regular", "Finish 10 stages with the speedrun timer on.", (s) => s.timerWins >= 10);
   add("Passcode Clear", "Load a campaign passcode and finish that stage.", (s) => s.passcodeWins >= 1);
