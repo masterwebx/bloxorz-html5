@@ -3160,6 +3160,7 @@ function hudKey(): string {
     String(s.bgTint),
     String(s.bgHue),
     String(s.bgColor || ""),
+    String(!!s.bgCycle),
     String(s.blockHue),
     String(s.blockColor || ""),
     JSON.stringify(s.colorCustom),
@@ -3982,6 +3983,7 @@ function handleHudAction(act: string): void {
       s.bgCycle = !s.bgCycle;
     });
     applyLooks();
+    lastHudPaint = "";
     markHudDirty();
     paintHud();
   } else if (act === "toggle-bg-color") {
