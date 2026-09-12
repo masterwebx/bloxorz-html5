@@ -120,7 +120,8 @@ function paint(): ThemePaint {
   return themePaint(currentTheme());
 }
 
-const FONT = "Orbitron, sans-serif";
+/** Title / attract brand stack — Orbitron first, system sans for unsupported glyphs. */
+export const FONT = "Orbitron, sans-serif";
 
 const BILLBOARD: Record<string, string[]> = {
   A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
@@ -179,6 +180,11 @@ export function canBillboard(label: string): boolean {
   return chars.length > 0 && chars.every((ch) => billboardSupports(ch));
 }
 
+/** LED dots when every glyph is in the billboard atlas; else neon Orbitron text. */
+export function neonTitleMode(label: string): "billboard" | "orbitron" {
+  return canBillboard(label) ? "billboard" : "orbitron";
+}
+
 function glow(node: HudText, hot: boolean, theme: ThemePaint): void {
   node.shadow = new createjs.Shadow(hot ? "rgba(255,255,255,0.85)" : theme.shadow, 0, 0, hot ? 12 : 8);
 }
@@ -191,6 +197,21 @@ function text(str: string, x: number, y: number, size: number, color?: string, a
   t.textAlign = align;
   t.mouseEnabled = false;
   glow(t, false, theme);
+  return t;
+}
+
+/**
+ * Orbitron neon brand title when billboard lamps cannot spell the label.
+ * Uses billboard core/shadow colors so attract / stage cards still read as title chrome.
+ */
+function brandOrbitron(str: string, x: number, y: number, size: number, align = "center"): HudText {
+  const theme = paint();
+  const t = new createjs.Text(str, `700 ${size}px ${FONT}`, theme.billboardCore);
+  t.x = x;
+  t.y = y;
+  t.textAlign = align;
+  t.mouseEnabled = false;
+  t.shadow = new createjs.Shadow(theme.shadow, 0, 0, Math.max(14, Math.round(size * 0.5)));
   return t;
 }
 
@@ -382,7 +403,14 @@ export class ExtraHud {
     this.clear();
     const brandX = 28;
     const brandY = 14;
-    const w = drawBillboard(this.layer, title, brandX, brandY, 300);
+    let w: number;
+    if (neonTitleMode(title) === "billboard") {
+      w = drawBillboard(this.layer, title, brandX, brandY, 300);
+    } else {
+      const node = brandOrbitron(title, brandX, brandY + 6, 26, "left");
+      this.add(node);
+      w = node.getMeasuredWidth?.() || Math.max(120, title.length * 16);
+    }
     this.placeMascot(w, brandX, brandY);
     const rows: HudNode[] = [];
     const gap = items.length > 8 ? (wantsVirtualPad() ? 20 : 18) : wantsVirtualPad() ? 24 : 20;
@@ -721,12 +749,13 @@ export class ExtraHud {
   drawAttractTitle(label: string): void {
     this.clear();
     this.hideMascot();
-    const title = foldBillboard(label).slice(0, 18);
-    if (!canBillboard(title)) {
-      const theme = paint();
-      this.add(text(title || "BLOXORZ+", 275, ATTRACT_TITLE_Y, 18, theme.ink, "center"));
+    const raw = (label.trim() || "BLOXORZ+").slice(0, 24);
+    if (neonTitleMode(raw) === "orbitron") {
+      // Neon Orbitron (not plain ink) when lamps cannot spell the locale brand.
+      this.add(brandOrbitron(raw, 275, ATTRACT_TITLE_Y - 10, 22, "center"));
       return;
     }
+    const title = foldBillboard(raw).slice(0, 18);
     const pitch = Math.min(4.6, 500 / (Math.max(1, title.length) * 6));
     const width = title.length * 6 * pitch;
     // Billboard draws from the glyph top; lift so the word sits near the bottom edge.
@@ -799,14 +828,14 @@ export class ExtraHud {
     const scroll = Math.max(0, opts.scroll ?? 0);
     const pageSize = opts.pageSize ?? 5;
     const total = opts.rows.length;
-    const heading = opts.title.toUpperCase();
-    if (canBillboard(heading)) {
+    const heading = opts.title.trim() || opts.title;
+    if (neonTitleMode(heading) === "billboard") {
       const label = foldBillboard(heading).slice(0, 18);
       const pitch = Math.min(4.6, 500 / (Math.max(1, label.length) * 6));
       const width = label.length * 6 * pitch;
       drawBillboard(this.layer, label, 275 - width / 2, 18, 500);
     } else {
-      this.add(text(opts.title, 275, 28, 20, theme.ink, "center"));
+      this.add(brandOrbitron(heading.slice(0, 24), 275, 22, 22, "center"));
     }
     this.add(text(opts.cleared, 275, 62, 12, theme.muted, "center"));
     this.add(text(`${t("finish.moves")}  ${opts.moves}    ${t("finish.falls")}  ${opts.falls}    ${t("finish.attempts")}  ${opts.fails}`, 275, 86, 12, theme.ink, "center"));
@@ -901,10 +930,16 @@ export class ExtraHud {
     bg.graphics.beginFill("#000").drawRect(0, 0, 550, 300);
     bg.mouseEnabled = false;
     this.add(bg);
-    const label = foldBillboard(title).slice(0, 18);
-    const pitch = Math.min(5.2, 500 / (Math.max(1, label.length) * 6));
-    const width = label.length * 6 * pitch;
-    drawBillboard(this.layer, label, 275 - width / 2, 108, 500);
+    const raw = title.trim() || title;
+    if (neonTitleMode(raw) === "billboard") {
+      const label = foldBillboard(raw).slice(0, 18);
+      const pitch = Math.min(5.2, 500 / (Math.max(1, label.length) * 6));
+      const width = label.length * 6 * pitch;
+      drawBillboard(this.layer, label, 275 - width / 2, 108, 500);
+    } else {
+      // Locale stage cards (CJK / Cyrillic / …): Orbitron neon, not silent lamp dropouts.
+      this.add(brandOrbitron(raw.slice(0, 24), 275, 118, 28, "center"));
+    }
     if (subtitle) this.add(text(subtitle, 275, 168, 14, theme.muted, "center"));
   }
 

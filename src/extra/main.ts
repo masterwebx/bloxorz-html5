@@ -136,7 +136,7 @@ import { applyVolumes, ensureMenuMusic, gateSoundPlay, hushStageMusic, playDevJi
 import { downloadThemeTemplate, setTemplateBusy } from "./themeTemplate";
 import { solveLevel } from "./solve";
 import type { LevelDef } from "./types";
-import { ExtraHud, canBillboard, type MenuItem } from "./hud";
+import { ExtraHud, type MenuItem } from "./hud";
 import {
   DEFAULT_TAB_CROP,
   containLayout,
@@ -6576,20 +6576,17 @@ function syncOverlay(): void {
         const n = padStage(window.stage?.levelNumber ?? 1);
         const title = t("play.stageCard", { n });
         setVanillaTitleVisible(false);
-        if (canBillboard(title)) {
-          syncStageCard(false);
-          if (!hud?.root.visible) {
-            hud?.setVisible(true);
-            raiseHud();
-          }
-          const key = "title:" + title;
-          if (lastHudPaint !== key) {
-            lastHudPaint = key;
-            hud?.drawTitleCard(title);
-          }
-        } else {
-          syncStageCard(true, title);
-          if (hud?.root.visible) hud.setVisible(false);
+        // Always paint via HUD: billboard lamps when supported, Orbitron neon otherwise
+        // (do not drop locale titles to the DOM stage-card-only path).
+        syncStageCard(false);
+        if (!hud?.root.visible) {
+          hud?.setVisible(true);
+          raiseHud();
+        }
+        const key = "title:" + title;
+        if (lastHudPaint !== key) {
+          lastHudPaint = key;
+          hud?.drawTitleCard(title);
         }
       } else {
         syncStageCard(false);
