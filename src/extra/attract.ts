@@ -62,3 +62,26 @@ export function classicCongratsVisible(opts: {
   if (opts.hdType || opts.attracting || !opts.onFinish) return false;
   return true;
 }
+
+export type MoveHelpSession = {
+  classicRun: boolean;
+  kind: "campaign" | "custom";
+  attract?: boolean;
+  replay?: boolean;
+};
+
+/**
+ * CreateJS per-stage HelpText (and HD `#play-help` for stage 01) is classic-campaign only.
+ * Daily / seeded / gauntlet / custom / attract / load-stage all start at levelNumber 1 and
+ * must never show the Stage 01 “arrow keys / WASD” tip.
+ */
+export function wantsClassicCampaignMoveHelp(opts: MoveHelpSession & { stageNo: number }): boolean {
+  if (opts.attract || opts.replay) return false;
+  if (!opts.classicRun || opts.kind !== "campaign") return false;
+  return opts.stageNo >= 1;
+}
+
+/** HD overlay / Stage 01 tip string — only classic campaign stage 1. */
+export function wantsClassicStage1MoveHint(opts: MoveHelpSession & { stageNo: number }): boolean {
+  return wantsClassicCampaignMoveHelp(opts) && opts.stageNo === 1;
+}

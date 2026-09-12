@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   classicCongratsVisible,
   classicInstructionBitmapsVisible,
+  wantsClassicCampaignMoveHelp,
+  wantsClassicStage1MoveHint,
 } from "./attract";
 import {
   COLOR_PREVIEW_CHARS,
@@ -89,6 +91,27 @@ describe("gauntlet strict GAUNTLET_QUALITY", () => {
     const seen = new Set(ATTRACT_ARCHETYPES.map((_, i) => runArchetypeForSeed("polish-o-rot", i)));
     for (let i = 0; i < 48; i++) seen.add(runArchetypeForSeed(`polish-o-probe-${i % 7}`, i));
     expect(seen.size).toBe(ATTRACT_ARCHETYPES.length);
+  });
+});
+
+describe("classic stage-01 move hint", () => {
+  const classic = { classicRun: true, kind: "campaign" as const };
+  const daily = { classicRun: false, kind: "custom" as const };
+
+  it("shows only on classic campaign stage 1", () => {
+    expect(wantsClassicStage1MoveHint({ ...classic, stageNo: 1 })).toBe(true);
+    expect(wantsClassicStage1MoveHint({ ...classic, stageNo: 2 })).toBe(false);
+    expect(wantsClassicCampaignMoveHelp({ ...classic, stageNo: 5 })).toBe(true);
+  });
+
+  it("suppresses daily / seeded / gauntlet / custom / attract / replay", () => {
+    expect(wantsClassicStage1MoveHint({ ...daily, stageNo: 1 })).toBe(false);
+    expect(wantsClassicCampaignMoveHelp({ ...daily, stageNo: 1 })).toBe(false);
+    expect(wantsClassicStage1MoveHint({ ...classic, stageNo: 1, attract: true })).toBe(false);
+    expect(wantsClassicStage1MoveHint({ ...classic, stageNo: 1, replay: true })).toBe(false);
+    expect(
+      wantsClassicStage1MoveHint({ classicRun: false, kind: "campaign", stageNo: 1 }),
+    ).toBe(false);
   });
 });
 

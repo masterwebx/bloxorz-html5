@@ -155,6 +155,8 @@ import {
   classicInstructionBitmapsVisible,
   shouldRepaintAttractTitle,
   shouldStartAttract,
+  wantsClassicCampaignMoveHelp,
+  wantsClassicStage1MoveHint,
 } from "./attract";
 import {
   ACH_COUNT,
@@ -2324,6 +2326,11 @@ function syncPlayChrome(on: boolean): void {
     lastPlayHudKey = "";
     box.classList.remove("has-pass", "has-play-time");
     if (timeEl) timeEl.hidden = true;
+    const help = $("play-help");
+    if (help) {
+      help.hidden = true;
+      help.textContent = "";
+    }
     return;
   }
   const world = window.stage?.bloxWorld as { moves?: number; background?: { menuButton?: { dispatchEvent?: (ev: unknown) => void } } } | undefined;
@@ -2332,7 +2339,13 @@ function syncPlayChrome(on: boolean): void {
   const moves = displayMoveCount(world?.moves ?? 0, window.stage?.totalMoves ?? 0, accumulate);
   const code = playSession?.defs[Math.max(0, stageNo - 1)]?.code || playDef()?.code || "";
   const classic = isClassicPlayHud();
-  const classicFirst = !!playSession?.classicRun && playSession.kind === "campaign" && stageNo === 1;
+  const classicFirst = !!playSession && wantsClassicStage1MoveHint({
+    classicRun: playSession.classicRun,
+    kind: playSession.kind,
+    stageNo,
+    attract: playSession.attract,
+    replay: playSession.replay,
+  });
   const stageName = playHudStageName(stageNo);
   const settings = loadSettings();
   const started = window.stage?.startTime ?? Date.now();
@@ -5247,7 +5260,7 @@ function leavePlayTo(view: Screen): void {
   unlimitedLevelArmed = -1;
   stageStingKey = "";
   lastTintKey = "";
-  lastHelpTextHd = null;
+  lastHelpTextKey = null;
   lastHdSuppressLabel = "";
   showAttractTitle(false);
   syncPlayChrome(false);
@@ -5304,7 +5317,7 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   overlayMode = "run";
   playLaunching = true;
   lastTintKey = "";
-  lastHelpTextHd = null;
+  lastHelpTextKey = null;
   lastHdSuppressLabel = "";
   enterPlayVisuals();
   hushPlayAudio();
@@ -5518,24 +5531,42 @@ function beatCurrentStage(): void {
   }
 }
 
-let lastHelpTextHd: boolean | null = null;
+/** Cache: show bitmap help + whether engine helpText already matches (engine re-arms alpha=1 on stage ready). */
+let lastHelpTextKey: string | null = null;
 function syncHelpText(): void {
   const hd = usesHdType();
-  // Help-text visibility only depends on HD vs classic — don't walk children every tick.
-  if (lastHelpTextHd === hd) return;
-  lastHelpTextHd = hd;
+  const stageNo = window.stage?.levelNumber ?? 0;
+  const session = playSession;
+  const wantClassic =
+    !!session &&
+    wantsClassicCampaignMoveHelp({
+      classicRun: session.classicRun,
+      kind: session.kind,
+      stageNo,
+      attract: session.attract,
+      replay: session.replay,
+    });
+  // HD uses DOM `#play-help` for stage 01 only; CreateJS HelpText is classic-English campaign only.
+  const showBitmap = !hd && wantClassic;
   const ht = window.stage?.bloxWorld?.helpText;
+  const htMatches = showBitmap
+    ? !ht || (ht.visible !== false && (ht.alpha ?? 1) > 0)
+    : !ht || (ht.visible === false && !(ht.alpha ?? 0));
+  const key = `${showBitmap ? 1 : 0}|${stageNo}|${session?.classicRun ? 1 : 0}|${session?.kind ?? ""}`;
+  // Skip the gameContainer walk when mode is unchanged and helpText still matches.
+  if (lastHelpTextKey === key && htMatches) return;
+  lastHelpTextKey = key;
   const gc = window.stage?.gameContainer as {
     children?: { buttons?: unknown; menuButton?: unknown; roll?: unknown; totalFrames?: number; visible?: boolean; alpha?: number }[];
   } | undefined;
-  if (!hd) {
-    if (ht && ht.visible === false) {
+  if (showBitmap) {
+    if (ht) {
       ht.visible = true;
       ht.alpha = 1;
     }
     for (const child of gc?.children ?? []) {
       if (child.buttons || child.menuButton || child.roll) continue;
-      if (typeof child.totalFrames === "number" && child.totalFrames >= 40 && child.totalFrames <= 52 && child.visible === false) {
+      if (typeof child.totalFrames === "number" && child.totalFrames >= 40 && child.totalFrames <= 52) {
         child.visible = true;
         child.alpha = 1;
       }
