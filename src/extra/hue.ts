@@ -54,6 +54,21 @@ export function clipHueAction(prev: number | undefined, hue: number, animating: 
 /** Backdrop hue-cycle speed (°/s). ~60s for a full spectrum pass — slow and continuous. */
 export const BG_CYCLE_DEG_PER_SEC = 6;
 
+/** Min ms between CreateJS sky Cycle tint passes (overlay + sky cache). */
+export const BG_CYCLE_CACHE_MS = 100;
+
+/**
+ * Integer hue degrees for sky `cache()` keys — avoids rebaking every tenth-degree tick.
+ * Overlay fills use the same quantize so they stay in sync with the cached sky.
+ */
+export function skyCycleCacheKey(cycleHue: number): number {
+  return Math.round(wrapHue(cycleHue)) % 360;
+}
+
+export function shouldUpdateBgCycle(nowMs: number, lastMs: number, minMs = BG_CYCLE_CACHE_MS): boolean {
+  return nowMs - lastMs >= minMs;
+}
+
 /**
  * Continuous hue for backdrop cycling. Returns a fractional degree in [0, 360)
  * so callers can drive smooth CSS / ColorMatrix updates without 1° steps.

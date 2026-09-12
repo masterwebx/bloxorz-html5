@@ -48,6 +48,8 @@ import {
   parseHexRgb,
   shiftHexHue,
   shiftingHue,
+  shouldUpdateBgCycle,
+  skyCycleCacheKey,
   TILE_COLOR_SLOTS,
   type AtlasRect,
   type PackedBlockLayout,
@@ -1083,8 +1085,8 @@ function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string,
   const hex = normalizeHex(tintHex);
   const cycle = ((cycleHue % 360) + 360) % 360;
   const tintOn = sThemeBg() && amt > 0.01 && !!cjs?.ColorFilter;
-  // Tenths of a degree — continuous enough without thrashing the filter cache every frame.
-  const cycleKey = Math.round(cycle * 10);
+  // Integer degrees — throttle CreateJS sky cache() rebakes while Cycle runs.
+  const cycleKey = skyCycleCacheKey(cycle);
   const key =
     !sThemeBg() || (!tintOn && !cycleKey)
       ? "off"
@@ -5611,8 +5613,8 @@ function applyPlayTint(): void {
   applySkySpriteTint(cam ? null : skySpr, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0, cycleHue);
   applySkySpriteTint(cam ? null : sky, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0, cycleHue);
   if (!gc?.addChildAt || !cjs?.Shape) return;
-  // Tenths-degree key so the overlay fill tracks a continuous spectrum without 1° jumps.
-  const key = `${bg?.tint ?? 0}|${bg?.hex || ""}|${s.themeBg}|${cam}|c${Math.round(cycleHue * 10)}`;
+  // Integer degrees — match sky cache key so overlay and cached sky stay in lockstep.
+  const key = `${bg?.tint ?? 0}|${bg?.hex || ""}|${s.themeBg}|${cam}|c${skyCycleCacheKey(cycleHue)}`;
   let overlay = gc.__bloxTint;
   const listed = !!(overlay && gc.children?.includes(overlay));
   if (!listed) {
@@ -6270,8 +6272,8 @@ function syncOverlay(): void {
   // Cast tab forces cycle off — don't keep shifting the CreateJS sky either.
   if (loadSettings().bgCycle && !loadSettings().tabCastBg) {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-    // ~60fps updates for continuous hue — cheap overlay RGB rotate, not block atlas work.
-    if (now - bgCycleLastMs >= 16) {
+    // ~10Hz — integer-degree sky cache rebakes; avoids thrashing on a large stage.
+    if (shouldUpdateBgCycle(now, bgCycleLastMs)) {
       bgCycleLastMs = now;
       const cam = usingLiveBg();
       const hasDomBg = document.body.classList.contains("has-theme-media") || cam;

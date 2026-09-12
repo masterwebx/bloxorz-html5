@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { BG_CYCLE_DEG_PER_SEC, colorMatrixHue, shiftHexHue, shiftingHue, wrapHue } from "./hue";
+import {
+  BG_CYCLE_CACHE_MS,
+  BG_CYCLE_DEG_PER_SEC,
+  colorMatrixHue,
+  shiftHexHue,
+  shiftingHue,
+  shouldUpdateBgCycle,
+  skyCycleCacheKey,
+  wrapHue,
+} from "./hue";
 
 /** Finish list paging: visible window + scroll range for long gauntlets. */
 export function finishScrollWindow(total: number, scroll: number, pageSize = 5): {
@@ -45,5 +54,19 @@ describe("backdrop hue cycle quality", () => {
     expect(colorMatrixHue(359)).toBeCloseTo(-1, 5);
     // Full walk: after cyan, continue through purple/red instead of sticking at +180.
     expect([0, 60, 120, 180, 240, 300].map(colorMatrixHue)).toEqual([0, 60, 120, 180, -120, -60]);
+  });
+
+  it("quantizes Cycle sky cache keys to integer degrees and time-throttles updates", () => {
+    expect(skyCycleCacheKey(12.4)).toBe(12);
+    expect(skyCycleCacheKey(12.6)).toBe(13);
+    expect(skyCycleCacheKey(359.7)).toBe(0);
+    expect(BG_CYCLE_CACHE_MS).toBe(100);
+    expect(shouldUpdateBgCycle(1000, 900)).toBe(true);
+    expect(shouldUpdateBgCycle(1000, 950)).toBe(false);
+    // At 6°/s, integer keys change about every 167ms — far below the old 10×/frame tenths path.
+    const a = skyCycleCacheKey(shiftingHue(0, true, 0, BG_CYCLE_DEG_PER_SEC));
+    const b = skyCycleCacheKey(shiftingHue(0, true, 80, BG_CYCLE_DEG_PER_SEC));
+    expect(a).toBe(b);
+    expect(skyCycleCacheKey(shiftingHue(0, true, 200, BG_CYCLE_DEG_PER_SEC))).toBe(a + 1);
   });
 });
