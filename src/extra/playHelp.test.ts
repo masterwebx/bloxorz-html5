@@ -26,6 +26,17 @@ describe("classic switch hint stages", () => {
     expect(wantsClassicSwitchHint({ ...classic, stageNo: 1 })).toBe(false);
   });
 
+  it("shows switch tip for Load Stage / passcode (classicRun false) on 08–09", () => {
+    const loaded = { classicRun: false, kind: "campaign" as const };
+    expect(wantsClassicSwitchHint({ ...loaded, stageNo: 8 })).toBe(true);
+    expect(wantsClassicSwitchHint({ ...loaded, stageNo: 9 })).toBe(true);
+    expect(classicPlayHelpKind({ ...loaded, stageNo: 8 })).toBe("switch");
+    expect(classicPlayHelpKind({ ...loaded, stageNo: 9 })).toBe("switch");
+    // Stage 01 move tip stays classicRun-gated
+    expect(wantsClassicStage1MoveHint({ ...loaded, stageNo: 1 })).toBe(false);
+    expect(classicPlayHelpKind({ ...loaded, stageNo: 1 })).toBe(null);
+  });
+
   it("stays classic-campaign only", () => {
     expect(wantsClassicSwitchHint({ ...daily, stageNo: 8 })).toBe(false);
     expect(wantsClassicSwitchHint({ ...classic, stageNo: 8, attract: true })).toBe(false);

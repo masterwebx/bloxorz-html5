@@ -159,6 +159,7 @@ import {
   shouldStartAttract,
 } from "./attract";
 import { classicPlayHelpKind, instructionPadAdvance, splashPadShouldDismiss, switchHelpKeyLabel, wantsCreateJsHelpBitmap } from "./playHelp";
+import { isStagePlayLabel, resolveStagePlayCode } from "./playKeys";
 import {
   ACH_COUNT,
   ACH_PAGE,
@@ -2725,6 +2726,7 @@ function enterPlayVisuals(): void {
   setMouseOverRate(0);
   hud?.parkForPlay();
   placeHudInput(false, "0", "0", "0", "", "");
+  releaseHudInputFocus();
   sidePanelOn = null;
   lastTintKey = "";
 }
@@ -5935,8 +5937,15 @@ function pollInstructionsPad(): void {
 }
 
 function inStagePlay(): boolean {
-  const label = currentLabel();
-  return label === "game" || label === "restart";
+  return isStagePlayLabel(currentLabel());
+}
+
+/** Hide and blur `#hud-input` so Space / remapped swap are not eaten by stopPropagation. */
+function releaseHudInputFocus(): void {
+  const el = hudInput();
+  if (!el) return;
+  el.hidden = true;
+  if (document.activeElement === el) el.blur();
 }
 
 function handleTouchPadDown(code: string): void {
@@ -6082,6 +6091,8 @@ function bind(): void {
 
   const input = hudInput();
   input?.addEventListener("keydown", (ev) => {
+    // Hidden/stale focus must not swallow Space during play (stopPropagation would block window).
+    if (input.hidden) return;
     ev.stopPropagation();
     if (ev.key !== "Enter") return;
     ev.preventDefault();
@@ -6097,8 +6108,14 @@ function bind(): void {
       draftName = input.value.trim() || t("creator.untitled");
     }
   });
-  input?.addEventListener("keyup", (ev) => ev.stopPropagation());
-  input?.addEventListener("keypress", (ev) => ev.stopPropagation());
+  input?.addEventListener("keyup", (ev) => {
+    if (input.hidden) return;
+    ev.stopPropagation();
+  });
+  input?.addEventListener("keypress", (ev) => {
+    if (input.hidden) return;
+    ev.stopPropagation();
+  });
   input?.addEventListener("input", () => {
     if (extraView === "creator-edit") {
       draftName = input.value;
@@ -6183,15 +6200,10 @@ function bind(): void {
     if (extraView === "creator-edit" && (ev.code === "Space" || ev.key === "Enter")) {
       endCreatorPaintStroke();
     }
-    if (currentLabel() !== "game") return;
+    if (!inStagePlay()) return;
     const act = actionFromCode(ev.code);
-    let code = ev.code;
-    if (act === "up") code = "ArrowUp";
-    else if (act === "down") code = "ArrowDown";
-    else if (act === "left") code = "ArrowLeft";
-    else if (act === "right") code = "ArrowRight";
-    else if (act === "swap") code = "Space";
-    if (KEY_CMD[code] || act === "swap") window.stage?.triggerKeyUp?.({ code });
+    const code = resolveStagePlayCode(ev.code, act);
+    if (code) window.stage?.triggerKeyUp?.({ code });
   });
 
   window.addEventListener("pointerdown", (ev) => {
@@ -6217,7 +6229,12 @@ function bind(): void {
       ev.preventDefault();
       return;
     }
-    if (document.activeElement === hudInput() || document.activeElement === modalInput()) return;
+    // Modal still owns keys; stale `#hud-input` focus during play must not block swap/moves.
+    if (document.activeElement === modalInput()) return;
+    if (document.activeElement === hudInput()) {
+      if (!inStagePlay()) return;
+      releaseHudInputFocus();
+    }
     if (extraView === "splash") {
       ev.preventDefault();
       dismissSplash();
@@ -6311,7 +6328,8 @@ function bind(): void {
       }
     }
 
-    if (currentLabel() === "game") {
+    if (inStagePlay()) {
+      releaseHudInputFocus();
       const act = actionFromCode(ev.code);
       if (act === "pause" || act === "back" || ev.key === "Escape") {
         ev.preventDefault();
@@ -6328,14 +6346,8 @@ function bind(): void {
         else if (act === "right" || ev.key === "ArrowRight") handlePauseNav("down");
         return;
       }
-      let code = ev.code;
-      if (act === "up") code = "ArrowUp";
-      else if (act === "down") code = "ArrowDown";
-      else if (act === "left") code = "ArrowLeft";
-      else if (act === "right") code = "ArrowRight";
-      else if (act === "swap") code = "Space";
-      const cmd = KEY_CMD[code];
-      if (cmd) {
+      const code = resolveStagePlayCode(ev.code, act);
+      if (code) {
         noteKeyboardPlay();
         ev.preventDefault();
         window.stage?.triggerKeyDown?.({ code });
@@ -6637,9 +6649,10 @@ function syncOverlay(): void {
     syncPauseStats(playing && isPauseMenuOpen());
     syncSelectPrompt(playing);
     if (playing) {
+      releaseHudInputFocus();
       syncStageCard(false);
       tickSolve();
-      const inStage = label === "game" || label === "restart";
+      const inStage = isStagePlayLabel(label);
       if (isPauseMenuOpen()) pollPauseMenuPad();
       else if (inStage) {
         pollGamepad(autoSolve ? undefined : stage, togglePauseMenu);

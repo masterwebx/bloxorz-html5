@@ -92,9 +92,15 @@ export function wantsClassicStage1MoveHint(opts: MoveHelpSession & { stageNo: nu
  */
 export const CLASSIC_SWITCH_HINT_STAGES = [8, 9] as const;
 
-/** Classic-campaign overlay tip for the swap/switch control (DOM `#play-help`). */
+/**
+ * Classic campaign stages 08–09 switch tip (DOM `#play-help`).
+ * Shows for any classic campaign entry — Start / Resume / Load Stage / passcode / DEV pick —
+ * even when `classicRun` is false. Still skips attract, replay, and non-campaign (daily /
+ * seeded / gauntlet / custom). Stage 01 move tip stays `classicRun`-gated separately.
+ */
 export function wantsClassicSwitchHint(opts: MoveHelpSession & { stageNo: number }): boolean {
-  if (!wantsClassicCampaignMoveHelp(opts)) return false;
+  if (opts.attract || opts.replay) return false;
+  if (opts.kind !== "campaign") return false;
   return (CLASSIC_SWITCH_HINT_STAGES as readonly number[]).includes(opts.stageNo);
 }
 
