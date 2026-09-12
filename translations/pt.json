@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "Recolore o bloco e as lajes. Off = original.",
   "settings.colorOn": "Sim",
   "settings.colorOff": "Não",
+  "settings.colorCycle": "Ciclo",
+  "settings.colorPresetDefault": "Padrão",
   "settings.colorBlock": "Bloco",
   "settings.colorStone": "Pedra",
   "settings.colorExit": "Saída",

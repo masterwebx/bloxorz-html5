@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "블록과 타일 색을 바꿉니다. 끄기 = 원본.",
   "settings.colorOn": "켜기",
   "settings.colorOff": "끄기",
+  "settings.colorCycle": "순환",
+  "settings.colorPresetDefault": "기본",
   "settings.colorBlock": "블록",
   "settings.colorStone": "돌",
   "settings.colorExit": "출구",

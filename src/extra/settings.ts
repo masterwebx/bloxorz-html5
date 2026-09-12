@@ -49,6 +49,8 @@ export interface Settings {
   tabCrop: { x: number; y: number; w: number; h: number };
   bgTint: number;
   bgHue: number;
+  /** Smooth hue-shift cycle on the current backdrop only (CSS / sky filter — not the block). */
+  bgCycle: boolean;
   /** Full backdrop tint color (#rrggbb). Free picker; bgHue stays in sync for legacy paths. */
   bgColor: string;
   blockHue: number;
@@ -83,6 +85,7 @@ const DEFAULTS: Settings = {
   tabCrop: { ...DEFAULT_TAB_CROP },
   bgTint: 0,
   bgHue: 28,
+  bgCycle: false,
   bgColor: "#b86a2e",
   blockHue: 0,
   blockColor: "#b86a2e",
@@ -143,6 +146,7 @@ export function loadSettings(): Settings {
       tabCrop: normalizeTabCrop(parsed.tabCrop),
       bgTint: clamp01(parsed.bgTint ?? DEFAULTS.bgTint),
       bgHue: clampHue(parsed.bgHue ?? DEFAULTS.bgHue),
+      bgCycle: parsed.bgCycle === true,
       bgColor: normalizeHex(
         typeof parsed.bgColor === "string" ? parsed.bgColor : hueToHex(clampHue(parsed.bgHue ?? DEFAULTS.bgHue)),
         DEFAULTS.bgColor,

@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "Recolore le bloc et les tuiles. Non = original.",
   "settings.colorOn": "Oui",
   "settings.colorOff": "Non",
+  "settings.colorCycle": "Cycle",
+  "settings.colorPresetDefault": "Par défaut",
   "settings.colorBlock": "Bloc",
   "settings.colorStone": "Pierre",
   "settings.colorExit": "Sortie",

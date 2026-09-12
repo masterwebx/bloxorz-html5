@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  GAME_ASPECT,
   containLayout,
   coverCropLayout,
   cropFromDrag,
@@ -41,7 +40,7 @@ describe("tabCrop cover layout", () => {
 });
 
 describe("tabCrop drag selection", () => {
-  it("locks drag rect to the game screen aspect in source space", () => {
+  it("maps drag rect 1:1 in source space without aspect lock", () => {
     const vw = 1920;
     const vh = 1080;
     const cw = 550;
@@ -52,8 +51,12 @@ describe("tabCrop drag selection", () => {
     const x1 = layout.offsetX + layout.displayW * 0.6;
     const y1 = layout.offsetY + layout.displayH * 0.35; // shallower drag
     const crop = cropFromDrag({ x0, y0, x1, y1, vw, vh, cw, ch });
-    expect(crop.w / crop.h).toBeCloseTo(gameNormAspect(vw, vh), 5);
-    expect(crop.w / crop.h).toBeCloseTo((GAME_ASPECT * vh) / vw, 5);
+    expect(crop.x).toBeCloseTo(0.2, 5);
+    expect(crop.y).toBeCloseTo(0.2, 5);
+    expect(crop.w).toBeCloseTo(0.4, 5);
+    expect(crop.h).toBeCloseTo(0.15, 5);
+    // Not forced to game aspect.
+    expect(crop.w / crop.h).not.toBeCloseTo(gameNormAspect(vw, vh), 2);
     expect(crop.x).toBeGreaterThanOrEqual(0);
     expect(crop.y).toBeGreaterThanOrEqual(0);
     expect(crop.x + crop.w).toBeLessThanOrEqual(1 + 1e-9);
@@ -66,5 +69,23 @@ describe("tabCrop drag selection", () => {
     const layout = containLayout(1000, 1000, 400, 200);
     expect(rect.left).toBeCloseTo(layout.offsetX + 0.25 * layout.displayW, 5);
     expect(rect.width).toBeCloseTo(0.5 * layout.displayW, 5);
+  });
+
+  it("round-trips drag → overlay so preview matches selection", () => {
+    const vw = 1280;
+    const vh = 720;
+    const cw = 550;
+    const ch = 300;
+    const layout = containLayout(vw, vh, cw, ch);
+    const x0 = layout.offsetX + layout.displayW * 0.1;
+    const y0 = layout.offsetY + layout.displayH * 0.15;
+    const x1 = layout.offsetX + layout.displayW * 0.7;
+    const y1 = layout.offsetY + layout.displayH * 0.8;
+    const crop = cropFromDrag({ x0, y0, x1, y1, vw, vh, cw, ch });
+    const rect = cropToOverlayRect(crop, vw, vh, cw, ch);
+    expect(rect.left).toBeCloseTo(Math.min(x0, x1), 4);
+    expect(rect.top).toBeCloseTo(Math.min(y0, y1), 4);
+    expect(rect.width).toBeCloseTo(Math.abs(x1 - x0), 4);
+    expect(rect.height).toBeCloseTo(Math.abs(y1 - y0), 4);
   });
 });

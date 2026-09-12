@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "重着色方块与地砖。关 = 原版。",
   "settings.colorOn": "开",
   "settings.colorOff": "关",
+  "settings.colorCycle": "循环",
+  "settings.colorPresetDefault": "默认",
   "settings.colorBlock": "方块",
   "settings.colorStone": "石头",
   "settings.colorExit": "出口",

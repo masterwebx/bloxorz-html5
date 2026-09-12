@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "ब्लॉक और टाइल का रंग बदलें। बंद = मूल।",
   "settings.colorOn": "चालू",
   "settings.colorOff": "बंद",
+  "settings.colorCycle": "चक्र",
+  "settings.colorPresetDefault": "डिफ़ॉल्ट",
   "settings.colorBlock": "ब्लॉक",
   "settings.colorStone": "पत्थर",
   "settings.colorExit": "निकास",

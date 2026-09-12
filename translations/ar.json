@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "أعد تلوين المكعب والبلاط. إيقاف = الأصلي.",
   "settings.colorOn": "تشغيل",
   "settings.colorOff": "إيقاف",
+  "settings.colorCycle": "تدوير",
+  "settings.colorPresetDefault": "افتراضي",
   "settings.colorBlock": "المكعب",
   "settings.colorStone": "حجر",
   "settings.colorExit": "مخرج",

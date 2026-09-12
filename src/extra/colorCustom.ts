@@ -209,8 +209,20 @@ export type ColorPreset = { name: string; colors: ColorCustom };
 export const COLOR_PRESET_NAME_MAX = 24;
 export const COLOR_PRESET_MAX = 24;
 
+/** Built-in stock preset — always available, never deletable / overwritable. */
+export const DEFAULT_COLOR_PRESET_NAME = "Default";
+
 export function normalizePresetName(raw: string): string {
   return raw.trim().replace(/\s+/g, " ").slice(0, COLOR_PRESET_NAME_MAX);
+}
+
+export function isBuiltinColorPreset(name: string): boolean {
+  return normalizePresetName(name).toLowerCase() === DEFAULT_COLOR_PRESET_NAME.toLowerCase();
+}
+
+/** Stock colors for the built-in Default preset. */
+export function defaultColorPreset(): ColorPreset {
+  return { name: DEFAULT_COLOR_PRESET_NAME, colors: defaultColorCustom() };
 }
 
 export function cloneColorCustom(colors: ColorCustom): ColorCustom {
@@ -224,7 +236,7 @@ export function normalizeColorPresets(raw: unknown): ColorPreset[] {
   for (const row of raw) {
     if (!row || typeof row !== "object") continue;
     const name = normalizePresetName(typeof (row as ColorPreset).name === "string" ? (row as ColorPreset).name : "");
-    if (!name) continue;
+    if (!name || isBuiltinColorPreset(name)) continue;
     const key = name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -234,10 +246,10 @@ export function normalizeColorPresets(raw: unknown): ColorPreset[] {
   return out;
 }
 
-/** Upsert by case-insensitive name; newest name casing wins. */
+/** Upsert by case-insensitive name; newest name casing wins. Built-in Default is ignored. */
 export function upsertColorPreset(list: ColorPreset[], name: string, colors: ColorCustom): ColorPreset[] {
   const clean = normalizePresetName(name);
-  if (!clean) return normalizeColorPresets(list);
+  if (!clean || isBuiltinColorPreset(clean)) return normalizeColorPresets(list);
   const next = { name: clean, colors: cloneColorCustom(colors) };
   const key = clean.toLowerCase();
   const filtered = list.filter((row) => row.name.toLowerCase() !== key);
@@ -247,13 +259,14 @@ export function upsertColorPreset(list: ColorPreset[], name: string, colors: Col
 export function findColorPreset(list: ColorPreset[], name: string): ColorPreset | null {
   const key = normalizePresetName(name).toLowerCase();
   if (!key) return null;
+  if (key === DEFAULT_COLOR_PRESET_NAME.toLowerCase()) return defaultColorPreset();
   return list.find((row) => row.name.toLowerCase() === key) ?? null;
 }
 
-/** Drop a preset by case-insensitive name. */
+/** Drop a preset by case-insensitive name. Built-in Default cannot be removed. */
 export function removeColorPreset(list: ColorPreset[], name: string): ColorPreset[] {
   const key = normalizePresetName(name).toLowerCase();
-  if (!key) return normalizeColorPresets(list);
+  if (!key || key === DEFAULT_COLOR_PRESET_NAME.toLowerCase()) return normalizeColorPresets(list);
   return normalizeColorPresets(list.filter((row) => row.name.toLowerCase() !== key));
 }
 

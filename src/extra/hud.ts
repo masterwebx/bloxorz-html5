@@ -618,6 +618,7 @@ export class ExtraHud {
     tileAtlasReady?: boolean;
     presets?: { name: string }[];
     activePreset?: string;
+    bgCycle?: boolean;
   }): void {
     this.clear();
     this.hideMascot();
@@ -642,9 +643,25 @@ export class ExtraHud {
           y,
           11,
           false,
-          56,
+          slot.id === "bg" ? 44 : 56,
         ),
       );
+      if (slot.id === "bg") {
+        // Cycle sits beside Off/On — backdrop-only hue shift (not the block).
+        const cycleId = "toggle-bg-cycle";
+        const cycleOn = !!opts.bgCycle;
+        this.add(
+          this.act(
+            cycleId,
+            `${this.focusId === cycleId ? "> " : "  "}${t("settings.colorCycle")}${cycleOn ? " ✓" : ""}`,
+            164,
+            y,
+            11,
+            false,
+            52,
+          ),
+        );
+      }
       // Leave x≈200 for the HTML color swatch; pad focus opens it via color-pick.
       this.add(this.act(pickId, " ", 198, y, 11, false, 28));
     });

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   cloneColorCustom,
+  DEFAULT_COLOR_PRESET_NAME,
   defaultColorCustom,
   findColorPreset,
+  isBuiltinColorPreset,
   matchTilesToStone,
   normalizeColorPresets,
   normalizePresetName,
@@ -51,6 +53,18 @@ describe("color presets", () => {
     const matched = matchTilesToStone(base);
     expect(matched.exit).toEqual({ hex: "#445566", on: true });
     expect(matched.block.on).toBe(false);
+  });
+
+  it("keeps built-in Default undeletable and always findable", () => {
+    const base = defaultColorCustom();
+    expect(isBuiltinColorPreset("default")).toBe(true);
+    expect(findColorPreset([], "Default")?.name).toBe(DEFAULT_COLOR_PRESET_NAME);
+    expect(findColorPreset([], "Default")?.colors.stone.on).toBe(false);
+    let list = upsertColorPreset([], "Default", base);
+    expect(list).toHaveLength(0);
+    list = upsertColorPreset([], "Mine", base);
+    expect(removeColorPreset(list, "Default")).toHaveLength(1);
+    expect(normalizeColorPresets([{ name: "Default", colors: base }])).toEqual([]);
   });
 });
 

@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "Recolor the block and tiles. Off = original.",
   "settings.colorOn": "On",
   "settings.colorOff": "Off",
+  "settings.colorCycle": "Cycle",
+  "settings.colorPresetDefault": "Default",
   "settings.colorBlock": "Block",
   "settings.colorStone": "Stone",
   "settings.colorExit": "Exit",

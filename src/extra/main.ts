@@ -44,6 +44,7 @@ import {
   needsTileColorBake,
   packBlockLayout,
   parseHexRgb,
+  shiftingHue,
   TILE_COLOR_SLOTS,
   type AtlasRect,
   type PackedBlockLayout,
@@ -54,8 +55,10 @@ import {
   activeBlockHex,
   COLOR_PRESET_NAME_MAX,
   COLOR_SLOT_META,
+  DEFAULT_COLOR_PRESET_NAME,
   defaultColorCustom,
   findColorPreset,
+  isBuiltinColorPreset,
   matchTilesToStone,
   normalizePresetName,
   removeColorPreset,
@@ -416,6 +419,7 @@ let undoStack: LevelDef[] = [];
 let redoStack: LevelDef[] = [];
 let lastPaintCell = "";
 let lastTintKey = "";
+let bgCycleLastMs = 0;
 let lastPlayHudKey = "";
 let themeUploadMsg = "";
 let settingsChromeBound = false;
@@ -819,6 +823,11 @@ function collectTileAtlas(): boolean {
 
 /** Reload Coolmath/theme sheet so tile slots off do not leave a pack→blit rewrite. */
 function restorePristineTileSheet(): void {
+  tileAtlasReady = false;
+  if (extraView === "settings-colors") {
+    markHudDirty();
+    paintHud();
+  }
   const theme = currentThemeId();
   void composeThemeAtlas(theme)
     .then((img) => {
@@ -832,10 +841,18 @@ function restorePristineTileSheet(): void {
       tileAtlasReady = true;
       if (liveBlockTint()) applyBlockHue(true);
       refreshPlayTilesAfterTheme();
+      if (extraView === "settings-colors") {
+        markHudDirty();
+        paintHud();
+      }
     })
     .catch(() => {
       bakedTileColors = {};
       tileAtlasReady = true;
+      if (extraView === "settings-colors") {
+        markHudDirty();
+        paintHud();
+      }
     });
 }
 
@@ -970,12 +987,21 @@ function ensureTint(): void {
   tintLayer = layer;
 }
 
-function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string, amt: number): void {
-  const cjs = window.createjs as { ColorFilter?: new (...args: number[]) => unknown } | undefined;
+function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string, amt: number, cycleHue = 0): void {
+  const cjs = window.createjs as {
+    ColorFilter?: new (...args: number[]) => unknown;
+    ColorMatrix?: new () => { adjustHue: (n: number) => unknown; adjustSaturation?: (n: number) => unknown };
+    ColorMatrixFilter?: new (m: unknown) => unknown;
+  } | undefined;
   if (!sprite) return;
   const tagged = sprite as SkyClip & { __bloxTintKey?: string };
   const hex = normalizeHex(tintHex);
-  const key = !sThemeBg() || amt <= 0.01 || !cjs?.ColorFilter ? "off" : `${hex}|${amt.toFixed(3)}`;
+  const cycle = Math.round(cycleHue) % 360;
+  const tintOn = sThemeBg() && amt > 0.01 && !!cjs?.ColorFilter;
+  const key =
+    !sThemeBg() || (!tintOn && !cycle)
+      ? "off"
+      : `${hex}|${amt.toFixed(3)}|c${cycle}`;
   if (tagged.__bloxTintKey === key) return;
   tagged.__bloxTintKey = key;
   if (key === "off") {
@@ -983,19 +1009,32 @@ function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string,
     sprite.uncache?.();
     return;
   }
-  const Filter = cjs?.ColorFilter;
-  if (!Filter) {
+  const filters: unknown[] = [];
+  if (cycle && cjs?.ColorMatrix && cjs.ColorMatrixFilter) {
+    const matrix = new cjs.ColorMatrix();
+    matrix.adjustHue(cycle);
+    filters.push(new cjs.ColorMatrixFilter(matrix));
+  }
+  if (tintOn) {
+    const Filter = cjs?.ColorFilter;
+    if (Filter) {
+      const rgb = parseHexRgb(hex) ?? [184, 106, 46];
+      const [r, g, b] = rgb;
+      const wash = Math.min(1, amt);
+      // Desaturate 75% toward gray, then tint wash (same spirit as block recolor).
+      const grayKeep = 1 - wash * 0.75;
+      filters.push(
+        new Filter(grayKeep, grayKeep, grayKeep, 1, r * wash * 0.55, g * wash * 0.55, b * wash * 0.55, 0),
+      );
+    }
+  }
+  if (!filters.length) {
     tagged.__bloxTintKey = "off";
+    sprite.filters = null;
+    sprite.uncache?.();
     return;
   }
-  const rgb = parseHexRgb(hex) ?? [184, 106, 46];
-  const [r, g, b] = rgb;
-  const wash = Math.min(1, amt);
-  // Partial desaturate + softer wash so the sky keeps contrast (not a flat color fill).
-  const grayKeep = 1 - wash * 0.55;
-  sprite.filters = [
-    new Filter(grayKeep, grayKeep, grayKeep, 1, r * wash * 0.55, g * wash * 0.55, b * wash * 0.55, 0),
-  ];
+  sprite.filters = filters;
   const box = sprite.getBounds?.();
   sprite.cache?.(box?.x ?? 0, box?.y ?? 0, box?.width ?? 550, box?.height ?? 300);
 }
@@ -1024,6 +1063,7 @@ function applyLooks(): void {
   // Tint media only when the backdrop slot is enabled (or legacy bgTint without colorCustom).
   const bg = activeBackdrop(s);
   document.body.classList.toggle("has-bg-tint", !live && !!bg);
+  document.body.classList.toggle("has-bg-cycle", !!s.bgCycle);
   document.body.style.setProperty("--bg-tint", bg ? hexCss(bg.hex, bg.tint * 0.4) : "transparent");
   document.body.style.setProperty(
     "--play-tint",
@@ -1460,9 +1500,14 @@ function placeSettingsChrome(on: boolean, forceTheme = false): void {
     }
     const presetOpts = [
       { id: "", name: t("settings.loadPresetNone") },
+      { id: DEFAULT_COLOR_PRESET_NAME, name: t("settings.colorPresetDefault") },
       ...s.colorPresets.map((row) => ({ id: row.name, name: row.name })),
     ];
-    if (!activeColorPreset || !s.colorPresets.some((row) => row.name === activeColorPreset)) {
+    if (
+      !activeColorPreset ||
+      (!isBuiltinColorPreset(activeColorPreset) &&
+        !s.colorPresets.some((row) => row.name === activeColorPreset))
+    ) {
       activeColorPreset = "";
     }
     fillSettingsDropdown(presetSel, presetOpts, activeColorPreset, forceTheme);
@@ -1515,20 +1560,27 @@ function fillColorPresetManage(): void {
   if (back) back.textContent = t("common.back");
   const rows = loadSettings().colorPresets;
   list.replaceChildren();
-  empty.hidden = rows.length > 0;
+  empty.hidden = true;
   empty.textContent = t("settings.noColorPresets");
-  for (const preset of rows) {
+
+  const addRow = (name: string, canDelete: boolean) => {
     const row = document.createElement("div");
     row.className = "hud-theme-row";
-    const name = document.createElement("span");
-    name.textContent = preset.name;
-    const del = document.createElement("button");
-    del.type = "button";
-    del.textContent = t("settings.deletePreset");
-    del.dataset.name = preset.name;
-    row.append(name, del);
+    const label = document.createElement("span");
+    label.textContent = isBuiltinColorPreset(name) ? t("settings.colorPresetDefault") : name;
+    row.append(label);
+    if (canDelete) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.textContent = t("settings.deletePreset");
+      del.dataset.name = name;
+      row.append(del);
+    }
     list.append(row);
-  }
+  };
+
+  addRow(DEFAULT_COLOR_PRESET_NAME, false);
+  for (const preset of rows) addRow(preset.name, true);
 }
 
 function toggleThemeManage(force?: boolean): void {
@@ -1763,7 +1815,7 @@ function bindSettingsChrome(): void {
   });
   presetManage?.addEventListener("click", (ev) => {
     const name = (ev.target as HTMLElement | null)?.closest<HTMLElement>("button[data-name]")?.dataset.name;
-    if (!name) return;
+    if (!name || isBuiltinColorPreset(name)) return;
     ev.stopPropagation();
     if (!window.confirm(t("settings.deletePresetConfirm"))) return;
     updateSettings((s) => {
@@ -2730,6 +2782,7 @@ function navItems(): NavItem[] {
     const rows: NavItem[] = [{ id: "settings" }];
     for (const slot of COLOR_SLOT_META) {
       rows.push({ id: "color-toggle:" + slot.id });
+      if (slot.id === "bg") rows.push({ id: "toggle-bg-cycle" });
       rows.push({
         id: "color-pick:" + slot.id,
         adjust: () => {
@@ -2739,12 +2792,10 @@ function navItems(): NavItem[] {
         },
       });
     }
-    if (s.colorPresets.length) {
-      rows.push({
-        id: "color-preset",
-        adjust: () => toggleSettingsDropdown($("hud-color-preset-select") as HTMLElement),
-      });
-    }
+    rows.push({
+      id: "color-preset",
+      adjust: () => toggleSettingsDropdown($("hud-color-preset-select") as HTMLElement),
+    });
     rows.push({ id: "colors-match-stone" });
     rows.push({ id: "colors-reset" });
     rows.push({ id: "colors-save-preset" });
@@ -3204,6 +3255,7 @@ function paintHud(): void {
       tileAtlasReady,
       presets: s.colorPresets,
       activePreset: activeColorPreset,
+      bgCycle: s.bgCycle,
     });
     placeSettingsChrome(true);
   } else if (extraView === "settings-save") {
@@ -3898,6 +3950,13 @@ function handleHudAction(act: string): void {
     void copyGameShot();
     noteScreenshot();
     markHudDirty();
+  } else if (act === "toggle-bg-cycle") {
+    updateSettings((s) => {
+      s.bgCycle = !s.bgCycle;
+    });
+    applyLooks();
+    markHudDirty();
+    paintHud();
   } else if (act === "toggle-bg-color") {
     updateSettings((s) => {
       const next = !s.colorCustom.bg.on;
@@ -3936,14 +3995,16 @@ function handleHudAction(act: string): void {
     updateSettings((s) => {
       s.colorCustom = defaultColorCustom();
       s.bgTint = 0;
+      s.bgCycle = false;
       s.blockHue = 0;
       s.blockColor = "#b86a2e";
       s.bgColor = "#b86a2e";
       s.bgHue = 28;
     });
-    activeColorPreset = "";
+    activeColorPreset = DEFAULT_COLOR_PRESET_NAME;
     applyLooks();
     scheduleBlockHueBake(80);
+    applyTileColors(true);
     markHudDirty();
     paintHud();
   } else if (act === "colors-match-stone") {
@@ -3959,7 +4020,7 @@ function handleHudAction(act: string): void {
     openPanel("settings-colors-preset-name");
   } else if (act === "preset-name-save") {
     const name = normalizePresetName(hudInput()?.value ?? "");
-    if (!name) return;
+    if (!name || isBuiltinColorPreset(name)) return;
     updateSettings((s) => {
       s.colorPresets = upsertColorPreset(s.colorPresets, name, s.colorCustom);
     });
@@ -4279,13 +4340,18 @@ function showTabCropPreviewContain(): void {
   cam.style.top = `${layout.offsetY}px`;
 }
 
+/** Crop math uses #theme-media size so editor preview matches applyTabCrop. */
+function tabCropMediaSize(): { cw: number; ch: number } {
+  const wrap = $("theme-media");
+  return { cw: wrap?.clientWidth || 0, ch: wrap?.clientHeight || 0 };
+}
+
 function paintTabCropRect(): void {
   const stage = tabCropStage();
   const rect = tabCropRectEl();
   const cam = $("theme-webcam") as HTMLVideoElement | null;
   if (!stage || !rect || !cam) return;
-  const cw = stage.clientWidth;
-  const ch = stage.clientHeight;
+  const { cw, ch } = tabCropMediaSize();
   const vw = cam.videoWidth || 0;
   const vh = cam.videoHeight || 0;
   if (!vw || !vh || !cw || !ch) {
@@ -4365,7 +4431,9 @@ function closeTabCropEditor(save: boolean): void {
 }
 
 function stagePointerToLocal(stage: HTMLElement, ev: PointerEvent): { x: number; y: number } {
-  const r = stage.getBoundingClientRect();
+  // Prefer #theme-media bounds so drag space matches coverCropLayout / applyTabCrop.
+  const media = $("theme-media");
+  const r = (media || stage).getBoundingClientRect();
   return { x: ev.clientX - r.left, y: ev.clientY - r.top };
 }
 
@@ -4386,7 +4454,8 @@ function ensureTabCropBound(): void {
     const cam = $("theme-webcam") as HTMLVideoElement | null;
     const vw = cam?.videoWidth || 0;
     const vh = cam?.videoHeight || 0;
-    if (vw && vh) {
+    const { cw, ch } = tabCropMediaSize();
+    if (vw && vh && cw && ch) {
       tabCropDraft = cropFromDrag({
         x0: p.x,
         y0: p.y,
@@ -4394,8 +4463,8 @@ function ensureTabCropBound(): void {
         y1: p.y + 4,
         vw,
         vh,
-        cw: stage.clientWidth,
-        ch: stage.clientHeight,
+        cw,
+        ch,
       });
       paintTabCropRect();
     }
@@ -4408,7 +4477,8 @@ function ensureTabCropBound(): void {
     const cam = $("theme-webcam") as HTMLVideoElement | null;
     const vw = cam?.videoWidth || 0;
     const vh = cam?.videoHeight || 0;
-    if (!vw || !vh) return;
+    const { cw, ch } = tabCropMediaSize();
+    if (!vw || !vh || !cw || !ch) return;
     tabCropDraft = cropFromDrag({
       x0: tabCropDrag.x0,
       y0: tabCropDrag.y0,
@@ -4416,8 +4486,8 @@ function ensureTabCropBound(): void {
       y1: p.y,
       vw,
       vh,
-      cw: stage.clientWidth,
-      ch: stage.clientHeight,
+      cw,
+      ch,
     });
     paintTabCropRect();
   });
@@ -4678,6 +4748,15 @@ function applyColorPreset(name: string): void {
   if (!hit) return;
   updateSettings((st) => {
     st.colorCustom = structuredClone(hit.colors);
+    if (isBuiltinColorPreset(hit.name)) {
+      st.bgTint = 0;
+      st.bgCycle = false;
+      st.blockHue = 0;
+      st.blockColor = "#b86a2e";
+      st.bgColor = "#b86a2e";
+      st.bgHue = 28;
+      return;
+    }
     const bg = st.colorCustom.bg;
     const block = st.colorCustom.block;
     if (bg.on) {
@@ -4698,6 +4777,7 @@ function applyColorPreset(name: string): void {
   activeColorPreset = hit.name;
   applyLooks();
   scheduleBlockHueBake(80);
+  applyTileColors(true);
   markHudDirty();
   paintHud();
 }
@@ -5232,10 +5312,13 @@ function applyPlayTint(): void {
   const skySpr = world?.background?.instance_2;
   if (skySpr) skySpr.visible = s.themeBg && !cam;
   if (sky) sky.visible = !cam && sky.visible;
-  applySkySpriteTint(cam ? null : skySpr, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0);
-  applySkySpriteTint(cam ? null : sky, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0);
+  // CSS handles hue-cycle for DOM theme media / webcam; CreateJS sky needs a light filter update.
+  const hasDomBg = document.body.classList.contains("has-theme-media") || cam;
+  const cycleHue = s.bgCycle && !hasDomBg ? shiftingHue(0, true, performance.now(), 22) : 0;
+  applySkySpriteTint(cam ? null : skySpr, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0, cycleHue);
+  applySkySpriteTint(cam ? null : sky, bg?.hex || s.bgColor || hueToHex(s.bgHue), bg?.tint ?? 0, cycleHue);
   if (!gc?.addChildAt || !cjs?.Shape) return;
-  const key = `${bg?.tint ?? 0}|${bg?.hex || ""}|${s.themeBg}|${cam}`;
+  const key = `${bg?.tint ?? 0}|${bg?.hex || ""}|${s.themeBg}|${cam}|c${Math.round(cycleHue)}`;
   let overlay = gc.__bloxTint;
   const listed = !!(overlay && gc.children?.includes(overlay));
   if (!listed) {
@@ -5860,6 +5943,16 @@ function syncOverlay(): void {
   // Kill classic bitmap pages under HD before any label work — covers howto paging and
   // stage-complete/win (finish) so CreateJS never paints one classic frame under HD text.
   if (usesHdType()) suppressClassicBitmapsForHd(label);
+  // Backdrop-only CreateJS sky cycle (DOM media uses CSS animation — skip here).
+  if (loadSettings().bgCycle) {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (now - bgCycleLastMs >= 64) {
+      bgCycleLastMs = now;
+      const cam = usingLiveBg();
+      const hasDomBg = document.body.classList.contains("has-theme-media") || cam;
+      if (!hasDomBg) applyPlayTint();
+    }
+  }
   const stage = window.stage;
   const labeledRun =
     label === "game" || label === "restart" || label === "stagetitle" || label === "instructions";

@@ -70,7 +70,7 @@ export function coverCropLayout(
   const scale = Math.max(cw / cropW, ch / cropH);
   const width = vw * scale;
   const height = vh * scale;
-  // Center the crop rectangle in the game screen (cover may trim overflow).
+  // Center the crop rectangle in the game screen (cover may trim overflow of the selection).
   const left = -c.x * vw * scale + (cw - cropW * scale) / 2;
   const top = -c.y * vh * scale + (ch - cropH * scale) / 2;
   return { width, height, left, top };
@@ -83,8 +83,8 @@ export function gameNormAspect(vw: number, vh: number): number {
 }
 
 /**
- * Build an aspect-locked crop in source-normalized [0,1] space from a drag
- * across the contain-letterboxed video display.
+ * Build a free-form crop in source-normalized [0,1] space from a drag across the
+ * contain-letterboxed video display. Selection maps 1:1 — no aspect lock / grow.
  */
 export function cropFromDrag(opts: {
   x0: number;
@@ -107,46 +107,22 @@ export function cropFromDrag(opts: {
   const a = toSrc(opts.x0, opts.y0);
   const b = toSrc(opts.x1, opts.y1);
 
-  // Clamp start inside the video letterbox.
-  const sx = clamp01(a.x);
-  const sy = clamp01(a.y);
-  let ex = clamp01(b.x);
-  let ey = clamp01(b.y);
+  // Clamp to the video letterbox (outside → edge). No aspect forcing.
+  const x0 = clamp01(a.x);
+  const y0 = clamp01(a.y);
+  const x1 = clamp01(b.x);
+  const y1 = clamp01(b.y);
 
-  const aspect = gameNormAspect(vw, vh); // desired w/h in normalized source
-  let w = Math.abs(ex - sx);
-  let h = Math.abs(ey - sy);
+  const x = Math.min(x0, x1);
+  const y = Math.min(y0, y1);
+  const w = Math.max(x0, x1) - x;
+  const h = Math.max(y0, y1) - y;
 
-  // Grow the smaller axis so the selection keeps the game aspect.
   if (w < 0.001 && h < 0.001) {
-    return normalizeTabCrop({ x: sx, y: sy, w: 0.05, h: 0.05 / aspect });
-  }
-  if (w / Math.max(1e-6, h) > aspect) {
-    h = w / aspect;
-  } else {
-    w = h * aspect;
+    return normalizeTabCrop({ x, y, w: 0.05, h: 0.05 });
   }
 
-  // Anchor toward the drag direction; keep inside [0,1].
-  let x = ex >= sx ? sx : sx - w;
-  let y = ey >= sy ? sy : sy - h;
-  if (x < 0) x = 0;
-  if (y < 0) y = 0;
-  if (x + w > 1) x = Math.max(0, 1 - w);
-  if (y + h > 1) y = Math.max(0, 1 - h);
-  // If the locked rect still won't fit (extreme video aspect), shrink uniformly.
-  if (w > 1) {
-    w = 1;
-    h = w / aspect;
-  }
-  if (h > 1) {
-    h = 1;
-    w = h * aspect;
-  }
-  if (x + w > 1) x = 1 - w;
-  if (y + h > 1) y = 1 - h;
-
-  return normalizeTabCrop({ x, y, w, h });
+  return normalizeTabCrop({ x, y, w: Math.max(0.05, w), h: Math.max(0.05, h) });
 }
 
 /** Map a source-normalized crop to overlay pixels for the selection rect. */

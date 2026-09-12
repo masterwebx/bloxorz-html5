@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "ブロックとマスの色を変更。オフ＝オリジナル。",
   "settings.colorOn": "オン",
   "settings.colorOff": "オフ",
+  "settings.colorCycle": "サイクル",
+  "settings.colorPresetDefault": "デフォルト",
   "settings.colorBlock": "ブロック",
   "settings.colorStone": "石",
   "settings.colorExit": "出口",

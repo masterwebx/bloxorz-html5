@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "Перекрасьте блок и плитки. Выкл = оригинал.",
   "settings.colorOn": "Вкл",
   "settings.colorOff": "Выкл",
+  "settings.colorCycle": "Цикл",
+  "settings.colorPresetDefault": "По умолчанию",
   "settings.colorBlock": "Блок",
   "settings.colorStone": "Камень",
   "settings.colorExit": "Выход",

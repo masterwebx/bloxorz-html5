@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "Recolorea el bloque y las losas. Off = original.",
   "settings.colorOn": "Sí",
   "settings.colorOff": "No",
+  "settings.colorCycle": "Ciclo",
+  "settings.colorPresetDefault": "Predeterminado",
   "settings.colorBlock": "Bloque",
   "settings.colorStone": "Piedra",
   "settings.colorExit": "Salida",

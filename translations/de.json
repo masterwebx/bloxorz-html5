@@ -302,6 +302,8 @@
   "settings.customizeColorsHint": "Block und Kacheln umfärben. Aus = Original.",
   "settings.colorOn": "An",
   "settings.colorOff": "Aus",
+  "settings.colorCycle": "Zyklus",
+  "settings.colorPresetDefault": "Standard",
   "settings.colorBlock": "Block",
   "settings.colorStone": "Stein",
   "settings.colorExit": "Ausgang",
