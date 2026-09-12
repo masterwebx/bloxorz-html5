@@ -6,6 +6,7 @@ import {
   isMusicSrc,
   markAudioReadyForTests,
   normalizePlayArgs,
+  playStageSting,
   resetAudioForTests,
   setMenuMusicAllowed,
   shouldBlockHtmlPlay,
@@ -259,5 +260,29 @@ describe("in-game SFX", () => {
     expect(played.some((row) => row[0] === "blox003wav" || row[0] === "blox004wav")).toBe(true);
     expect(played.some((row) => row[0] === "blox036wav")).toBe(true);
     expect(played.some((row) => row[0] === "Music")).toBe(false);
+  });
+
+  it("swallows stagesign window.playSound(blox2wav) so playStageSting owns the sting", () => {
+    const played: unknown[][] = [];
+    installSound((...args) => {
+      played.push(args);
+      return { loop: 0, stop() {} };
+    });
+    const w = window as unknown as { playSound?: (id: string, loop?: number) => SoundInst };
+    w.playSound = (id, loop) =>
+      (window as unknown as { createjs: { Sound: { play: (...a: unknown[]) => SoundInst } } }).createjs.Sound.play(
+        id,
+        1,
+        0,
+        0,
+        loop || 0,
+      );
+    gateSoundPlay();
+    setMenuMusicAllowed(false);
+    markAudioReadyForTests();
+    w.playSound?.("blox2wav");
+    expect(played.some((row) => row[0] === "blox2wav")).toBe(false);
+    playStageSting();
+    expect(played.some((row) => row[0] === "blox2wav")).toBe(true);
   });
 });

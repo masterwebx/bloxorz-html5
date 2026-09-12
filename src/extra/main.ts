@@ -70,7 +70,15 @@ import {
 } from "./colorCustom";
 import { displayMoveCount, focusedSelectIndex } from "./bridgeSync";
 import { applySaveBackup, buildSaveBackup, clearSaveData, parseSaveBackup } from "./saveBackup";
-import { armStageTitleClip, freezeStageTitleClip, pinStageTitleClip, stageTitleShouldArm, stageTitleShouldFreeze, type StageTitleClip } from "./stageTitle";
+import {
+  armStageTitleClip,
+  freezeStageTitleClip,
+  pinStageTitleClip,
+  stageStartShouldSting,
+  stageTitleShouldArm,
+  stageTitleShouldFreeze,
+  type StageTitleClip,
+} from "./stageTitle";
 import {
   loadFinishedStages,
   saveFinishedStage,
@@ -387,6 +395,8 @@ let run: RunRecord | null = null;
 let tape: TapeCmd[] = [];
 let lastLabel = "";
 let lastLevelNum = 0;
+/** One sting per stage begin (session + level); avoids stagetitle + instructions double-fire. */
+let stageStingKey = "";
 let stageFailed = false;
 let playClock = 0;
 let origGetLevels: (() => unknown[]) | null = null;
@@ -2069,8 +2079,8 @@ function setVanillaTitleVisible(on: boolean): void {
 function syncStageTitleAudio(label: string): void {
   const title = vanillaTitleClip() as StageTitleClip | undefined;
   if (stageTitleShouldArm(lastLabel, label)) {
+    // Freeze stagesign (no CreateJS blox2wav); playStageSting is armed separately.
     armStageTitleClip(title);
-    playStageSting();
     return;
   }
   if (stageTitleShouldFreeze(lastLabel, label)) {
@@ -2079,6 +2089,23 @@ function syncStageTitleAudio(label: string): void {
   }
   if (label === "stagetitle") pinStageTitleClip(title);
   else freezeStageTitleClip(title);
+}
+
+/** Play blox2wav once when a real stage intro begins (not attract/replay). */
+function syncStageStartSting(label: string): void {
+  if (!playSession || playSession.attract || playSession.replay || attractMode) return;
+  if (!stageStartShouldSting(lastLabel, label)) return;
+  const level = window.stage?.levelNumber ?? lastLevelNum ?? 1;
+  const key = [
+    playSession.kind,
+    playSession.card || "",
+    playSession.entry || "",
+    playSession.seed || playSession.subtitle || "",
+    String(level),
+  ].join(":");
+  if (stageStingKey === key) return;
+  stageStingKey = key;
+  playStageSting();
 }
 
 function setVanillaCongraVisible(on: boolean): void {
@@ -5093,6 +5120,7 @@ function leavePlayTo(view: Screen): void {
   playSession = null;
   run = null;
   unlimitedLevelArmed = -1;
+  stageStingKey = "";
   lastTintKey = "";
   showAttractTitle(false);
   syncPlayChrome(false);
@@ -5140,6 +5168,7 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   }
   replayExclude = session.record ? [] : replayExclude;
   playSession = session;
+  stageStingKey = "";
   extraView = "auto";
   tape = [];
   lastLevelNum = levelNumber;
@@ -6094,6 +6123,7 @@ function syncOverlay(): void {
   syncLetterbox(onTitle);
   setVanillaTitleVisible(false);
   syncStageTitleAudio(label);
+  syncStageStartSting(label);
 
   if (playSession && !playLaunching && !labeledRun && label !== "finish" && (extraView === "auto" || label === "menu" || label === "splash")) {
     const back = playSession.returnTo && playSession.returnTo !== "auto" ? playSession.returnTo : "home";

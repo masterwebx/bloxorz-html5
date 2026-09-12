@@ -274,6 +274,10 @@ function hookWindowPlaySound(): void {
 }
 
 function gatedWindowPlay(id: string, loop?: number): SoundInst {
+  // Animate stagesign calls playSound("blox2wav"); shell owns that sting via playStageSting.
+  if (id === "blox2wav") {
+    return { loop: 0, volume: 0, stop() {} };
+  }
   if (isMusicId(id) && !allowMenuMusic) {
     hushStageMusic();
     return mutedMusic;
