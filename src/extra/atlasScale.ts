@@ -39,8 +39,9 @@ type FrameLike = {
 let patched = false;
 
 /**
- * When the atlas bitmap is half-res (or otherwise scaled), CreateJS frame rects stay in
- * logical 4096 space. Sample the image at rect*scale and draw dest at full logical size.
+ * When a sheet is unexpectedly not 1:1 with ssMetadata (should not ship), CreateJS
+ * frame rects stay in logical 4096 space. Sample the image at rect*scale.
+ * Full-res atlases keep scale=1 and use the native CreateJS draw path.
  */
 export function patchCreateJsAtlasScale(): void {
   if (patched) return;

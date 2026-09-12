@@ -110,7 +110,8 @@ export function evictThemeAtlasesExcept(keepId: string): void {
 
 /**
  * Prefer a packed `atlas.png` (theme.json `atlas` or default file) when it loads.
- * Returns an HTMLImageElement — no 4096² canvas retained for default play.
+ * Returns an HTMLImageElement — no live 4096² canvas retained for default play.
+ * Rejects downscaled sheets (< ~90% of logical size) so we never sample blurry art.
  */
 async function tryLoadStaticAtlas(id: string): Promise<HTMLImageElement | null> {
   const pack = getTheme(id);
@@ -123,13 +124,15 @@ async function tryLoadStaticAtlas(id: string): Promise<HTMLImageElement | null> 
     const plain = themeFileUrl(id, "atlas.png");
     if (!candidates.includes(plain)) candidates.push(plain);
   }
+  const minW = Math.floor(map.width * 0.9);
+  const minH = Math.floor(map.height * 0.9);
   for (const src of candidates) {
     if (!src) continue;
     const img = await loadImage(src);
     if (!img) continue;
     const w = img.naturalWidth || img.width;
     const h = img.naturalHeight || img.height;
-    if (w < 64 || h < 64) continue;
+    if (w < minW || h < minH) continue;
     return img;
   }
   return null;
@@ -163,15 +166,13 @@ async function canvasToImage(canvas: HTMLCanvasElement): Promise<HTMLImageElemen
 }
 
 async function composeFromSlices(id: string): Promise<ThemeAtlasSheet> {
-  // Match packed atlas.png: half-res sheet keeps cold RAM under budget; draw path upscales.
-  const scale = 0.5;
+  // Full logical resolution only — never downscale game art for RAM.
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(map.width * scale);
-  canvas.height = Math.round(map.height * scale);
+  canvas.width = map.width;
+  canvas.height = map.height;
   // Default GPU-friendly context — never willReadFrequently on the full sheet.
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("atlas");
-  ctx.imageSmoothingEnabled = true;
   const needed = themeAtlasFiles();
   const urls = [...new Set(needed.map((file) => resolveAtlasFile(id, file)).filter((u): u is string => !!u))];
   const images = await loadAll(urls);
@@ -180,16 +181,12 @@ async function composeFromSlices(id: string): Promise<ThemeAtlasSheet> {
     const src = resolveAtlasFile(id, row.file);
     const img = src ? images.get(src) : null;
     if (!img) continue;
-    const dx = Math.round(row.x * scale);
-    const dy = Math.round(row.y * scale);
-    const dw = Math.max(1, Math.round(row.w * scale));
-    const dh = Math.max(1, Math.round(row.h * scale));
     if (row.folder === "block") {
       const sx = row.srcX ?? 0;
       const sy = row.srcY ?? 0;
-      ctx.drawImage(img, sx, sy, row.w, row.h, dx, dy, dw, dh);
+      ctx.drawImage(img, sx, sy, row.w, row.h, row.x, row.y, row.w, row.h);
     } else {
-      ctx.drawImage(img, 0, 0, img.naturalWidth || img.width, img.naturalHeight || img.height, dx, dy, dw, dh);
+      ctx.drawImage(img, 0, 0, img.naturalWidth || img.width, img.naturalHeight || img.height, row.x, row.y, row.w, row.h);
     }
   }
   images.clear();
@@ -231,8 +228,11 @@ export function sheetToWritableCanvas(sheet: ThemeAtlasSheet): HTMLCanvasElement
   canvas.height = map.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  // Upscale half-res (or any scaled) sheet back to logical 4096 so bake rects match ssMetadata.
-  ctx.imageSmoothingEnabled = true;
+  // Copy sheet into a writable logical canvas (bake rects match ssMetadata).
+  // Full-res sheets blit 1:1; never intentionally ship downscaled atlases.
+  const sw = (sheet as HTMLImageElement).naturalWidth || sheet.width;
+  const sh = (sheet as HTMLImageElement).naturalHeight || sheet.height;
+  ctx.imageSmoothingEnabled = sw === map.width && sh === map.height ? false : true;
   ctx.drawImage(sheet, 0, 0, map.width, map.height);
   return canvas;
 }

@@ -1,6 +1,7 @@
 /**
  * Pack themes/<id>/atlas.png from slice PNGs + atlasMap.json (build-time).
- * Default packScale=0.5 → 2048² sheet (~4× less RGBA) for cold-load RAM.
+ * Default packScale=1 → full logical sheet (4096²). Do not ship half-res atlases —
+ * downscaled sheets blur sprites and force expensive CreateJS upscale draws.
  * Written into themes/ so dist copy includes them; runtime prefers these over compose.
  */
 import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
@@ -11,7 +12,7 @@ import puppeteer from "puppeteer";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const atlasMap = JSON.parse(readFileSync(path.join(root, "src/extra/atlasMap.json"), "utf8"));
 const themeIds = ["original", "gray", "holiday"];
-const packScale = Number(process.env.BLOX_ATLAS_SCALE || "0.5");
+const packScale = Number(process.env.BLOX_ATLAS_SCALE || "1");
 
 async function packTheme(page, themeId) {
   const themeDir = path.join(root, "themes", themeId);
