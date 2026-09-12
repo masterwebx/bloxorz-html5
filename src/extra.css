@@ -249,9 +249,15 @@ body.has-webcam-bg.no-theme-bg #animation_container {
 	top: 88.6%;
 	width: 71.5%;
 	margin: 0;
+	z-index: 12;
+	pointer-events: none;
 	font: 700 calc(11 * 100cqh / 300) / 1.2 Orbitron, Arial, Helvetica, sans-serif;
 	color: #fff;
 	text-shadow: 0 0 0.3cqh #ff5a18, 0 0 0.6cqh #c43800;
+}
+
+#play-help[hidden] {
+	display: none !important;
 }
 
 #stage-card {

@@ -42,3 +42,20 @@ export function instructionPadAdvance(
   if (ev === "back") return frame <= 20 ? "quit" : -1;
   return null;
 }
+
+/**
+ * Boot splash is “press any key”. True when any mapped pad button is newly pressed
+ * (not merely held from a prior screen).
+ */
+export function splashPadShouldDismiss(
+  held: Iterable<number>,
+  prev: Iterable<number>,
+  mapped: Iterable<number>,
+): boolean {
+  const prevSet = new Set(prev);
+  const mappedSet = new Set(mapped);
+  for (const btn of held) {
+    if (mappedSet.has(btn) && !prevSet.has(btn)) return true;
+  }
+  return false;
+}

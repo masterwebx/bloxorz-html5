@@ -8,6 +8,7 @@ import {
 import {
   classicPlayHelpKind,
   instructionPadAdvance,
+  splashPadShouldDismiss,
   switchHelpKeyLabel,
   wantsCreateJsHelpBitmap,
 } from "./playHelp";
@@ -60,5 +61,15 @@ describe("instruction pad advance", () => {
     expect(instructionPadAdvance("pause", 13)).toBe(0);
     expect(instructionPadAdvance("back", 10)).toBe("quit");
     expect(instructionPadAdvance("back", 40)).toBe(-1);
+  });
+});
+
+describe("splash pad dismiss", () => {
+  it("fires only on a newly pressed mapped button", () => {
+    expect(splashPadShouldDismiss([0], [], [0, 1, 9])).toBe(true);
+    expect(splashPadShouldDismiss([0], [0], [0, 1, 9])).toBe(false);
+    expect(splashPadShouldDismiss([], [], [0, 1, 9])).toBe(false);
+    expect(splashPadShouldDismiss([99], [], [0, 1, 9])).toBe(false);
+    expect(splashPadShouldDismiss([9], [0], [0, 1, 9])).toBe(true);
   });
 });

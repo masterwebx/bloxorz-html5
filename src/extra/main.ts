@@ -158,7 +158,7 @@ import {
   shouldRepaintAttractTitle,
   shouldStartAttract,
 } from "./attract";
-import { classicPlayHelpKind, instructionPadAdvance, switchHelpKeyLabel, wantsCreateJsHelpBitmap } from "./playHelp";
+import { classicPlayHelpKind, instructionPadAdvance, splashPadShouldDismiss, switchHelpKeyLabel, wantsCreateJsHelpBitmap } from "./playHelp";
 import {
   ACH_COUNT,
   ACH_PAGE,
@@ -513,11 +513,12 @@ let tintLayer: TintShape | null = null;
 let letterbox: TintShape | null = null;
 let blocksWereIdle = true;
 let prevPadButtons = new Set<number>();
+/** Mapped pad buttons held last splash poll (edge-detect “press any button”). */
+let prevSplashPad = new Set<number>();
 let prevInstrStart = false;
 let prevInstrConfirm = false;
 let prevInstrSwap = false;
-let prevHelpConfirm = false;
-/** Stage session key that already dismissed the DOM/bitmap play tip via pad confirm. */
+/** Stage session key that already dismissed the DOM/bitmap play tip (reserved; tips stay on). */
 let playHelpDismissedKey = "";
 let uiBusy = false;
 let touchChrome: TouchChrome | null = null;
@@ -2372,22 +2373,6 @@ function syncPlayHelpTip(on: boolean): void {
   help.hidden = false;
 }
 
-function dismissPlayHelpTip(): void {
-  const stageNo = window.stage?.levelNumber ?? 0;
-  playHelpDismissedKey = playHelpDismissKey(stageNo);
-  const help = $("play-help");
-  if (help) {
-    help.hidden = true;
-    help.textContent = "";
-  }
-  const ht = window.stage?.bloxWorld?.helpText;
-  if (ht) {
-    ht.alpha = 0;
-    ht.visible = false;
-  }
-  lastHelpTextKey = null;
-}
-
 function syncPlayChrome(on: boolean): void {
   syncPlayStageName(on);
   const box = $("play-chrome");
@@ -3847,8 +3832,25 @@ function dismissSplash(): void {
     setMenuMusicAllowed(true);
     ensureMenuMusic();
   });
+  absorbHeldMenuConfirm();
+  prevSplashPad.clear();
   if (!getName()) openPanel("name");
   else afterIdentity();
+}
+
+/** Boot splash is “press any key” — any newly pressed mapped pad button dismisses it. */
+function pollSplashPad(): void {
+  if (splashDone || extraView !== "splash") return;
+  const held = heldPadButtons();
+  const mapped = Object.values(loadSettings().pads);
+  let edge = splashPadShouldDismiss(held, prevSplashPad, mapped);
+  // Keep menu-pad edge state in sync; confirm/back/dirs also count as “any key”.
+  for (const ev of pollMenuPad()) {
+    if (ev) edge = true;
+  }
+  const mappedSet = new Set(mapped);
+  prevSplashPad = new Set([...held].filter((b) => mappedSet.has(b)));
+  if (edge) dismissSplash();
 }
 
 function goBack(): void {
@@ -5388,7 +5390,6 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   prevInstrStart = false;
   prevInstrConfirm = false;
   prevInstrSwap = false;
-  prevHelpConfirm = false;
   const stage = window.stage;
   if (stage) stage.touchMode = false;
   if (stage) stage.levelNumber = levelNumber;
@@ -5931,28 +5932,6 @@ function pollInstructionsPad(): void {
   prevInstrStart = start;
   prevInstrConfirm = confirm;
   prevInstrSwap = swap;
-}
-
-function playHelpTipVisible(): boolean {
-  const help = $("play-help");
-  if (help && !help.hidden && help.textContent) return true;
-  const stageNo = window.stage?.levelNumber ?? 0;
-  const opts = playHelpSessionOpts(stageNo);
-  if (!opts || playHelpDismissedKey === playHelpDismissKey(stageNo)) return false;
-  return wantsCreateJsHelpBitmap({ ...opts, hdType: usesHdType() });
-}
-
-/** Confirm / A dismisses the Stage 01 or switch tip while pad is driving. */
-function pollPlayHelpDismissPad(): void {
-  if (!playHelpTipVisible()) {
-    prevHelpConfirm = heldPadButtons().has(loadSettings().pads.confirm);
-    return;
-  }
-  const pads = loadSettings().pads;
-  const held = heldPadButtons();
-  const confirm = held.has(pads.confirm);
-  if (confirm && !prevHelpConfirm) dismissPlayHelpTip();
-  prevHelpConfirm = confirm;
 }
 
 function inStagePlay(): boolean {
@@ -6606,6 +6585,8 @@ function syncOverlay(): void {
       hud?.setVisible(true);
       raiseHud();
     }
+    // Same as keyboard “press any key”: any mapped pad edge dismisses the boot splash.
+    pollSplashPad();
     paintHud();
     // Splash used to return before bindMenuPad — A/Start never dismissed the gate.
     // pollMenuPad maps confirm (A/South) and Start→confirm; never pollGamepad/pause here.
@@ -6661,7 +6642,6 @@ function syncOverlay(): void {
       const inStage = label === "game" || label === "restart";
       if (isPauseMenuOpen()) pollPauseMenuPad();
       else if (inStage) {
-        pollPlayHelpDismissPad();
         pollGamepad(autoSolve ? undefined : stage, togglePauseMenu);
       }
       if (!playSession) return;
