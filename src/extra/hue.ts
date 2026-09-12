@@ -64,6 +64,17 @@ export function shiftingHue(base: number, enabled: boolean, elapsedMs: number, d
   return wrapHue(start + (elapsedMs / 1000) * degPerSec);
 }
 
+/**
+ * CreateJS ColorMatrix.adjustHue clamps to ±180. Map a [0,360) phase into that
+ * range so the backdrop keeps walking the wheel (180→−179…) instead of sticking
+ * on blue then snapping back to orange at the wrap.
+ */
+export function colorMatrixHue(degrees: number): number {
+  let h = wrapHue(degrees);
+  if (h > 180) h -= 360;
+  return h;
+}
+
 /** Rotate a #rrggbb swatch by hue degrees (backdrop cycle fill). */
 export function shiftHexHue(hex: string, degrees: number): string {
   const rgb = parseHexRgb(hex);

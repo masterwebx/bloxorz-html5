@@ -27,52 +27,36 @@ body.has-bg-tint:not(.has-bg-cycle) #theme-webcam {
 }
 
 /* Backdrop-only hue cycle (GPU filter) — never applied to the block atlas.
-   Full spectrum over ~60s: slow, continuous, no stepped jumps. */
+   Full spectrum over ~60s. Angle property keeps the loop continuous (no
+   orange→blue→snap-back from filter resets). */
+@property --bg-hue {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+
 body.has-bg-cycle:not(.has-bg-tint) #theme-media img,
 body.has-bg-cycle:not(.has-bg-tint) #theme-media video,
 body.has-bg-cycle:not(.has-bg-tint) #theme-webcam {
+	--bg-hue: 0deg;
+	filter: hue-rotate(var(--bg-hue));
 	animation: bg-hue-cycle 60s linear infinite;
 }
 
 body.has-bg-cycle.has-bg-tint #theme-media img,
 body.has-bg-cycle.has-bg-tint #theme-media video,
 body.has-bg-cycle.has-bg-tint #theme-webcam {
-	animation: bg-hue-cycle-tint 60s linear infinite;
+	--bg-hue: 0deg;
+	filter: hue-rotate(var(--bg-hue)) grayscale(0.75);
+	animation: bg-hue-cycle 60s linear infinite;
 }
 
 @keyframes bg-hue-cycle {
-	0% {
-		filter: hue-rotate(0deg);
+	from {
+		--bg-hue: 0deg;
 	}
-	25% {
-		filter: hue-rotate(90deg);
-	}
-	50% {
-		filter: hue-rotate(180deg);
-	}
-	75% {
-		filter: hue-rotate(270deg);
-	}
-	100% {
-		filter: hue-rotate(360deg);
-	}
-}
-
-@keyframes bg-hue-cycle-tint {
-	0% {
-		filter: hue-rotate(0deg) grayscale(0.75);
-	}
-	25% {
-		filter: hue-rotate(90deg) grayscale(0.75);
-	}
-	50% {
-		filter: hue-rotate(180deg) grayscale(0.75);
-	}
-	75% {
-		filter: hue-rotate(270deg) grayscale(0.75);
-	}
-	100% {
-		filter: hue-rotate(360deg) grayscale(0.75);
+	to {
+		--bg-hue: 360deg;
 	}
 }
 

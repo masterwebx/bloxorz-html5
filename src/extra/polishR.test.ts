@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BG_CYCLE_DEG_PER_SEC, shiftHexHue, shiftingHue, wrapHue } from "./hue";
+import { BG_CYCLE_DEG_PER_SEC, colorMatrixHue, shiftHexHue, shiftingHue, wrapHue } from "./hue";
 
 /** Finish list paging: visible window + scroll range for long gauntlets. */
 export function finishScrollWindow(total: number, scroll: number, pageSize = 5): {
@@ -34,5 +34,16 @@ describe("backdrop hue cycle quality", () => {
     expect(b - a).toBeCloseTo(BG_CYCLE_DEG_PER_SEC * 0.016, 5);
     expect(wrapHue(shiftingHue(350, true, 2000, BG_CYCLE_DEG_PER_SEC))).toBeCloseTo(2, 5);
     expect(shiftHexHue("#b86a2e", 180)).not.toBe("#b86a2e");
+  });
+
+  it("maps past 180° into CreateJS ±180 so the second half of the wheel plays", () => {
+    expect(colorMatrixHue(0)).toBe(0);
+    expect(colorMatrixHue(90)).toBe(90);
+    expect(colorMatrixHue(180)).toBe(180);
+    expect(colorMatrixHue(181)).toBeCloseTo(-179, 5);
+    expect(colorMatrixHue(270)).toBe(-90);
+    expect(colorMatrixHue(359)).toBeCloseTo(-1, 5);
+    // Full walk: after cyan, continue through purple/red instead of sticking at +180.
+    expect([0, 60, 120, 180, 240, 300].map(colorMatrixHue)).toEqual([0, 60, 120, 180, -120, -60]);
   });
 });

@@ -44,6 +44,7 @@ import {
   needsTileColorBake,
   packBlockLayout,
   BG_CYCLE_DEG_PER_SEC,
+  colorMatrixHue,
   parseHexRgb,
   shiftHexHue,
   shiftingHue,
@@ -1017,7 +1018,9 @@ function applySkySpriteTint(sprite: SkyClip | null | undefined, tintHex: string,
   const filters: unknown[] = [];
   if (cycle && cjs?.ColorMatrix && cjs.ColorMatrixFilter) {
     const matrix = new cjs.ColorMatrix();
-    matrix.adjustHue(cycle);
+    // CreateJS clamps adjustHue to ±180 — map past cyan into negatives so the
+    // second half of the wheel (purple → red → orange) still plays.
+    matrix.adjustHue(colorMatrixHue(cycle));
     filters.push(new cjs.ColorMatrixFilter(matrix));
   }
   if (tintOn) {
