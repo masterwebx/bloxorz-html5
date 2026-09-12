@@ -17,10 +17,11 @@ import { CAMPAIGN_WALKTHROUGH, expandWalkthrough, type WalkCmd } from "./walkthr
 import type { LevelDef } from "./types";
 
 describe("puzzle difficulty copy", () => {
-  it("describes difficulty by required switches and move count", () => {
-    expect(difficultyHint("easy")).toContain("moves");
-    expect(difficultyHint("easy")).toContain("campaign");
-    expect(difficultyHint("insane")).toMatch(/90/);
+  it("describes difficulty by thinking / planning, not move padding", () => {
+    expect(difficultyHint("easy")).toContain("thinking");
+    expect(difficultyHint("easy")).toContain("planning");
+    expect(difficultyHint("insane")).toContain("thinking");
+    expect(difficultyHint("insane")).toMatch(/deep planning/);
   });
 });
 

@@ -13,10 +13,14 @@ import {
   DIFFICULTIES,
   GAUNTLET_QUALITY,
   HARD_BFS,
+  THINKING,
   assessPuzzle,
   gauntletRemixBand,
   generateRun,
+  isObviousIslandChain,
   isStrictHard,
+  mechanismScore,
+  meetsThinking,
   runArchetypeForSeed,
   tryArchetypePuzzle,
 } from "./generate";
@@ -46,9 +50,10 @@ describe("gauntlet strict GAUNTLET_QUALITY", () => {
     }
   });
 
-  it("generateRun floors meet quality across difficulties", () => {
+  it("generateRun floors meet quality or thinking across difficulties", () => {
     for (const diff of DIFFICULTIES) {
       const q = GAUNTLET_QUALITY[diff];
+      const t = THINKING[diff];
       const run = generateRun(`polish-o-${diff}`, diff, 2);
       expect(run).toHaveLength(2);
       for (const floor of run) {
@@ -56,20 +61,15 @@ describe("gauntlet strict GAUNTLET_QUALITY", () => {
         const assess = assessPuzzle(floor.def, Math.min(q.bfs, HARD_BFS));
         expect(assess.solvable).toBe(true);
         expect(assess.gated).toBe(true);
-        expect(assess.requiredCount).toBeGreaterThanOrEqual(q.minRequired);
-        if (diff === "insane") {
-          // Insane may clear via thinking novelty (< 90 moves) or full GAUNTLET_QUALITY.
-          expect(
-            isStrictHard(assess, q) ||
-              (assess.solutionLen >= 32 && assess.requiredCount >= q.minRequired),
-          ).toBe(true);
-        } else {
-          expect(assess.solutionLen).toBeGreaterThanOrEqual(q.minMoves);
-          expect(isStrictHard(assess, q)).toBe(true);
-        }
+        expect(assess.requiredCount).toBeGreaterThanOrEqual(Math.min(q.minRequired, t.minRequired));
+        expect(isObviousIslandChain(floor.def), `${diff} island chain`).toBe(false);
+        expect(
+          isStrictHard(assess, q) || meetsThinking(floor, assess, diff),
+          `${diff} len=${assess.solutionLen} novelty=${mechanismScore(floor.def)}`,
+        ).toBe(true);
       }
     }
-  }, 240_000);
+  }, 300_000);
 
   it("insane run rejects the soft ribbon shorts polish N shipped", () => {
     const run = generateRun("test", "insane", 5);
@@ -77,10 +77,11 @@ describe("gauntlet strict GAUNTLET_QUALITY", () => {
     const q = GAUNTLET_QUALITY.insane;
     for (const floor of run) {
       const assess = assessPuzzle(floor.def, Math.min(q.bfs, HARD_BFS));
-      expect(assess.solutionLen).toBeGreaterThanOrEqual(32);
+      expect(assess.solutionLen).toBeGreaterThanOrEqual(THINKING.insane.minMoves);
       expect(assess.gated).toBe(true);
       expect(assess.requiredCount).toBeGreaterThanOrEqual(q.minRequired);
       expect(assess.requiredCount).toBe(assess.switchCount);
+      expect(isObviousIslandChain(floor.def)).toBe(false);
     }
   }, 180_000);
 
