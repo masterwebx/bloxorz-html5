@@ -2120,8 +2120,15 @@ function instructionTextMark(): OverlayNode | undefined {
 
 
 /** Keep classic bitmap pages/glyphs dead while HD text is on — no one-frame leaks. */
+let lastHdSuppressLabel = "";
 function suppressClassicBitmapsForHd(label = currentLabel()): void {
-  if (!usesHdType()) return;
+  if (!usesHdType()) {
+    lastHdSuppressLabel = "";
+    return;
+  }
+  // Same label every tick — visibility already forced off; skip glyph walks.
+  if (label === lastHdSuppressLabel) return;
+  lastHdSuppressLabel = label;
   setInstructionBitmaps(false);
   for (const btn of instructionGlyphs()) setGlyphVisible(btn, false);
   setVanillaCongraVisible(false);
@@ -5026,8 +5033,8 @@ function showAttractTitle(on: boolean): void {
   }
   const label = attractTitleLabel(brandName(getName()));
   if (!shouldRepaintAttractTitle(lastAttractTitlePaint, true, label)) {
-    hud?.setVisible(true);
-    raiseHud();
+    // Already painted — do not raiseHud/setChildIndex every CreateJS tick.
+    if (hud && !hud.root.visible) hud.setVisible(true);
     return;
   }
   lastAttractTitlePaint = label;
@@ -5240,6 +5247,8 @@ function leavePlayTo(view: Screen): void {
   unlimitedLevelArmed = -1;
   stageStingKey = "";
   lastTintKey = "";
+  lastHelpTextHd = null;
+  lastHdSuppressLabel = "";
   showAttractTitle(false);
   syncPlayChrome(false);
   syncHowto(false);
@@ -5295,6 +5304,8 @@ function beginPlay(levelNumber: number, session: PlaySession): void {
   overlayMode = "run";
   playLaunching = true;
   lastTintKey = "";
+  lastHelpTextHd = null;
+  lastHdSuppressLabel = "";
   enterPlayVisuals();
   hushPlayAudio();
   unlockAudio();
@@ -5507,12 +5518,17 @@ function beatCurrentStage(): void {
   }
 }
 
+let lastHelpTextHd: boolean | null = null;
 function syncHelpText(): void {
+  const hd = usesHdType();
+  // Help-text visibility only depends on HD vs classic — don't walk children every tick.
+  if (lastHelpTextHd === hd) return;
+  lastHelpTextHd = hd;
   const ht = window.stage?.bloxWorld?.helpText;
   const gc = window.stage?.gameContainer as {
     children?: { buttons?: unknown; menuButton?: unknown; roll?: unknown; totalFrames?: number; visible?: boolean; alpha?: number }[];
   } | undefined;
-  if (!usesHdType()) {
+  if (!hd) {
     if (ht && ht.visible === false) {
       ht.visible = true;
       ht.alpha = 1;
@@ -5575,7 +5591,7 @@ function applyPlayTint(): void {
     gc.__bloxTint = overlay;
     lastTintKey = "";
   }
-  if (overlay && gc.setChildIndex && gc.getChildIndex) {
+  if (overlay && gc.setChildIndex && gc.getChildIndex && (key !== lastTintKey || !listed)) {
     const bgClip = world?.background;
     const bgIdx = bgClip ? gc.getChildIndex(bgClip) : -1;
     const want = bgIdx >= 0 ? bgIdx + 1 : 1;
@@ -6636,6 +6652,13 @@ declare global {
     __bloxDenseBoard?: boolean;
     applyLiveTheme?: (theme: string) => void;
     __bloxLoadThemeAtlas?: (theme: string) => Promise<ThemeAtlasSheet>;
+    /** Perf / automation hooks (campaign start, attract). */
+    __bloxDebug?: {
+      startCampaign: () => void;
+      startAttract: () => void;
+      endAttract: () => void;
+      attracting: () => boolean;
+    };
     AdobeAn?: {
       getComposition: (id: string) => {
         getLibrary: () => LibCtor;
@@ -6857,6 +6880,12 @@ export function startBloxorzShell(): void {
   }
   window.applyLiveTheme = (theme: string) => applyTheme(normalizeTheme(theme), false);
   window.createjs?.Ticker?.addEventListener("tick", syncOverlay);
+  window.__bloxDebug = {
+    startCampaign: () => handleHudAction("start"),
+    startAttract: () => beginAttractMode(),
+    endAttract: () => endAttractMode(),
+    attracting: () => !!(attractMode || playSession?.attract),
+  };
   if (applyPendingShare()) {
     raiseHud();
     hud?.setVisible(true);
