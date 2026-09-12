@@ -160,6 +160,7 @@ import {
 } from "./attract";
 import { classicPlayHelpKind, instructionPadAdvance, splashPadShouldDismiss, switchHelpKeyLabel, wantsCreateJsHelpBitmap } from "./playHelp";
 import { isStagePlayLabel, resolveStagePlayCode } from "./playKeys";
+import { detachClassicWindowKeyListeners, shouldEndCreatorStrokeFromPad } from "./stageKeyBridge";
 import {
   ACH_COUNT,
   ACH_PAGE,
@@ -3949,6 +3950,9 @@ function tapedOnMove(mc: unknown, axis: string, change: number, position?: unkno
 function hookReplayCapture(): void {
   const st = window.stage;
   if (st?.triggerKeyDown && st.triggerKeyDown !== tapedKeyDown) {
+    // Drop classic window listeners before wrapping — physical Space must not
+    // double-toggle split focus (native listener + host triggerKeyDown).
+    detachClassicWindowKeyListeners(st);
     rawKeyDown = st.triggerKeyDown.bind(st);
     st.triggerKeyDown = tapedKeyDown;
   }
@@ -6014,7 +6018,12 @@ function bindMenuPad(): void {
   if (extraView === "creator-edit") {
     const held = heldPadButtons();
     const pads = loadSettings().pads;
-    if (!held.has(pads.confirm)) endCreatorPaintStroke();
+    // Only end keyboard/pad paint holds. Mouse drag uses creatorPaintStroke without
+    // editorPaintHeld — treating every "confirm up" frame as paint-end rebuilt the HUD
+    // mid-stroke and killed CreateJS pressmove (one tile per click).
+    if (shouldEndCreatorStrokeFromPad(editorPaintHeld, held.has(pads.confirm))) {
+      endCreatorPaintStroke();
+    }
     const edges: { btn: number; fn: () => void }[] = [
       { btn: pads.swap, fn: () => cycleEditorTool(1) },
       { btn: 4, fn: () => cycleEditorTool(-1) },

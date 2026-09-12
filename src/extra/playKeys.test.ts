@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { isStagePlayLabel, resolveStagePlayCode } from "./playKeys";
 
 describe("isStagePlayLabel", () => {
@@ -18,6 +18,17 @@ describe("resolveStagePlayCode", () => {
     expect(resolveStagePlayCode("Space", "swap")).toBe("Space");
     expect(resolveStagePlayCode("KeyQ", "swap")).toBe("Space");
     expect(resolveStagePlayCode("KeyE", "swap")).toBe("Space");
+  });
+
+  it("maps physical Space keydown to triggerKeyDown({ code: 'Space' }) during split play", () => {
+    // Regression: host must forward Space the same as a remapped swap key / pad.
+    const triggerKeyDown = vi.fn();
+    const act = "swap" as const;
+    const code = resolveStagePlayCode("Space", act);
+    expect(code).toBe("Space");
+    if (code) triggerKeyDown({ code });
+    expect(triggerKeyDown).toHaveBeenCalledWith({ code: "Space" });
+    expect(triggerKeyDown).toHaveBeenCalledTimes(1);
   });
 
   it("maps remapped directions to Arrow codes", () => {
