@@ -186,4 +186,99 @@ describe("gamepad pause and menu confirm", () => {
     rumble(90, 0.4, 0.4);
     expect(playEffect).toHaveBeenCalled();
   });
+
+  it("keeps rumble armed after pad release so fall/win pulses still fire", () => {
+    const playEffect = vi.fn();
+    const stage = { triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() };
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([15]), vibrationActuator: { playEffect } }],
+    });
+    pollGamepad(stage);
+    hold([]);
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([]), vibrationActuator: { playEffect } }],
+    });
+    pollGamepad(stage);
+    expect(isPadDriving()).toBe(true);
+    rumble(180, 0.6, 0.4);
+    expect(playEffect).toHaveBeenCalled();
+  });
+
+  it("does not clear padDriving when keyboard notes arrive while the stick is held", () => {
+    const playEffect = vi.fn();
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([12]), vibrationActuator: { playEffect } }],
+    });
+    pollGamepad({ triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() });
+    noteKeyboardPlay();
+    expect(isPadDriving()).toBe(true);
+    rumble(90, 0.4, 0.4);
+    expect(playEffect).toHaveBeenCalled();
+  });
+
+  it("ignores remapped keydown shortly after a pad poll so later event rumbles still work", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const playEffect = vi.fn();
+    const stage = { triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() };
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([15]), vibrationActuator: { playEffect } }],
+    });
+    pollGamepad(stage);
+    hold([]);
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([]), vibrationActuator: { playEffect } }],
+    });
+    pollGamepad(stage);
+    // Remapper keydown ~50ms after the poll must not disarm rumble for the session.
+    vi.setSystemTime(50);
+    noteKeyboardPlay();
+    expect(isPadDriving()).toBe(true);
+    rumble(220, 0.45, 0.4);
+    expect(playEffect).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("lets a later keyboard-only move disarm rumble", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const playEffect = vi.fn();
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([15]), vibrationActuator: { playEffect } }],
+    });
+    pollGamepad({ triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() });
+    hold([]);
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([]), vibrationActuator: { playEffect } }],
+    });
+    vi.setSystemTime(500);
+    noteKeyboardPlay();
+    expect(isPadDriving()).toBe(false);
+    rumble(90, 0.4, 0.4);
+    expect(playEffect).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("re-arms rumble while a mapped control stays held across polls", () => {
+    const playEffect = vi.fn();
+    const stage = { triggerKeyDown: vi.fn(), triggerKeyUp: vi.fn() };
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [{ ...fakePad([15]), vibrationActuator: { playEffect } }],
+    });
+    pollGamepad(stage);
+    // Simulate a clear that somehow landed, then another poll while still held.
+    noteKeyboardPlay();
+    pollGamepad(stage);
+    expect(isPadDriving()).toBe(true);
+    rumble(90, 0.4, 0.4);
+    expect(playEffect).toHaveBeenCalled();
+  });
 });

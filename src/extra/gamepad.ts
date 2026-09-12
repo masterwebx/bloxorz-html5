@@ -46,11 +46,38 @@ let menuCool = 0;
 let menuHoldFrames = 0;
 let menuHoldEv: MenuPadEvent | null = null;
 let padDriving = false;
+/** Last time mapped pad input armed rumble (ms). */
+let lastPadAt = 0;
 
 const MENU_REPEAT_INITIAL = 6;
 const MENU_REPEAT_RATE = 4;
+/** Ignore keyboard clear shortly after pad input (OS remappers fire keydown after poll). */
+const KEYBOARD_CLEAR_GRACE_MS = 320;
+
+function nowMs(): number {
+  return Date.now();
+}
+
+/** True while any Settings-mapped pad control is held (buttons or stick dirs). */
+function mappedPadHeld(): boolean {
+  const held = collectHeld();
+  if (!held.size) return false;
+  for (const btn of Object.values(loadSettings().pads)) {
+    if (held.has(btn)) return true;
+  }
+  return false;
+}
+
+function markPadDriving(): void {
+  padDriving = true;
+  lastPadAt = nowMs();
+}
 
 export function noteKeyboardPlay(): void {
+  // Keep rumble armed for pad players when a mapped control is held, or when a
+  // remapped keydown arrives just after the pad poll that armed driving.
+  if (mappedPadHeld()) return;
+  if (nowMs() - lastPadAt < KEYBOARD_CLEAR_GRACE_MS) return;
   padDriving = false;
 }
 
@@ -91,11 +118,13 @@ export function pollGamepad(
     if (held.has(settings.pads.swap)) pressed.Space = true;
   }
   const pause = held.has(settings.pads.pause);
+  // Refresh every poll while mapped controls are held — not only on press edges —
+  // so fall/win/hover rumbles still fire after a keyboard blip cleared padDriving.
+  if (Object.keys(pressed).length > 0 || pause) markPadDriving();
 
   if (stage?.triggerKeyDown) {
     for (const code of Object.keys(pressed)) {
       if (!prevHeld[code]) {
-        padDriving = true;
         stage.triggerKeyDown?.({ code });
         if (code === "Space") onCmd?.("swap");
         else if (code === "ArrowUp") onCmd?.("up");
@@ -135,6 +164,7 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
   ];
   for (const m of map) if (held.has(m.btn)) now[m.ev] = true;
   if ((opts?.pauseConfirms ?? true) && held.has(settings.pads.pause)) now.confirm = true;
+  if (Object.keys(now).length > 0) markPadDriving();
 
   const out: MenuPadEvent[] = [];
   const dirs: MenuPadEvent[] = ["up", "down", "left", "right"];
@@ -142,7 +172,6 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
 
   for (const ev of Object.keys(now) as MenuPadEvent[]) {
     if (!prevMenu[ev] && menuCool === 0) {
-      padDriving = true;
       out.push(ev);
       if (dirs.includes(ev)) {
         menuHoldEv = ev;
@@ -159,7 +188,6 @@ export function pollMenuPad(opts?: { pauseConfirms?: boolean }): MenuPadEvent[] 
   if (heldDir && menuHoldEv === heldDir && !out.length) {
     menuHoldFrames++;
     if (menuCool === 0) {
-      padDriving = true;
       out.push(heldDir);
       menuCool = menuRepeatDelay(menuHoldFrames);
     }
@@ -188,6 +216,7 @@ export function resetPadState(): void {
   menuHoldEv = null;
   menuHoldFrames = 0;
   padDriving = false;
+  lastPadAt = 0;
 }
 
 export function actionFromCode(code: string): Action | null {
