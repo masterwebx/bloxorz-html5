@@ -1,6 +1,7 @@
 # Bloxorz+
 
-<img width="1569" height="839" alt="image" src="https://github.com/user-attachments/assets/abdecaec-d4ff-4ba2-9f1e-f16a5a36df93" />
+<img width="1569" height="850" alt="image" src="https://github.com/user-attachments/assets/5c47c8d4-d400-4b8c-9e88-fc32b095c65e" />
+
 
 Hey — welcome to **Bloxorz+**. It’s the classic Bloxorz you already know (Damien Clarke’s roll-the-block puzzle), with extra ways to play: custom stages, daily and seeded puzzles, gauntlets, themes, color tweaks, and a speedrun timer beside the board.
 
